@@ -21,12 +21,12 @@ export interface Conversation {
   email_subject: string | null;
   /** Waiting for the team: Alexis switched off ('switched_off') or the AI service down ('ai_unavailable'). */
   awaiting_team: string | null;
-  /** The language the customer chose in the app (en, fr, pcm, yo, ha, ig). */
+  /** The language the customer chose in the app (en, fr, pcm). */
   language: string;
 }
 
 /** The languages the customer app offers; Alexis replies in the one chosen. */
-export const LANGUAGES: Record<string, string> = { en: "English", fr: "French", pcm: "Nigerian Pidgin", yo: "Yoruba", ha: "Hausa", ig: "Igbo" };
+export const LANGUAGES: Record<string, string> = { en: "English", fr: "French", pcm: "Nigerian Pidgin" };
 
 export type Channel = "app" | "whatsapp" | "email";
 export const CHANNELS: Channel[] = ["app", "whatsapp", "email"];

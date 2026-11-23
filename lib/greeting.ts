@@ -7,8 +7,7 @@ export const OPENERS = ["Where is my payout?", "A payment to us hasn't arrived",
 
 /**
  * The greeting and openers in the languages the customer app offers (Nov 23). Alexis replies in the
- * language chosen. Yoruba, Hausa and Igbo have no written greeting (Tomi, Nov 23): the app shows the
- * English one, and Alexis replies in the language from the customer's first message on.
+ * language chosen. English, French and Nigerian Pidgin only (Tomi, Nov 23).
  */
 export const GREETINGS: Record<string, string> = {
   en: GREETING,
@@ -22,4 +21,4 @@ export const OPENERS_BY_LANGUAGE: Record<string, string[]> = {
   pcm: ["Where my payout dey?", "Payment wey dem send us never land", "I need proof of payment"],
 };
 
-export const LANGUAGE_NAMES: [string, string][] = [["en", "English"], ["fr", "Français"], ["pcm", "Naijá (Pidgin)"], ["yo", "Yorùbá"], ["ha", "Hausa"], ["ig", "Igbo"]];
+export const LANGUAGE_NAMES: [string, string][] = [["en", "English"], ["fr", "Français"], ["pcm", "Naijá (Pidgin)"]];

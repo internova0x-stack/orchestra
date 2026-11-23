@@ -27,7 +27,7 @@ interface Detail {
 interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
 
 const ALL = "all";
-const LANGUAGE_NAME: Record<string, string> = { en: "English", fr: "French", pcm: "Pidgin", yo: "Yoruba", ha: "Hausa", ig: "Igbo" };
+const LANGUAGE_NAME: Record<string, string> = { en: "English", fr: "French", pcm: "Pidgin" };
 const CHANNEL_NAME = { app: "App chat", whatsapp: "WhatsApp", email: "Email" } as const;
 
 /** Where the customer wrote from, as a small labelled chip. */
