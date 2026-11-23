@@ -21,6 +21,9 @@ export default function TeamPage() {
   const [demoPw, setDemoPw] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [menu, setMenu] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { const close = () => setMenu(null); window.addEventListener("click", close); return () => window.removeEventListener("click", close); }, []);
 
   const load = useCallback(async () => {
     const j = await fetch("/api/team", { cache: "no-store" }).then((r) => r.json()).catch(() => ({}));
@@ -46,15 +49,19 @@ export default function TeamPage() {
       {err && <div className="case-error" role="alert">{err}</div>}
       {msg && <div className="label" role="status">{msg}</div>}
       {secret && (
-        <div className="secret-box" role="status">
-          <b>Temporary password for {secret.who}.</b> Give it to them privately; it isn&apos;t shown again. They choose their own when they sign in.
-          <pre className="dev-code">{secret.password}</pre>
-          <button className="btn" onClick={() => setSecret(null)}>Done</button>
+        <div className="temp-pw" role="status">
+          <div className="temp-pw-text">
+            <b>Temporary password for {secret.who}</b>
+            <span className="label">Shown once. Send it privately; they choose their own when they sign in.</span>
+          </div>
+          <code className="temp-pw-code">{secret.password}</code>
+          <button className="btn" onClick={() => { navigator.clipboard?.writeText(secret.password).then(() => setCopied(true)).catch(() => {}); }}>{copied ? "Copied" : "Copy"}</button>
+          <button className="copy" onClick={() => { setSecret(null); setCopied(false); }}>Done</button>
         </div>
       )}
 
       <h3 className="dev-h">Add someone</h3>
-      <form className="dev-row" onSubmit={async (e) => { e.preventDefault(); const j = await call("/api/team", "POST", { name, email, role }); if (j) { setSecret({ who: name, password: j.tempPassword }); setName(""); setEmail(""); } }}>
+      <form className="dev-row" onSubmit={async (e) => { e.preventDefault(); const j = await call("/api/team", "POST", { name, email, role }); if (j) { setCopied(false); setSecret({ who: name, password: j.tempPassword }); setName(""); setEmail(""); } }}>
         <input className="filter-input dev-input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" />
         <input className="filter-input dev-input" type="email" placeholder="Work email" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Work email" />
         <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role" className="team-select">
@@ -63,23 +70,32 @@ export default function TeamPage() {
         <button className="btn btn-primary" type="submit" disabled={!name.trim() || !email.trim()}>Add</button>
       </form>
 
-      <div className="table-wrap">
-        <table className="dash-table dev-table">
-          <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last sign-in</th><th scope="col"></th></tr></thead>
+      <div className="team-wrap">
+        <table className="dash-table team-table">
+          <colgroup><col className="c-name" /><col className="c-email" /><col className="c-role" /><col className="c-when" /><col className="c-more" /></colgroup>
+          <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last sign-in</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {team.map((m) => (
               <tr key={m.id}>
-                <td>{m.name}{m.id === meId ? " (you)" : ""}{!m.active ? <span className="tag tag-declined"> Off</span> : !m.has_password ? <span className="tag"> No password yet</span> : m.must_change ? <span className="tag tag-pending"> Temporary password</span> : null}</td>
-                <td className="dev-desc">{m.email}</td>
+                <td>
+                  <div className="team-name" title={m.name}>{m.name}{m.id === meId ? " (you)" : ""}</div>
+                  {!m.active ? <span className="tag tag-declined">Off</span> : !m.has_password ? <span className="tag">No password yet</span> : m.must_change ? <span className="tag tag-pending">Temporary password</span> : null}
+                </td>
+                <td className="team-email" title={m.email ?? ""}>{m.email ?? "—"}</td>
                 <td>
                   <select value={m.role} disabled={m.id === meId} aria-label={`Role for ${m.name}`} className="team-select" onChange={(e) => call(`/api/team/${m.id}`, "PATCH", { role: e.target.value })}>
                     {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
                 </td>
                 <td>{when(m.last_login_at)}</td>
-                <td className="dev-actions">
-                  <button className="copy" onClick={async () => { const j = await call(`/api/team/${m.id}`, "PATCH", { reset: true }); if (j) setSecret({ who: m.name, password: j.tempPassword }); }}>Reset password</button>
-                  {m.id !== meId && <button className="copy" onClick={() => call(`/api/team/${m.id}`, "PATCH", { active: !m.active })}>{m.active ? "Switch off" : "Switch on"}</button>}
+                <td className="team-more">
+                  <button className="int-dots" aria-label={`More for ${m.name}`} aria-expanded={menu === m.id} onClick={(e) => { e.stopPropagation(); setMenu(menu === m.id ? null : m.id); }}>···</button>
+                  {menu === m.id && (
+                    <span className="int-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+                      <button role="menuitem" onClick={async () => { setMenu(null); const j = await call(`/api/team/${m.id}`, "PATCH", { reset: true }); if (j) { setCopied(false); setSecret({ who: m.name, password: j.tempPassword }); } }}>Reset password</button>
+                      {m.id !== meId && <button role="menuitem" className={m.active ? "danger" : ""} onClick={() => { setMenu(null); call(`/api/team/${m.id}`, "PATCH", { active: !m.active }); }}>{m.active ? "Switch off" : "Switch on"}</button>}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

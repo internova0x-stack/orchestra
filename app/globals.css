@@ -814,3 +814,19 @@ h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .
 .int-option { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--edge); border-radius: var(--radius-lg); justify-items: start; }
 .int-option p { margin: 0; }
 .int-steps { margin: 0; padding-left: var(--space-6); display: grid; gap: var(--space-1); }
+/* Team page (Tomi, Nov 23): the table fits the page (no sideways scroll), actions in a ··· menu; a compact temporary password strip. */
+.team-wrap { width: 100%; }
+.team-table { width: 100%; table-layout: fixed; }
+.team-table .c-name { width: 26%; } .team-table .c-email { width: 30%; } .team-table .c-role { width: 20%; } .team-table .c-when { width: 16%; } .team-table .c-more { width: 48px; }
+.team-table td { vertical-align: middle; }
+.team-name, .team-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-table .tag { margin-top: 2px; }
+.team-table .team-select { width: 100%; max-width: 100%; }
+.team-more { position: relative; text-align: right; }
+.temp-pw { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--wait-line); background: var(--wait-bg); border-radius: var(--radius-lg); font-size: var(--size-sm); width: fit-content; max-width: 100%; }
+.temp-pw-text { display: grid; gap: 1px; }
+.temp-pw-code { font-family: var(--font-mono); font-size: var(--size-sm); padding: var(--space-1) var(--space-2); border-radius: var(--radius-md); background: var(--surface-sunk); user-select: all; }
+.dash-table.team-table th, .dash-table.team-table td { text-align: left; }
+.dash-table.team-table th:last-child, .dash-table.team-table td.team-more { text-align: right; }
+.team-table .c-name { width: 25%; } .team-table .c-email { width: 28%; } .team-table .c-role { width: 24%; } .team-table .c-when { width: 15%; }
+.dash-table.team-table thead th:not(:first-child) { text-align: left; }
