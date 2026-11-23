@@ -21,7 +21,7 @@ interface CaseRow {
   reference: string;
   conversation_id: string | null;
   status: string;
-  action: { type: "recall" | "claim"; reference: string; payout?: string; amount?: string } | null;
+  action: { type: "recall" | "claim" | "staff_action"; reference: string; payout?: string; amount?: string; requested_by?: string; label?: string } | null;
 }
 
 export async function decide(sql: Sql, reference: string, decision: Decision, note: string | null, staff?: StaffUser | null) {
@@ -61,6 +61,20 @@ async function decideInTx(sql: Sql, reference: string, decision: Decision, note:
       await tx`insert into audit_log (conversation_id, kind, tool, summary, result, approver)
         values (${c.conversation_id}, 'approval', 'staff', ${`claim ${c.action.reference} sent by ${who}`}, ${tx.json({ message })}, ${who})`;
       return { ok: true as const, status: "resolved" };
+    }
+
+    // A staff action above the second limit: another supervisor approves it; the requester then runs it and
+    // the customer confirms in their app (lib/staffActions.ts). The customer isn't told about the approval itself.
+    if (c.action?.type === "staff_action") {
+      if (!staff || staff.role !== "supervisor") return { ok: false as const, error: "supervisor_only" };
+      if (staff.name === c.action.requested_by) return { ok: false as const, error: "same_person" };
+      const approved = decision === "approve";
+      await tx`update escalations set status = ${approved ? "approved" : "declined"}, resolution = ${cleanNote}, decided_at = ${now},
+        action = action || ${tx.json({ approved_by: approved ? staff.name : null, declined_by: approved ? null : staff.name } as never)} where reference = ${reference}`;
+      await tx`insert into audit_log (conversation_id, kind, tool, summary, staff)
+        values (${c.conversation_id}, ${approved ? "approval" : "refusal"}, 'staff_action',
+                ${`${approved ? "approved" : "declined"} by ${who} · ${c.action.label?.toLowerCase()} ${c.action.amount ?? ""} for ${c.action.requested_by} (${reference})`}, ${staff.name})`;
+      return { ok: true as const, status: approved ? "approved" : "declined" };
     }
 
     if (!c.action || c.action.type !== "recall") return { ok: false as const, error: "nothing_to_approve" };

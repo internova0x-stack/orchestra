@@ -278,6 +278,8 @@ export interface ActionRequest {
   reference: string;
   requested_by: string;
   reason?: string | null;
+  /** The supervisor who approved it, when the action needs one (e.g. lifting a freeze the bank placed). */
+  approved_by?: string | null;
 }
 
 export interface ActionResult { accepted: boolean; bank_reference: string | null; status: string }
@@ -303,7 +305,7 @@ export interface BankConnector {
   freezeCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
   /** Stops the card and sends a new one to the delivery address on file. */
   replaceCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
-  /** Lifts a freeze the customer placed; a freeze the bank placed is refused (accepted: false, status frozen_by_bank). */
+  /** Lifts a freeze the customer placed. A freeze the bank placed is lifted only with `approved_by` (a supervisor); otherwise accepted: false, status frozen_by_bank. */
   unfreezeCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
   updateCardSettings(holderId: string, cardId: string, settings: CardSettings, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
   searchCardTransactions(holderId: string, q: { id?: string; card?: string; status?: CardTransaction["status"]; since?: string; merchant?: string; amount?: number }): Promise<CardTransaction[]>;

@@ -117,6 +117,22 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## Staff actions (Nov 23, Tomi: "build it now")
+
+A member of the team who has taken a conversation over can take the same account actions as Alexis from the
+Inbox's "Account actions" drawer: freeze, unfreeze (a supervisor can lift a bank freeze), card settings, replacement,
+dispute, reversal, recall, bill refund, fee waiver, deferral request, unlock, reset link, payment confirmation
+(`lib/staffActions.ts`, `POST /api/cases/{id}` action `staff_action`). The same tool code, checks and Bank Connector
+calls run; the tool's own caps and per-customer counts don't, because the person is the review they ask for.
+Instead the Rules screen's "Staff actions" settings apply: staff actions on or off, support agents allowed or not,
+the amount an agent may act on alone ($2,000 / £1,500 / ₦1,000,000; above it a supervisor), and the amount above
+which a second supervisor must approve ($10,000 / £8,000 / ₦5,000,000: the action waits in the Staff queue, the
+requester can't approve it, then runs it). Fixed: the customer must be verified in the chat; the stronger check
+applies as for Alexis (the staff member sends the one-time code to the phone on file and the customer types it in
+their app); the customer's Yes/Cancel appears in their app and only their answer (button or typed yes/no) runs it.
+Everything is logged under the staff member's name ("· by Bayo Martins, approved by…"), and the customer is told
+"Bayo from the support team unfroze your card (reference CHG-4402)." Two new tests.
+
 ## Smart routing and drafted replies (Nov 23, Tomi: "3 build")
 
 Routing (`lib/routing.ts`): every handoff is routed to a team from its category, by the institution's routing

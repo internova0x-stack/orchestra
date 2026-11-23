@@ -99,7 +99,7 @@ export const orderReplacement = {
     const limit = rules.num("replacement_limit", 2);
     const [{ n }] = await ctx.sql<{ n: number }[]>`
       select count(*)::int as n from card_replacements where holder_id = ${user.business_id} and created_at > ${new Date(ctx.now.getTime() - 365 * 86_400_000)}`;
-    if (n >= limit) return refuse(ctx, T, input, `${limit} replacement cards have been ordered in the last 12 months, so another needs a person to review it. Say so without accusing them; hand off.`, "replacement limit reached");
+    if (n >= limit && !ctx.staffAction) return refuse(ctx, T, input, `${limit} replacement cards have been ordered in the last 12 months, so another needs a person to review it. Say so without accusing them; hand off.`, "replacement limit reached");
     const feeId = FEE_RULE[card.currency];
     const fee = rules.num(feeId, 0);
     await ruleRead(ctx, rules, feeId);
@@ -156,10 +156,12 @@ export const unfreezeCard = {
       await audit(ctx, { kind: "action", tool: T, summary: `${T} · •••• ${card.last4} · not frozen`, input });
       return { ok: true, data: { already_active: true, card: `•••• ${card.last4}`, note: "The card isn't frozen. If payments still fail, look at its settings and recent declines (get_card)." } };
     }
-    if (card.frozen_by === "bank") {
-      return refuse(ctx, T, input, "The bank froze this card, so you can't unfreeze it and mustn't guess why. Say it needs the team to look at it and hand off (trigger card_problem).", "frozen by the bank");
+    // Only a supervisor, acting from the console, lifts a freeze the bank placed.
+    const supervisor = ctx.staffAction?.role === "supervisor";
+    if (card.frozen_by === "bank" && !supervisor) {
+      return refuse(ctx, T, input, ctx.staffAction ? "The bank froze this card. Only a supervisor can lift a bank freeze." : "The bank froze this card, so you can't unfreeze it and mustn't guess why. Say it needs the team to look at it and hand off (trigger card_problem).", "frozen by the bank");
     }
-    if (rules.on("card_unfreeze_block_dispute")) {
+    if (rules.on("card_unfreeze_block_dispute") && !supervisor) {
       await ruleRead(ctx, rules, "card_unfreeze_block_dispute");
       const dispute = await openFraudDispute(ctx, card);
       if (dispute) return refuse(ctx, T, input, `The customer reported payments on this card that weren't theirs (${dispute}), so it stays frozen. Offer a replacement card instead, or hand off (card_problem) if they need this card back.`, "open 'not mine' dispute");
@@ -168,7 +170,7 @@ export const unfreezeCard = {
     if (waiting) return waiting;
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('card_change_seq')::text as seq`;
     const reference = `CHG-${seq}`;
-    const done = await bank(ctx.sql).unfreezeCard(ctx.user!.business_id, card.id, { reference, requested_by: "Alexis" }, `unfreeze-${ctx.conv.id}-${card.id}`);
+    const done = await bank(ctx.sql).unfreezeCard(ctx.user!.business_id, card.id, { reference, requested_by: ctx.staffAction?.name ?? "Alexis", ...(card.frozen_by === "bank" ? { approved_by: ctx.staffAction!.name } : {}) }, `unfreeze-${ctx.conv.id}-${card.id}-${reference}`);
     if (!done.accepted) return refuse(ctx, T, input, done.status === "frozen_by_bank" ? "The bank froze this card, so it can't be unfrozen here. Hand off (card_problem)." : "The bank didn't accept the unfreeze. Hand off (card_problem).", `bank refused: ${done.status}`);
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · •••• ${card.last4} · ${reference} unfrozen`, input, result: { reference } });
     return { ok: true, reference, data: { reference, unfrozen: true, card: `•••• ${card.last4}`, note: "Tell them it works again now and they can freeze it any time in the app." } };
@@ -213,7 +215,7 @@ export const changeCardSettings = {
       const max = rules.num(maxId, 0);
       await ruleRead(ctx, rules, maxId, `Highest daily card limit (${card.currency})`);
       const maxText = money(max, card.currency).replace(/\.00$/, "");
-      if (input.daily_limit > max) return refuse(ctx, T, input, `${money(input.daily_limit, card.currency).replace(/\.00$/, "")} is above the ${maxText} you can set. Offer up to ${maxText}, or hand off (card_problem) for a higher limit.`, `above ${maxText}`);
+      if (input.daily_limit > max && !ctx.staffAction) return refuse(ctx, T, input, `${money(input.daily_limit, card.currency).replace(/\.00$/, "")} is above the ${maxText} you can set. Offer up to ${maxText}, or hand off (card_problem) for a higher limit.`, `above ${maxText}`);
       raises = input.daily_limit > Number(card.daily_limit ?? 0);
       settings.daily_limit = String(input.daily_limit);
       changes.push(`daily limit ${money(input.daily_limit, card.currency).replace(/\.00$/, "")}`);

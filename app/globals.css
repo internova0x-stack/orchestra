@@ -605,3 +605,19 @@ a { color: var(--brand-accent); }
   width: 100%; padding: var(--space-3); border-radius: var(--radius-md); resize: vertical;
   background: var(--surface-sunk); border: 1px solid var(--edge-strong); color: var(--text-1); font: inherit; font-size: var(--size-sm);
 }
+
+/* Staff actions (Nov 23) */
+.actions-drawer { border-top: 1px solid var(--edge); padding: var(--space-2) var(--space-4); }
+.actions-drawer > summary { cursor: pointer; font-size: var(--size-sm); font-weight: 600; padding: var(--space-2) 0; }
+.staff-actions { display: flex; flex-direction: column; gap: var(--space-3); padding-bottom: var(--space-3); }
+.staff-actions select, .staff-field select {
+  min-height: 36px; padding: 0 var(--space-2); border-radius: var(--radius-md);
+  background: var(--surface-sunk); border: 1px solid var(--edge-strong); color: var(--text-1); font-size: var(--size-sm);
+}
+.staff-action-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-3); align-items: end; }
+.staff-action-form > .dev-row { grid-column: 1 / -1; }
+.staff-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.staff-outcome { font-size: var(--size-sm); padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--edge-strong); }
+.staff-outcome.ok { border-color: var(--ok-line); color: var(--ok); }
+.staff-outcome.stop { border-color: var(--stop-line); color: var(--stop); }
+.staff-outcome.wait { border-color: var(--wait-line); }

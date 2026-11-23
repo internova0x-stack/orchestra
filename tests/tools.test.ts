@@ -1582,3 +1582,91 @@ test("drafted replies: a draft from the case for the team to edit, review-hold w
   assert.deepEqual((await sql!`select messages from conversations where id = ${s.conv.id}`)[0].messages, before, "a draft sends nothing");
   assert.equal((await sql!`select count(*)::int as n from audit_log where conversation_id = ${s.conv.id} and tool = 'draft_reply'`)[0].n, 1);
 });
+
+// ---------------------------------------------------------------- staff actions (Nov 23)
+
+test("staff actions: a supervisor lifts a bank freeze after the code and the customer's yes in the app; an agent can't", { skip }, async () => {
+  const { runStaffAction } = await import("../lib/staffActions.ts");
+  await seed(sql!, MONDAY);
+  const now = new Date();
+  const ife = (await staffUser(sql!, "ife"))!;
+  const bayo = (await staffUser(sql!, "bayo"))!;
+  await sql!`update cards set status = 'frozen', frozen_by = 'bank' where id = 'CARD-7710'`;
+  const s = await session("emeka", now);
+  const id = s.conv.id;
+  await sql!`update conversations set mode = 'customer' where id = ${id}`;
+  assert.equal((await runStaffAction(sql!, id, ife, "unfreeze_card", {})).status, "error", "take it over first");
+  assert.equal(await takeOver(sql!, id, ife), null);
+  const agent = await runStaffAction(sql!, id, ife, "unfreeze_card", {});
+  assert.equal(agent.status, "needs_code", "the code first");
+  await sql!`update conversations set stronger_verified_at = now() where id = ${id}`;
+  const agent2 = await runStaffAction(sql!, id, ife, "unfreeze_card", {});
+  assert.equal(agent2.status, "refused");
+  assert.match((agent2 as { message: string }).message, /Only a supervisor can lift a bank freeze/);
+  await sql!`update conversations set stronger_verified_at = null where id = ${id}`;
+  assert.equal(await handBack(sql!, id, ife), null);
+  assert.equal(await takeOver(sql!, id, bayo), null);
+
+  // The stronger check: the code goes to the phone on file and the customer types it in their app.
+  const sent = await runStaffAction(sql!, id, bayo, "unfreeze_card", {}, { sendCode: true });
+  assert.equal(sent.status, "code_sent");
+  const view = await customerView(sql!, id);
+  assert.ok(view.pendingCode, "the customer app shows the code form");
+  const evs: StreamEvent[] = [];
+  await runTurn(sql!, { conversationId: id, typingUserId: null, code: "000000" === view.pendingCode!.code ? "111111" : "000000" }, (e) => evs.push(e));
+  assert.ok(evs.some((e) => e.type === "code_retry"), "a wrong code can be tried again");
+  await runTurn(sql!, { conversationId: id, typingUserId: null, code: view.pendingCode!.code }, () => {});
+  assert.ok((await sql!`select stronger_verified_at from conversations where id = ${id}`)[0].stronger_verified_at, "stronger check passed");
+
+  // The customer's yes, in their app.
+  const asked = await runStaffAction(sql!, id, bayo, "unfreeze_card", {});
+  assert.equal(asked.status, "waiting_customer");
+  assert.equal((await sql!`select status from cards where id = 'CARD-7710'`)[0].status, "frozen", "nothing before the yes");
+  const pending = (await customerView(sql!, id)).pendingAction;
+  assert.ok(pending && pending.by === "Bayo Martins" && /Unfreeze the card ending 7710/.test(pending.action));
+  await runTurn(sql!, { conversationId: id, typingUserId: null, message: "Yes, go ahead", confirm: true }, () => {});
+  assert.equal((await sql!`select status from cards where id = 'CARD-7710'`)[0].status, "active", "the bank freeze is lifted");
+  const told = (await customerView(sql!, id)).staff.map((m) => m.text);
+  assert.ok(told.some((t) => /^Bayo from the support team unfroze your card \(reference CHG-\d+\)\.$/.test(t)), told.join(" | "));
+  const log = await sql!`select summary from audit_log where conversation_id = ${id} and tool = 'unfreeze_card' and kind = 'action'`;
+  assert.ok(log.some((r) => /by Bayo Martins/.test(r.summary)), "logged under the supervisor's name");
+});
+
+test("staff actions: an agent's limit, a second supervisor above the higher one, and the customer can cancel", { skip }, async () => {
+  const { runStaffAction } = await import("../lib/staffActions.ts");
+  const { decide } = await import("../lib/staff.ts");
+  await seed(sql!, MONDAY);
+  await sql!`insert into staff_users (id, name, role) values ('zara', 'Zara Okon', 'supervisor') on conflict do nothing`;
+  const now = new Date();
+  const ife = (await staffUser(sql!, "ife"))!;
+  const bayo = (await staffUser(sql!, "bayo"))!;
+  const zara = (await staffUser(sql!, "zara"))!;
+  const s = await session("ada", now);
+  const id = s.conv.id;
+  await sql!`update conversations set mode = 'customer' where id = ${id}`;
+  await takeOver(sql!, id, ife);
+  // PO-88150 is $3,200: above a support agent's $2,000.
+  const agent = await runStaffAction(sql!, id, ife, "initiate_recall", { reference: "PO-88150" });
+  assert.equal(agent.status, "needs_supervisor");
+  await handBack(sql!, id, ife);
+  await takeOver(sql!, id, bayo);
+  // The institution wants a second supervisor above $3,000.
+  await sql!`update rules set value = '3000' where id = 'staff_dual_limit_usd'`;
+  const first = await runStaffAction(sql!, id, bayo, "initiate_recall", { reference: "PO-88150" });
+  assert.equal(first.status, "needs_second_approval");
+  const ref = (first as { reference: string }).reference;
+  assert.equal((await decide(sql!, ref, "approve", null, bayo)).ok, false, "not by the person who asked");
+  assert.equal((await decide(sql!, ref, "approve", null, ife)).ok, false, "only a supervisor");
+  assert.equal((await decide(sql!, ref, "approve", "Checked with the payments lead", zara)).ok, true);
+  const asked = await runStaffAction(sql!, id, bayo, "initiate_recall", { reference: "PO-88150" });
+  assert.equal(asked.status, "waiting_customer", "after the approval, the customer's yes");
+  // The customer cancels: nothing happens.
+  await runTurn(sql!, { conversationId: id, typingUserId: null, message: "Cancel", confirm: false }, () => {});
+  assert.equal((await sql!`select count(*)::int as n from recalls where transfer_id = 'PO-88150'`)[0].n, 0);
+  // Asked again, the customer types yes.
+  await runStaffAction(sql!, id, bayo, "initiate_recall", { reference: "PO-88150" });
+  await runTurn(sql!, { conversationId: id, typingUserId: null, message: "yes please" }, () => {});
+  const [r] = await sql!<{ status: string }[]>`select status from recalls where transfer_id = 'PO-88150'`;
+  assert.equal(r.status, "requested", "submitted directly: the person was the review the cap asks for");
+  await sql!`update rules set value = '10000' where id = 'staff_dual_limit_usd'`;
+});

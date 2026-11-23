@@ -12,16 +12,6 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   customer to read back a code the bank didn't just send for this purpose. Left out of the first demo
   (owner, Nov 23); the demo runs `initiate_recall` on the standard check plus payment rights.
 
-- **Staff actions panel** (Tomi, Nov 23: "put it on a backlog"): today staff can only look things up, draft
-  and reply, approve or decline a prepared recall, and resolve cases; account actions happen in the bank's own
-  back office. Planned: an Actions panel beside the conversation (Inbox once taken over, Staff queue) with the same
-  actions as Alexis (freeze, unfreeze, card settings, replacement, recall, reversal, bill refund, fee waiver,
-  unlock, reset link, dispute, deferral request) plus ones she can't take (a supervisor lifting a bank freeze).
-  Same tool code, checks and Bank Connector calls; identity from the chat's check or the agent recording
-  "verified another way"; the customer's Yes/Cancel still required for tier 2/3; who may do what set on the Rules
-  screen (agent limit, supervisor above it, second supervisor above a higher one); every action in the audit log
-  under the staff member's name, sent to webhooks, and shown to the customer ("Ife from the support team unfroze
-  your card ending 7710").
 - **Proactive failure messages** (explained Nov 23, not yet requested): message the customer when a payment
   fails, with the reason and the fix; new Events API types (card declined, transfer returned); per-institution
   failure types, channels, quiet hours, daily cap and approved wording; never for review holds or fraud.

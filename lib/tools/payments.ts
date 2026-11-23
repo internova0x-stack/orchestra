@@ -137,13 +137,13 @@ export const requestReversal = {
     const [{ n }] = await ctx.sql<{ n: number }[]>`
       select ((select count(*) from reversals where holder_id = ${user.business_id} and not automatic and requested_at > ${new Date(ctx.now.getTime() - 30 * 86_400_000)})
             + (select count(*) from recalls where business_id = ${user.business_id} and created_at > ${new Date(ctx.now.getTime() - 30 * 86_400_000)}))::int as n`;
-    if (n >= limit) return refuse(ctx, T, input, `${limit} recalls or reversal requests in 30 days; another needs a person to review it. Say so without accusing them; escalate.`, "reversal limit reached");
+    if (n >= limit && !ctx.staffAction) return refuse(ctx, T, input, `${limit} recalls or reversal requests in 30 days; another needs a person to review it. Say so without accusing them; escalate.`, "reversal limit reached");
     const capId = CAP[p.currency];
     const cap = rules.num(capId, Infinity);
     await ruleRead(ctx, rules, capId, `Reversal cap (${p.currency})`);
     const amount = money(p.amount, p.currency);
     const capText = money(cap, p.currency).replace(/\.00$/, "");
-    if (Number(p.amount) > cap) return refuse(ctx, T, input, `${amount} is above the ${capText} reversal cap, so a person must request it. Escalate with the payment details.`, `above cap ${capText}`);
+    if (Number(p.amount) > cap && !ctx.staffAction) return refuse(ctx, T, input, `${amount} is above the ${capText} reversal cap, so a person must request it. Escalate with the payment details.`, `above cap ${capText}`);
     const win = windowRule(p);
     const hours = rules.num(win, 72);
     const pastWindow = (ctx.now.getTime() - new Date(p.at).getTime()) / 3_600_000 > hours;

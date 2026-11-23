@@ -11,6 +11,7 @@ import { createConversation, loadConversation, verifiedUser, LANGUAGES, type Cha
 import { dateTime, longDate } from "./time.ts";
 import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
 import { appendTurn, forModel, hadStaff } from "./takeover.ts";
+import { answerStaffAction, answerStaffCode } from "./staffActions.ts";
 import { emitEvent } from "./api/webhooks.ts";
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
@@ -118,7 +119,8 @@ export async function operations(sql: Sql): Promise<{ alexisOn: boolean; outage:
  */
 async function storeForTeam(sql: Sql, conv: Conversation, input: TurnInput, now: Date, user: VerifiedUser | null, emit: (e: StreamEvent) => void) {
   let history = conv.messages as never as MessageParam[];
-  const open = conv.pending_identity_tool_id ?? conv.pending_code?.tool_use_id ?? null;
+  // (A code a member of the team sent is theirs, not an open form of Alexis's: it stays.)
+  const open = conv.pending_identity_tool_id ?? (conv.pending_code && !conv.pending_code.staff ? conv.pending_code.tool_use_id : null);
   if (open) {
     const closed = { type: "tool_result", tool_use_id: open, content: JSON.stringify({ ok: false, reason: "The conversation went to the support team before this was completed." }), is_error: true };
     history = appendTurn(history as never, "user", [...((conv.pending_results ?? []) as never[]), closed] as never) as unknown as MessageParam[];
@@ -199,7 +201,19 @@ async function runTurnInner(sql: Sql, input: TurnInput, emit: (e: StreamEvent) =
   }
   const ops = await operations(sql);
   if (conv.taken_over_by || !ops.alexisOn) {
+    // The customer answering an action or a code from the member of the team handling the chat.
+    if (conv.taken_over_by && input.code !== undefined && conv.pending_code?.staff) {
+      const r = await answerStaffCode(sql, conv, input.code, now);
+      if (r === "retry") emit({ type: "code_retry" });
+      emit({ type: "taken_over", by: conv.taken_over_by });
+      emit({ type: "done" });
+      return;
+    }
+    const typed = (input.message ?? "").trim();
+    const staffAsk = conv.taken_over_by && conv.pending_action?.staff && !conv.pending_action.confirmed;
+    const answer = !staffAsk ? undefined : input.confirm !== undefined ? input.confirm : YES.test(typed) ? true : NO.test(typed) ? false : undefined;
     await storeForTeam(sql, conv, input, now, user, emit);
+    if (answer !== undefined) await answerStaffAction(sql, (await loadConversation(sql, conv.id)) ?? conv, answer);
     if (conv.taken_over_by) emit({ type: "taken_over", by: conv.taken_over_by });
     else {
       if (conv.awaiting_team !== "switched_off") {

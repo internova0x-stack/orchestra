@@ -78,12 +78,12 @@ export const openDispute = {
     const limit = rules.num("dispute_limit", 3);
     const [{ n }] = await ctx.sql<{ n: number }[]>`
       select count(*)::int as n from disputes where holder_id = ${user.business_id} and created_at > ${new Date(ctx.now.getTime() - 90 * 86_400_000)}`;
-    if (n >= limit) return refuse(ctx, T, input, `${limit} disputes have been opened in the last 90 days, so another needs a person to review it. Say so without accusing them; escalate.`, "dispute limit reached");
+    if (n >= limit && !ctx.staffAction) return refuse(ctx, T, input, `${limit} disputes have been opened in the last 90 days, so another needs a person to review it. Say so without accusing them; escalate.`, "dispute limit reached");
     const capId = CAP[tx.currency];
     const cap = rules.num(capId, Infinity);
     await ruleRead(ctx, rules, capId, `Dispute cap (${tx.currency})`);
     const amount = money(tx.amount, tx.currency);
-    if (Number(tx.amount) > cap) {
+    if (Number(tx.amount) > cap && !ctx.staffAction) {
       return refuse(ctx, T, input, `${amount} is above the ${money(cap, tx.currency).replace(/\.00$/, "")} dispute cap, so a person must open it. Escalate with the transaction details.`, `above cap ${money(cap, tx.currency).replace(/\.00$/, "")}`);
     }
     const waiting = await confirmFirst(

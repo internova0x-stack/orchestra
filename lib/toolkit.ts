@@ -58,9 +58,18 @@ export interface ProofDoc {
   issued: string;
 }
 
+/** A member of the team taking an account action from the console (lib/staffActions.ts). */
+export interface StaffActor { id: string; name: string; role: "support_agent" | "supervisor"; approvedBy?: string | null }
+
 export interface ToolCtx {
   /** In staff mode: the staff member Alexis is working for; everything is logged under their name. */
   staff?: string;
+  /**
+   * Set when a member of the team runs the action themselves. Their role and amount limits were checked first
+   * (lib/staffActions.ts), so the tool's own caps and per-customer counts, which exist to bring a person in,
+   * don't apply; identity, ownership, review holds, duplicates and the customer's yes still do.
+   */
+  staffAction?: StaffActor;
   sql: Sql;
   conv: Conversation;
   user: VerifiedUser | null;
@@ -88,7 +97,7 @@ export interface ToolDef<S extends z.ZodTypeAny> {
 // ---------------------------------------------------------------- audit
 
 export async function audit(
-  ctx: Pick<ToolCtx, "sql" | "conv" | "user" | "toolUseId"> & { staff?: string },
+  ctx: Pick<ToolCtx, "sql" | "conv" | "user" | "toolUseId"> & { staff?: string; staffAction?: StaffActor },
   row: {
     kind: "identity" | "lookup" | "action" | "refusal" | "handoff" | "rule" | "approval" | "error";
     tool?: string;
@@ -100,9 +109,9 @@ export async function audit(
 ) {
   const { sql } = ctx;
   await sql`insert into audit_log (conversation_id, user_id, tool_use_id, kind, tool, summary, input, result, refusal_reason, staff)
-    values (${ctx.conv.id}, ${ctx.user?.id ?? null}, ${ctx.toolUseId}, ${row.kind}, ${row.tool ?? null}, ${(ctx as { staff?: string }).staff ? `${row.summary} · for ${(ctx as { staff?: string }).staff}` : row.summary},
+    values (${ctx.conv.id}, ${ctx.user?.id ?? null}, ${ctx.toolUseId}, ${row.kind}, ${row.tool ?? null}, ${ctx.staffAction ? `${row.summary} · by ${ctx.staffAction.name}${ctx.staffAction.approvedBy ? `, approved by ${ctx.staffAction.approvedBy}` : ""}` : (ctx as { staff?: string }).staff ? `${row.summary} · for ${(ctx as { staff?: string }).staff}` : row.summary},
             ${row.input === undefined ? null : sql.json(row.input as never)},
-            ${row.result === undefined ? null : sql.json(row.result as never)}, ${row.refusal_reason ?? null}, ${(ctx as { staff?: string }).staff ?? null})`;
+            ${row.result === undefined ? null : sql.json(row.result as never)}, ${row.refusal_reason ?? null}, ${ctx.staffAction?.name ?? (ctx as { staff?: string }).staff ?? null})`;
 }
 
 /** Record that a rule was read, so the activity panel shows it. */

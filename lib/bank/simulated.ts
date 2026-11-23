@@ -158,12 +158,12 @@ export function simulatedBank(sql: Sql): BankConnector {
       return done("frozen");
     },
 
-    async unfreezeCard(holderId, cardId) {
+    async unfreezeCard(holderId, cardId, req) {
       const [c] = await sql<{ status: string; frozen_by: string | null }[]>`select status, frozen_by from cards where id = ${cardId} and holder_id = ${holderId}`;
       if (!c) return refused("not_found");
       if (c.status === "active") return done("active");
       if (c.status !== "frozen") return refused(c.status);
-      if (c.frozen_by === "bank") return refused("frozen_by_bank");
+      if (c.frozen_by === "bank" && !req.approved_by) return refused("frozen_by_bank");
       await sql`update cards set status = 'active', frozen_by = null where id = ${cardId}`;
       return done("active");
     },

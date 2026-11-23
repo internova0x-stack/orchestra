@@ -320,7 +320,11 @@ export default function Chat() {
     const id = convRef.current;
     try {
       const res = await fetch(`/api/conversation/${id}`, { cache: "no-store" });
-      const j = (await res.json()) as { takenOverBy: string | null; staff: { key: string; name: string; text: string }[]; updates: { id: number; message: string }[] };
+      const j = (await res.json()) as {
+        takenOverBy: string | null; staff: { key: string; name: string; text: string }[]; updates: { id: number; message: string }[];
+        pendingAction?: { key: string; action: string; consequence: string; by: string } | null;
+        pendingCode?: { key: string; sentTo: string; code: string; by: string } | null;
+      };
       if (id !== convRef.current) return;
       setTakenOverBy((was) => {
         if (was !== j.takenOverBy) {
@@ -334,6 +338,13 @@ export default function Chat() {
         const add: Msg[] = [
           ...j.staff.filter((x) => !have.has(`staff-${x.key}`)).map((x) => ({ id: `staff-${x.key}`, role: "alexis" as const, text: x.text, staff: x.name, showLabel: true })),
           ...j.updates.filter((u) => !have.has(`update-${u.id}`)).map((u) => ({ id: `update-${u.id}`, role: "alexis" as const, text: `Update from the team: ${u.message}`, update: true, showLabel: true })),
+          // An action or the one-time code from the member of the team handling the chat: the customer answers here.
+          ...(j.pendingCode && !have.has(`staffcode-${j.pendingCode.key}`)
+            ? [{ id: `staffcode-${j.pendingCode.key}`, role: "alexis" as const, staff: j.pendingCode.by, text: `To confirm it's you, ${j.pendingCode.by.split(" ")[0]} sent a one-time code to your phone. Type it below.`, code: { sentTo: j.pendingCode.sentTo, code: j.pendingCode.code, state: "open" as const }, showLabel: true }]
+            : []),
+          ...(j.pendingAction && !have.has(`staffask-${j.pendingAction.key}`)
+            ? [{ id: `staffask-${j.pendingAction.key}`, role: "alexis" as const, staff: j.pendingAction.by, text: `${j.pendingAction.by.split(" ")[0]} needs your yes before going ahead.`, confirm: { action: j.pendingAction.action, consequence: j.pendingAction.consequence, state: "open" as const }, showLabel: true }]
+            : []),
         ];
         return add.length ? [...ms, ...add] : ms;
       });

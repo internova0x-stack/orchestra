@@ -3,6 +3,7 @@ import { transcriptOf } from "@/lib/cases.ts";
 import { staffUser } from "@/lib/staff.ts";
 import { handBack, staffReply, takeOver } from "@/lib/takeover.ts";
 import { saveReview, translateConversation } from "@/lib/review.ts";
+import { runStaffAction, STAFF_ACTIONS } from "@/lib/staffActions.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,10 +39,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   if (!UUID.test(id)) return Response.json({ error: "not_found" }, { status: 404 });
-  const body = (await req.json().catch(() => null)) as { action?: string; staffId?: string; text?: string; rating?: string; note?: string } | null;
+  const body = (await req.json().catch(() => null)) as { action?: string; staffId?: string; text?: string; rating?: string; note?: string; tool?: string; input?: Record<string, unknown> } | null;
   const sql = db();
   const staff = await staffUser(sql, body?.staffId);
   if (!staff) return Response.json({ error: "sign_in", message: "Sign in as a member of the team first (top of the Inbox)." }, { status: 403 });
+  // Account actions by the team (lib/staffActions.ts), and the one-time code they send for the stronger check.
+  if (body?.action === "staff_action" || body?.action === "send_code") {
+    const tool = String(body.tool ?? "");
+    if (body.action === "staff_action" && !STAFF_ACTIONS[tool]) return Response.json({ error: "bad_request", message: "Choose an action." }, { status: 400 });
+    const input = body.input && typeof body.input === "object" && !Array.isArray(body.input) ? body.input : {};
+    const out = await runStaffAction(sql, id, staff, tool, input, { sendCode: body.action === "send_code" });
+    return Response.json(out, { status: out.status === "error" ? (out.error === "not_found" ? 404 : 409) : 200 });
+  }
   if (body?.action === "translate") {
     if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "not_configured", message: "The AI service isn't set up." }, { status: 503 });
     const t = await translateConversation(sql, id).catch(() => null);

@@ -33,14 +33,14 @@ export const waiveFee = {
     const limit = rules.num("waiver_limit", 1);
     const [{ n }] = await ctx.sql<{ n: number }[]>`
       select count(*)::int as n from waivers where holder_id = ${user.business_id} and created_at > ${new Date(ctx.now.getTime() - 365 * 86_400_000)}`;
-    if (n >= limit) {
+    if (n >= limit && !ctx.staffAction) {
       return refuse(ctx, T, input, `The customer has used this year's goodwill waiver (${limit} per 12 months). Decline politely without suggesting they did anything wrong, and escalate if they think the fee was charged in error.`, "waiver already used this year");
     }
     const capId = CAP[fee.currency];
     const cap = rules.num(capId, 0);
     await ruleRead(ctx, rules, capId, `Fee waiver cap (${fee.currency})`);
     const amount = money(fee.amount, fee.currency);
-    if (Number(fee.amount) > cap) return refuse(ctx, T, input, `${amount} is above the ${money(cap, fee.currency).replace(/\.00$/, "")} waiver cap; a person must decide. Escalate.`, `above cap ${money(cap, fee.currency).replace(/\.00$/, "")}`);
+    if (Number(fee.amount) > cap && !ctx.staffAction) return refuse(ctx, T, input, `${amount} is above the ${money(cap, fee.currency).replace(/\.00$/, "")} waiver cap; a person must decide. Escalate.`, `above cap ${money(cap, fee.currency).replace(/\.00$/, "")}`);
     const waiting = await confirmFirst(ctx, T, fee.id, `waiver of ${fee.id}`, `Waive the ${amount} ${fee.description.toLowerCase()}?`, "It will be refunded to your account. This uses your one goodwill waiver for the next 12 months.");
     if (waiting) return waiting;
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('waiver_seq')::text as seq`;

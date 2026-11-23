@@ -679,14 +679,14 @@ const initiateRecall = {
     const limit = rules.num("recall_limit", 3);
     const [{ n }] = await sql<{ n: number }[]>`
       select count(*)::int as n from recalls where business_id = ${user.business_id} and created_at > ${new Date(ctx.now.getTime() - 30 * 86_400_000)}`;
-    if (n >= limit) {
+    if (n >= limit && !ctx.staffAction) {
       return refuse(ctx, T, input, `This business has reached ${limit} recalls in 30 days, so a new one needs a person to review it. Don't accuse the customer of anything; say it needs staff review and escalate.`, "recall limit reached");
     }
     // 5. The cap, read from the rules on this call.
     const capId = user.personal ? `recall_cap_personal_${t.currency.toLowerCase()}` : CAP_RULE[t.currency];
     const cap = rules.num(capId, Infinity);
     await ruleRead(ctx, rules, capId, `Recall cap (${t.currency})`);
-    const overCap = Number(t.amount) > cap;
+    const overCap = !ctx.staffAction && Number(t.amount) > cap;
     const amount = money(t.amount, t.currency);
     const capText = money(cap, t.currency).replace(/\.00$/, "");
 
@@ -897,8 +897,9 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx, mod
   // Fresh every call: a Rules screen edit applies at once, with the customer's market's own values.
   const rules = await Rules.load(ctx.sql, marketOf(ctx.user?.country));
   // Check 1: an action with a switch on the Rules screen is refused while it's off.
+  // (These switches are for Alexis; the team's own actions have their own rules, lib/staffActions.ts.)
   const sw = rules.get(`action_${name}`);
-  if (sw && !rules.on(`action_${name}`)) {
+  if (sw && !ctx.staffAction && !rules.on(`action_${name}`)) {
     return refuse(ctx, name, parsed.data, `${sw.name.replace(/ switched on$/, "")} is switched off for this institution. Explain and offer a handoff.`, "switched off");
   }
   const idProblem = needsIdentity(tool.tier, ctx, tool.identity);

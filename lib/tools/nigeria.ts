@@ -67,7 +67,7 @@ export const refundBillPayment = {
     const cap = rules.num(capId, 0);
     await ruleRead(ctx, rules, capId);
     const amount = money(b.amount, b.currency);
-    if (Number(b.amount) > cap) return refuse(ctx, T, input, `${amount} is above the ${money(cap, b.currency).replace(/\.00$/, "")} refund cap; hand off.`, `above cap ${money(cap, b.currency).replace(/\.00$/, "")}`);
+    if (Number(b.amount) > cap && !ctx.staffAction) return refuse(ctx, T, input, `${amount} is above the ${money(cap, b.currency).replace(/\.00$/, "")} refund cap; hand off.`, `above cap ${money(cap, b.currency).replace(/\.00$/, "")}`);
     const waiting = await confirmFirst(ctx, T, b.id, `refund of ${b.id}`, `Refund the ${amount} paid for ${b.biller} to ${maskRef(b.customer_ref)}?`, "The provider shows it failed, so the money comes back to your account.");
     if (waiting) return waiting;
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('bill_refund_seq')::text as seq`;

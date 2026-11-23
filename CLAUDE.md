@@ -63,6 +63,9 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
+- Staff actions: `lib/staffActions.ts` runs tools with `ctx.staffAction` (tool caps and counts skipped, `staff_*`
+  rules for role and amount limits, second-supervisor approval as an escalation action `staff_action`); the customer
+  answers via `pending_action.staff` / `pending_code.staff`, shown by `customerView` and handled in `runTurnInner`.
 - Routing and drafts: `lib/routing.ts` (team from the category via the `route_*` rules; `pickUp`, `moveTeam`,
   `flagOverdue` run by the Staff queue's list; escalations.team/assigned_to/overdue_at); `lib/drafting.ts` +
   `/api/drafts` ("Draft with Alexis" in the Inbox and the Staff queue; a draft is never sent by itself).

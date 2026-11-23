@@ -28,7 +28,8 @@ const TX_STATUSES = ["pending", "settled", "declined", "reversed"] as const;
 function actionBody(body: unknown) {
   const r = body as { reference?: unknown; requested_by?: unknown; reason?: unknown } | null;
   if (!r || typeof r.reference !== "string" || typeof r.requested_by !== "string") return null;
-  return { reference: r.reference.slice(0, 80), requested_by: r.requested_by.slice(0, 80), reason: typeof r.reason === "string" ? r.reason.slice(0, 200) : null };
+  const approved = (r as { approved_by?: unknown }).approved_by;
+  return { reference: r.reference.slice(0, 80), requested_by: r.requested_by.slice(0, 80), reason: typeof r.reason === "string" ? r.reason.slice(0, 200) : null, approved_by: typeof approved === "string" ? approved.slice(0, 80) : null };
 }
 
 export async function serveBank(b: BankConnector, method: string, path: string[], query: URLSearchParams, body: unknown, idempotencyKey: string | null): Promise<Reply> {

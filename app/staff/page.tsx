@@ -7,7 +7,7 @@ import DraftButton from "../components/DraftButton";
 
 interface CaseItem {
   reference: string; urgency: string; status: string; created_at: string; trigger: string | null; business: string | null;
-  action: { type: string; reference: string; payout: string; amount: string } | null;
+  action: { type: string; reference: string; payout: string; amount: string; label?: string; requested_by?: string } | null;
   team: string | null; assigned_to: string | null; respond_by: string | null; overdue: boolean;
 }
 interface Summary {
@@ -182,7 +182,7 @@ export default function StaffPage() {
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         const err = (json as { error?: string }).error;
-        setActError(err === "already_decided" ? "This case has already been decided." : err === "supervisor_only" ? "Only a supervisor can approve or decline." : err === "sign_in" ? "Sign in as a staff member first." : "That didn't go through. Try again.");
+        setActError(err === "already_decided" ? "This case has already been decided." : err === "supervisor_only" ? "Only a supervisor can approve or decline." : err === "same_person" ? "A second supervisor must approve: not the person who asked." : err === "sign_in" ? "Sign in as a staff member first." : "That didn't go through. Try again.");
       }
       setNote("");
       setArming(null);
@@ -240,7 +240,8 @@ export default function StaffPage() {
 
   const c = detail?.case;
   const s = c?.summary;
-  const pendingRecall = c?.status === "open" && c.action?.type === "recall";
+  // A recall over the cap, or a large staff action waiting for a second supervisor: both need a supervisor's decision.
+  const pendingRecall = c?.status === "open" && (c.action?.type === "recall" || c.action?.type === "staff_action");
 
   return (
     <div className="staff-grid">
@@ -344,7 +345,8 @@ export default function StaffPage() {
                   <div><dt>What is needed</dt><dd>{s.needed}</dd></div>
                   <div><dt>What the customer was told</dt><dd>{s.told}</dd></div>
                   <div><dt>Flags</dt><dd>{s.flags.join(", ")}</dd></div>
-                  {c.action && <div><dt>Prepared action</dt><dd>Recall <span className="ref">{c.action.reference}</span> on <span className="ref">{c.action.payout}</span>, {c.action.amount}</dd></div>}
+                  {c.action?.type === "recall" && <div><dt>Prepared action</dt><dd>Recall <span className="ref">{c.action.reference}</span> on <span className="ref">{c.action.payout}</span>, {c.action.amount}</dd></div>}
+                  {c.action?.type === "staff_action" && <div><dt>Waiting for a second supervisor</dt><dd>{c.action.label}, {c.action.amount}, asked by {c.action.requested_by}. Once approved, they run it and the customer confirms in their app.</dd></div>}
                   {c.resolution && <div><dt>Note</dt><dd>{c.resolution}</dd></div>}
                 </dl>
               )}
@@ -412,7 +414,7 @@ export default function StaffPage() {
               <div className="case-actions">
                 {actError && <div className="case-error" role="alert">{actError}</div>}
                 <input className="note" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
-                {pendingRecall && staff?.role !== "supervisor" && <span className="label">Only a supervisor can approve or decline this recall.</span>}
+                {pendingRecall && staff?.role !== "supervisor" && <span className="label">Only a supervisor can approve or decline this.</span>}
                 {pendingRecall && staff?.role === "supervisor" && (
                   arming === "approve" ? (
                     <button className="btn btn-primary" disabled={busy} onClick={() => act("approve")}>Confirm approval</button>

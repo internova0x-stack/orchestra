@@ -2,6 +2,8 @@ import type { Sql } from "./db.ts";
 import { maskSecrets } from "./secrets.ts";
 import { emitEvent } from "./api/webhooks.ts";
 import type { StaffUser } from "./staff.ts";
+import { customerPending } from "./staffActions.ts";
+import type { Conversation } from "./session.ts";
 
 // A member of the team takes over a conversation from the console, replies in person, then hands it
 // back to Alexis. The conversation's history stays one list in the model's format (user and assistant
@@ -122,9 +124,9 @@ async function staffReplyInTx(sql: Sql, conversationId: string, staff: StaffUser
 
 /** What the customer's app needs while it's open: who is handling the chat, the team's replies, and decisions. */
 export async function customerView(sql: Sql, conversationId: string) {
-  const [c] = await sql<{ messages: Message[]; taken_over_by: string | null }[]>`
-    select messages, taken_over_by from conversations where id = ${conversationId} and mode = 'customer'`;
-  if (!c) return { takenOverBy: null, staff: [], updates: [] };
+  const [c] = await sql<{ messages: Message[]; taken_over_by: string | null; pending_action: Conversation["pending_action"]; pending_code: Conversation["pending_code"] }[]>`
+    select messages, taken_over_by, pending_action, pending_code from conversations where id = ${conversationId} and mode = 'customer'`;
+  if (!c) return { takenOverBy: null, staff: [], updates: [], pendingAction: null, pendingCode: null };
   const staff: { key: string; name: string; text: string }[] = [];
   (c.messages ?? []).forEach((m, i) => {
     if (typeof m.content === "string" || m.role === "system") return;
@@ -134,5 +136,5 @@ export async function customerView(sql: Sql, conversationId: string) {
   const rows = await sql<{ id: number; result: { message?: string } | null }[]>`
     select id, result from audit_log where conversation_id = ${conversationId} and approver is not null order by id`;
   const updates = rows.filter((r) => r.result?.message).map((r) => ({ id: r.id, message: r.result!.message! }));
-  return { takenOverBy: c.taken_over_by, staff, updates };
+  return { takenOverBy: c.taken_over_by, staff, updates, ...(c.taken_over_by ? customerPending(c) : { pendingAction: null, pendingCode: null }) };
 }

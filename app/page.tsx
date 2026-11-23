@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DraftButton from "./components/DraftButton";
+import StaffActions from "./components/StaffActions";
 import { StatusChip, UrgencyChip } from "./components/Chat";
 import { RESET_EVENT } from "./components/events";
 
@@ -293,6 +294,12 @@ export default function InboxPage() {
                         <div className="msg msg-out"><div className="msg-meta">Alexis · AI</div><span className="dots" aria-label="Alexis is replying"><span /><span /><span /></span></div>
                       )}
                     </div>
+                    {mine && selected && (
+                      <details className="actions-drawer">
+                        <summary>Account actions</summary>
+                        <StaffActions conversationId={selected} staffId={staffId} onChange={() => { loadDetail(selected); load(); }} />
+                      </details>
+                    )}
                     {mine ? (
                       <form className="composer" onSubmit={(e) => { e.preventDefault(); if (reply.trim()) act("reply", reply); }}>
                         <label className="sr-only" htmlFor="staff-reply">Reply to the customer</label>

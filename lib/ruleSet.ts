@@ -254,6 +254,17 @@ export const RULE_SET: RuleSeed[] = [
   a("route_verification", "Routing", "Team for: Verification (KYC)", "Compliance team", "sample"),
   l("route_overdue_raise", "Routing", "Raise a case's urgency one step when it passes its response target with nobody on it", "on"),
 
+  // Staff actions (Nov 23): account actions the team takes from the console (lib/staffActions.ts). The same checks as
+  // Alexis's, the customer's yes in their app and the stronger check stay fixed; these say who may act on how much.
+  l("staff_actions_enabled", "Staff actions", "Staff can take account actions from the console", "on"),
+  l("staff_agent_actions", "Staff actions", "Support agents can take account actions (off: supervisors only)", "on"),
+  l("staff_agent_limit_usd", "Staff actions", "Highest amount a support agent can act on alone (USD)", "2000", "$"),
+  l("staff_agent_limit_gbp", "Staff actions", "Highest amount a support agent can act on alone (GBP)", "1500", "£"),
+  l("staff_agent_limit_ngn", "Staff actions", "Highest amount a support agent can act on alone (NGN)", "1000000", "₦"),
+  l("staff_dual_limit_usd", "Staff actions", "Above this, a second supervisor must approve (USD)", "10000", "$"),
+  l("staff_dual_limit_gbp", "Staff actions", "Above this, a second supervisor must approve (GBP)", "8000", "£"),
+  l("staff_dual_limit_ngn", "Staff actions", "Above this, a second supervisor must approve (NGN)", "5000000", "₦"),
+
   // Operations (Nov 23): the switch for Alexis herself, and outage mode with the notice customers see.
   l("alexis_enabled", "Operations", "Alexis answers customers (off: every message goes to the team)", "on"),
   l("outage_mode", "Operations", "Outage mode (Alexis and the customer app show the notice below)", "off"),

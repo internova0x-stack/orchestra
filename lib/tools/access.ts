@@ -31,7 +31,7 @@ export const sendOneTimeCode = {
     const c = await contact(ctx);
     if (!c.phone) return refuse(ctx, "send_one_time_code", {}, "There is no phone number on file, so no code can be sent. Offer the in-person or documented recovery route and hand off.", "no phone on file");
     const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
-    await ctx.sql`update conversations set pending_code = ${ctx.sql.json({ tool_use_id: ctx.toolUseId, code, sent_at: ctx.now.toISOString(), attempts: 0 } as never)} where id = ${ctx.conv.id}`;
+    await ctx.sql`update conversations set pending_code = ${ctx.sql.json({ tool_use_id: ctx.toolUseId, code, sent_at: ctx.now.toISOString(), attempts: 0, ...(ctx.staffAction ? { staff: ctx.staffAction.name, sent_to: maskPhone(c.phone) } : {}) } as never)} where id = ${ctx.conv.id}`;
     // A simulated text message: the demo has no real phone, so the screen shows what would arrive.
     ctx.emit({ type: "code_form", sentTo: maskPhone(c.phone), code });
     await audit(ctx, { kind: "identity", tool: "send_one_time_code", summary: `send_one_time_code · sent to ${maskPhone(c.phone)}` });
@@ -57,7 +57,7 @@ export const sendResetLink = {
     const [{ n }] = await ctx.sql<{ n: number }[]>`
       select count(*)::int as n from audit_log where user_id = ${user.id} and kind = 'action' and tool = ${T}
         and created_at > ${new Date(ctx.now.getTime() - 86_400_000)}`;
-    if (n >= limit) return refuse(ctx, T, {}, `${limit} reset links have been sent in the last 24 hours, so another needs a person to review it. Hand off.`, "daily limit reached");
+    if (n >= limit && !ctx.staffAction) return refuse(ctx, T, {}, `${limit} reset links have been sent in the last 24 hours, so another needs a person to review it. Hand off.`, "daily limit reached");
     const waiting = await confirmFirst(ctx, T, user.id, "password reset link", `Send a password reset link to ${maskEmail(c.email)}?`, "The link goes to the email address on file and expires after a short time.");
     if (waiting) return waiting;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · sent to ${maskEmail(c.email)}` });

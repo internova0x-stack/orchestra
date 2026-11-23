@@ -13,7 +13,7 @@ export interface Conversation {
   pending_results: unknown[];
   pending_action: PendingAction | null;
   stronger_verified_at: Date | null;
-  pending_code: { tool_use_id: string; code: string; sent_at: string; attempts: number } | null;
+  pending_code: { tool_use_id: string; code: string; sent_at: string; attempts: number; staff?: string; sent_to?: string } | null;
   last_activity: Date;
   /** The member of the team who took the conversation over in the console; Alexis is paused meanwhile. */
   taken_over_by: string | null;
@@ -41,6 +41,11 @@ export interface PendingAction {
   label: string;
   confirmed: boolean;
   asked_at: string;
+  /** Set when a member of the team asked for it from the console (lib/staffActions.ts): the customer answers in their app. */
+  staff?: { id: string; name: string; role: "support_agent" | "supervisor"; approvedBy?: string | null };
+  input?: unknown;
+  action?: string;
+  consequence?: string;
 }
 
 export interface VerifiedUser {
