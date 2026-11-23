@@ -734,3 +734,27 @@ a { color: var(--brand-accent); }
 h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .int-h, .int-ref-h, .int-name,
 .claim-h, .stat-value, .case-business, .login-card .wordmark { font-family: var(--font-heading); }
 .page-title, .panel-title, .dev-h, .int-h, .int-ref-h { letter-spacing: -0.01em; }
+
+/* Messages: room for the conversation (Tomi, Nov 23). The page scrolls; the counts are one compact line; filters fold
+   behind a button; the conversation's controls are one toolbar; the activity column is narrower and can hide. */
+.page { overflow-y: auto; }
+.cases-page { height: auto; min-height: 0; gap: var(--space-3); }
+.cases-grid { flex: none; height: calc(100dvh - 140px); min-height: 560px; grid-template-columns: 360px minmax(0, 1fr); }
+.stat-strip { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mini-stat { padding: 6px 12px; border-radius: 999px; background: var(--surface-panel); border: 1px solid var(--edge); font-size: var(--size-sm); color: var(--text-2); white-space: nowrap; }
+.mini-stat b { color: var(--text-1); font-family: var(--font-heading); font-variant-numeric: tabular-nums; }
+.mini-stat.mini-stop b { color: var(--stop); }
+.search-row { display: flex; gap: var(--space-2); }
+.search-row .filter-input { flex: 1; }
+.btn.on, .filters-toggle.on { background: var(--info-bg); color: var(--info); border-color: var(--info-line); }
+.filter-row { align-items: center; }
+.watch-grid { grid-template-columns: minmax(0, 1fr) 300px; }
+.watch-grid.no-activity { grid-template-columns: minmax(0, 1fr); }
+.watch-grid.no-activity .watch-chat { border-right: 0; }
+.takeover-bar { padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.takeover-state { flex: 1; min-width: 200px; }
+.toolbar-extras { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: auto; }
+.toolbar-extras .btn { min-height: 32px; padding: 0 12px; }
+.inbox-head { padding-top: var(--space-3); padding-bottom: var(--space-3); }
+@media (max-width: 1100px) { .cases-grid { grid-template-columns: 300px minmax(0, 1fr); } .watch-grid { grid-template-columns: minmax(0, 1fr) 240px; } }
+@media (max-width: 899px) { .cases-grid { height: auto; grid-template-columns: 1fr; } .watch-grid { grid-template-columns: 1fr; } }

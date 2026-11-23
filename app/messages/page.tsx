@@ -67,6 +67,12 @@ export default function InboxPage() {
   const [reviewed, setReviewed] = useState(ALL);
   const [translation, setTranslation] = useState<{ who: string; text: string; staff?: string }[] | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  // Space for the conversation (Tomi, Nov 23): filters fold away, the review bar opens on demand, the activity can hide.
+  const [showFilters, setShowFilters] = useState(false);
+  const [showReview, setShowReview] = useState(false);
+  const [showActivity, setShowActivity] = useState(true);
+  useEffect(() => { try { setShowActivity(localStorage.getItem("orchestra-activity") !== "hidden"); } catch {} }, []);
+  const toggleActivity = () => setShowActivity((v) => { try { localStorage.setItem("orchestra-activity", v ? "hidden" : "shown"); } catch {} return !v; });
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -184,16 +190,31 @@ export default function InboxPage() {
     }
   }
 
+  const activeFilters = [status, category, urgency, channel, reviewed].filter((v) => v !== ALL).length;
+  // The conversation's toolbar, on the right: review, translate, and showing or hiding the activity.
+  const toolbarExtras = (
+    <span className="toolbar-extras">
+      {detail?.review && <span className={`tag tag-${detail.review.rating === "good" ? "live" : "pending"}`}>{detail.review.rating === "good" ? "Good" : "Needs work"} · {detail.review.by}</span>}
+      {canAct && <button className={`btn${showReview ? " on" : ""}`} aria-expanded={showReview} onClick={() => setShowReview((v) => !v)}>Review</button>}
+      {detail && detail.language !== "en" && (
+        translation
+          ? <button className="btn" onClick={() => setTranslation(null)}>Original ({LANGUAGE_NAME[detail.language] ?? detail.language})</button>
+          : <button className="btn" disabled={!canAct || acting} onClick={() => act("translate")}>Translate</button>
+      )}
+      <button className={`btn${showActivity ? " on" : ""}`} aria-pressed={showActivity} onClick={toggleActivity} title={showActivity ? "Hide what Alexis is doing" : "Show what Alexis is doing"}>Activity</button>
+    </span>
+  );
+
   return (
     <div className="cases-page">
       {counts && (
-        <div className="stat-row" aria-label="Message numbers">
-          <Stat value={counts.total} label="Conversations" />
-          <Stat value={counts.open} label="Open now" />
-          <Stat value={counts.resolvedByAlexis} label="Resolved by Alexis" />
-          <Stat value={counts.handedOff} label="Handed to a person" />
-          <Stat value={counts.urgentOpen} label="Urgent and open" tone={counts.urgentOpen ? "stop" : undefined} />
-          <Stat value={counts.withoutPerson == null ? "–" : `${counts.withoutPerson}%`} label="Resolved without a person" />
+        <div className="stat-strip" aria-label="Message numbers">
+          <MiniStat value={counts.total} label="conversations" />
+          <MiniStat value={counts.open} label="open now" />
+          <MiniStat value={counts.resolvedByAlexis} label="resolved by Alexis" />
+          <MiniStat value={counts.handedOff} label="handed to a person" />
+          <MiniStat value={counts.urgentOpen} label="urgent and open" tone={counts.urgentOpen ? "stop" : undefined} />
+          <MiniStat value={counts.withoutPerson == null ? "–" : `${counts.withoutPerson}%`} label="resolved without a person" />
         </div>
       )}
 
@@ -201,16 +222,22 @@ export default function InboxPage() {
         <section className="panel" aria-label="Conversations">
           <div className="filters">
             <label className="sr-only" htmlFor="case-search">Search</label>
-            <input id="case-search" className="filter-input" placeholder="Search customer, business or reference" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <div className="filter-row">
+            <div className="search-row">
+              <input id="case-search" className="filter-input" placeholder="Search name or reference" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <button className={`btn filters-toggle${activeFilters ? " on" : ""}`} aria-expanded={showFilters} onClick={() => setShowFilters((v) => !v)}>
+                Filters{activeFilters ? ` · ${activeFilters}` : ""}
+              </button>
+            </div>
+            {showFilters && <div className="filter-row">
               <Filter label="Status" value={status} onChange={setStatus} options={[[ALL, "Status"], ["open", "All open"], ...STATUS_ORDER.map((s) => [s, s] as [string, string])]} />
               <Filter label="Category" value={category} onChange={setCategory} options={[[ALL, "Category"], ...categories.map((s) => [s, `${s} (${inCategory.get(s) ?? 0})`] as [string, string])]} />
               <Filter label="Urgency" value={urgency} onChange={setUrgency} options={[[ALL, "Urgency"], ["urgent", "Urgent"], ["high", "High"], ["normal", "Normal"], ["none", "Not handed off"]]} />
               <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["whatsapp", "WhatsApp"], ["email", "Email"], ["helpdesk", "Helpdesk (listening)"]]} />
               <Filter label="Review" value={reviewed} onChange={setReviewed} options={[[ALL, "Review"], ["none", "Not reviewed"], ["good", "Good"], ["needs_work", "Needs work"]]} />
-            </div>
+              {activeFilters > 0 && <button className="btn btn-link" onClick={() => { setStatus(ALL); setCategory(ALL); setUrgency(ALL); setChannel(ALL); setReviewed(ALL); }}>Clear filters</button>}
+              {canAct && <SampleTicket onSent={load} />}
+            </div>}
             <span className="label">{shown.length} of {cases?.length ?? 0} conversations · updates live</span>
-            {canAct && <SampleTicket onSent={load} />}
           </div>
           <div className="case-list">
             {problem && <div className="empty">{problem}</div>}
@@ -259,7 +286,6 @@ export default function InboxPage() {
 
               {c.listen && detail?.listen ? <ListenPanel l={detail.listen} /> : (
               <div className="takeover-bar">
-                <span className="label">Signed in as <b>{staffList[0]?.name ?? "…"}</b></span>
                 <span className="takeover-state">
                   {takenBy ? <><b>{takenBy}</b> is handling this conversation. Alexis is paused.</>
                     : waiting ? <><b>Waiting for the team.</b> {waiting === "switched_off" ? "Alexis is switched off, so the customer's messages come to you." : "The AI service was down, so this came to you. Alexis answers again on the customer's next message."} Take over to reply.</>
@@ -267,27 +293,24 @@ export default function InboxPage() {
                 </span>
                 {!takenBy && canAct && <button className="btn btn-primary" disabled={!canAct || acting || !detail} onClick={() => act("take_over")} title={staff ? "" : "Sign in first"}>Take over</button>}
                 {mine && <button className="btn" disabled={acting} onClick={() => act("hand_back")}>Hand back to Alexis</button>}
+                {toolbarExtras}
               </div>
               )}
-              <div className="takeover-bar review-bar">
+              {c.listen && detail?.listen && <div className="takeover-bar"><span className="takeover-state" />{toolbarExtras}</div>}
+              {showReview && <div className="takeover-bar review-bar">
                 <span className="label">Review</span>
                 {detail?.review && <span className={`tag tag-${detail.review.rating === "good" ? "live" : "pending"}`}>{detail.review.rating === "good" ? "Good" : "Needs work"} · {detail.review.by}{detail.review.note ? `: ${detail.review.note}` : ""}</span>}
                 <label className="sr-only" htmlFor="review-note">Review note</label>
                 <input id="review-note" className="filter-input review-note" placeholder="Note (optional)" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} maxLength={1000} />
                 <button className="btn" disabled={!canAct || acting || !detail} onClick={() => act("review", undefined, "good")} title={staff ? "" : "Sign in first"}>Good</button>
                 <button className="btn" disabled={!canAct || acting || !detail} onClick={() => act("review", undefined, "needs_work")} title={staff ? "" : "Sign in first"}>Needs work</button>
-                {detail && detail.language !== "en" && (
-                  translation
-                    ? <button className="btn" onClick={() => setTranslation(null)}>Show the original ({LANGUAGE_NAME[detail.language] ?? detail.language})</button>
-                    : <button className="btn" disabled={!canAct || acting} onClick={() => act("translate")}>Translate to English</button>
-                )}
-              </div>
+              </div>}
               {actError && <div className="case-error takeover-error" role="alert">{actError}</div>}
 
               {!detail ? (
                 <div className="empty">Loading…</div>
               ) : (
-                <div className="watch-grid">
+                <div className={`watch-grid${showActivity ? "" : " no-activity"}`}>
                   <div className="watch-chat">
                     <div className="history" ref={chatRef} aria-live="polite">
                       {translation && <div className="chat-notice">English translation for the team. The customer sees the original.</div>}
@@ -321,7 +344,7 @@ export default function InboxPage() {
                       </div>
                     )}
                   </div>
-                  <div className="watch-activity">
+                  {showActivity && <div className="watch-activity">
                     <div className="watch-title">What Alexis is doing</div>
                     <div className="activity-list">
                       {detail.activity.length === 0 && <div className="empty">Nothing looked up or done yet.</div>}
@@ -334,7 +357,7 @@ export default function InboxPage() {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </div>}
                 </div>
               )}
             </>
@@ -345,14 +368,10 @@ export default function InboxPage() {
   );
 }
 
-function Stat({ value, label, tone }: { value: number | string; label: string; tone?: "stop" }) {
-  return (
-    <div className={`stat${tone ? ` stat-${tone}` : ""}`}>
-      <span className="stat-value">{value}</span>
-      <span className="label">{label}</span>
-    </div>
-  );
+function MiniStat({ value, label, tone }: { value: number | string; label: string; tone?: "stop" }) {
+  return <span className={`mini-stat${tone ? ` mini-${tone}` : ""}`}><b>{value}</b> {label}</span>;
 }
+
 
 function Filter({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
