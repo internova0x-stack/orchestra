@@ -11,6 +11,17 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   details already on file, never to a number or address given in chat; the agent never asks the
   customer to read back a code the bank didn't just send for this purpose. Left out of the first demo
   (owner, Nov 23); the demo runs `initiate_recall` on the standard check plus payment rights.
+- **"Sign in with Zendesk / HubSpot" (OAuth) for the CRM connectors** (owner, Nov 23): needed before
+  Orchestra is offered to more than one bank. Zendesk's Developer Terms require a global OAuth client
+  for an app used by several Zendesk customers (customers may not share API tokens with a vendor, and
+  API tokens are marked deprecated); HubSpot stopped new legacy private apps on Oct 26, 2026, so new
+  connections need an app on its new developer platform. Work: register Orchestra with each (Zendesk
+  reviews and approves a global OAuth client; HubSpot app via its developer platform), a Connect button
+  that opens the product's sign-in window, store the refresh token encrypted like today's details, renew
+  access tokens, and where the API allows it create the webhook automatically so step 2 disappears.
+  Freshdesk (API key) and Salesforce (connected app) keep typed details until checked otherwise; the
+  Salesforce docs were not verified (they need a browser). Today's typed-token connect stays for the
+  pilot.
 
 
 ## Built on Nov 23 (after the demo)
