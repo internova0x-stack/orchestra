@@ -38,7 +38,7 @@ How the design's components work underneath (decided Nov 23):
 **The demo moment:** a viewer changes one rule and Alexis behaves differently in the same conversation.
 (a) Lower the recall cap from $10,000 to $2,000: the same recall request now goes to a human for
 approval (safety test S6, PO-88150). (b) Change the SWIFT late window from 3 business days to 2: Alexis now
-describes the same payout as late and escalates it (planted case 1).
+describes the same payout as late and escalates it (test 1's PO-88190; see "Planted cases and tests").
 
 Facts come from `docs/KNOWLEDGE-BASE.md`: sourced entries (Nuvion's public docs) are stated as the
 normal expectation, never a guarantee; sample entries are invented and never presented as Nuvion's
