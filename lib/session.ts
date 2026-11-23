@@ -40,6 +40,8 @@ export interface VerifiedUser {
   personal: boolean;
   /** Passed the stronger check (one-time code) in this session. */
   stronger: boolean;
+  /** The business's country, which picks the market's rule values. */
+  country: string;
 }
 
 export async function loadConversation(sql: Sql, id: string): Promise<Conversation | null> {
@@ -60,7 +62,7 @@ export async function verifiedUser(sql: Sql, conv: Conversation, now: Date): Pro
   if (idle > SESSION_IDLE_MINUTES * 60_000) return null;
   const rows = await sql<VerifiedUser[]>`
     select u.id, u.full_name, u.first_name, u.role, u.business_id, b.name as business_name,
-      (b.kind = 'personal') as personal, false as stronger
+      (b.kind = 'personal') as personal, false as stronger, b.country
     from business_users u join businesses b on b.id = u.business_id
     where u.id = ${conv.verified_user_id}`;
   const user = rows[0];

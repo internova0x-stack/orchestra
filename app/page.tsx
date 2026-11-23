@@ -52,6 +52,12 @@ export default function InboxPage() {
   const chatRef = useRef<HTMLDivElement>(null);
   const staff = staffList.find((s) => s.id === staffId) ?? null;
 
+  // A link from the Rules screen (/?c=<conversation>) opens that conversation.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("c");
+    if (id && /^[0-9a-f-]{36}$/i.test(id)) { picked.current = true; setSelected(id); }
+  }, []);
+
   useEffect(() => {
     fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => setStaffList(j.staff ?? [])).catch(() => {});
     try { setStaffId(localStorage.getItem("orchestra-staff") ?? ""); } catch {}

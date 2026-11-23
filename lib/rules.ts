@@ -15,14 +15,30 @@ export interface Rule {
  * The rules, read fresh from the database. Called once per tool call, never cached across
  * messages, so a Rules screen edit applies to Alexis's next message.
  */
+/** The markets a rule can have its own value in. */
+export type Market = "NG" | "UK" | "US";
+export const MARKETS: { id: Market; name: string; country: string }[] = [
+  { id: "NG", name: "Nigeria", country: "Nigeria" },
+  { id: "UK", name: "United Kingdom", country: "United Kingdom" },
+  { id: "US", name: "United States", country: "United States" },
+];
+export const marketOf = (country: string | null | undefined): Market | null => MARKETS.find((m) => m.country === country)?.id ?? null;
+
 export class Rules {
   private byId: Map<string, Rule>;
   private constructor(byId: Map<string, Rule>) {
     this.byId = byId;
   }
 
-  static async load(sql: Sql): Promise<Rules> {
-    const rows = await sql<Rule[]>`select id, category, name, kind, origin, value, unit from rules`;
+  /**
+   * The rules in force, read fresh. With a market (NG, UK, US), that market's own values replace the
+   * defaults where the Rules screen set one.
+   */
+  static async load(sql: Sql, market?: Market | null): Promise<Rules> {
+    const rows = market
+      ? await sql<Rule[]>`select r.id, r.category, r.name, r.kind, r.origin, coalesce(o.value, r.value) as value, r.unit
+          from rules r left join rule_overrides o on o.rule_id = r.id and o.market = ${market}`
+      : await sql<Rule[]>`select id, category, name, kind, origin, value, unit from rules`;
     return new Rules(new Map(rows.map((r) => [r.id, r])));
   }
 

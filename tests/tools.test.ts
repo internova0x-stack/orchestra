@@ -12,6 +12,7 @@ import { Rules } from "../lib/rules.ts";
 import { fromLocal } from "../lib/time.ts";
 import { categoryOf, statusOf, urgencyOf, listCases, caseCounts, transcriptOf } from "../lib/cases.ts";
 import { buildDashboard, timeRuleId } from "../lib/dashboard.ts";
+import { proposeChange, decideChange, pendingChanges, ruleHistory, ruleImpact } from "../lib/ruleChanges.ts";
 import { RULE_SET } from "../lib/ruleSet.ts";
 import { appendTurn, forModel, takeOver, handBack, staffReply, customerView } from "../lib/takeover.ts";
 import { runTurn } from "../lib/agent.ts";
@@ -1061,4 +1062,60 @@ test("dashboard: every category has a handling time, and time saved follows the 
   await sql!`update rules set value = '30' where id = 'time_payouts'`;
   const again = buildDashboard([row("Resolved by Alexis", "Payouts")], await Rules.load(sql!), MONDAY);
   assert.equal(again.totals.minutesSaved, 30, "a Rules screen edit changes the dashboard");
+});
+
+
+// ---------------------------------------------------------------- rules management
+
+test("rules: an agent's change waits for a supervisor; a supervisor's goes live; markets have their own values; undo", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const ife = (await staffUser(sql!, "ife"))!;
+  const bayo = (await staffUser(sql!, "bayo"))!;
+  const cap = async (market?: "NG" | "UK" | "US") => (await Rules.load(sql!, market)).num("waiver_cap_ngn", -1);
+  assert.equal(await cap(), 2000);
+
+  const p = await proposeChange(sql!, { ruleId: "waiver_cap_ngn", market: null, value: "3,000", staff: ife });
+  assert.ok(p.ok && p.status === "pending");
+  assert.equal(await cap(), 2000, "not live until approved");
+  const again = await proposeChange(sql!, { ruleId: "waiver_cap_ngn", market: null, value: "4000", staff: bayo });
+  assert.ok(!again.ok, "one waiting change per rule");
+  assert.deepEqual((await decideChange(sql!, (p as { change: number }).change, ife, true)), { ok: false, error: "Only a supervisor can approve or decline rule changes." });
+  assert.deepEqual(await decideChange(sql!, (p as { change: number }).change, bayo, true), { ok: true });
+  assert.equal(await cap(), 3000);
+  assert.equal((await pendingChanges(sql!)).length, 0);
+
+  // Nigeria only: the default stays for everyone else, and the tools read the customer's market.
+  const ng = await proposeChange(sql!, { ruleId: "waiver_cap_ngn", market: "NG", value: "5000", staff: bayo });
+  assert.ok(ng.ok && ng.status === "live");
+  assert.equal(await cap("NG"), 5000);
+  assert.equal(await cap("UK"), 3000);
+  assert.equal(await cap(), 3000);
+  const back = await proposeChange(sql!, { ruleId: "waiver_cap_ngn", market: "NG", value: null, staff: bayo });
+  assert.ok(back.ok);
+  assert.equal(await cap("NG"), 3000, "back to the default");
+
+  // Undo is a change like any other; the history keeps every step.
+  const undo = await proposeChange(sql!, { ruleId: "waiver_cap_ngn", market: null, value: "2000", staff: bayo, source: "Restore" });
+  assert.ok(undo.ok);
+  assert.equal(await cap(), 2000);
+  const h = await ruleHistory(sql!, "waiver_cap_ngn");
+  assert.deepEqual(h.map((x) => [x.market, x.new_value, x.status]), [[null, "2000", "live"], ["NG", null, "live"], ["NG", "5000", "live"], [null, "3000", "live"]]);
+
+  // A policy document's proposals wait even when a supervisor uploads it.
+  const doc = await proposeChange(sql!, { ruleId: "dispute_window", market: null, value: "90", staff: bayo, source: "Policy: card-policy.pdf", note: "Disputes must be raised within 90 days.", review: true });
+  assert.ok(doc.ok && doc.status === "pending");
+  assert.equal((await Rules.load(sql!)).num("dispute_window", 0), 120);
+  const log = await sql!`select summary, staff from audit_log where kind = 'rule_edit' order by id`;
+  assert.ok(log.every((r) => r.staff), "every rule change names who made it");
+});
+
+test("rules: past conversations show where Alexis used a rule", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("ada", MONDAY);
+  await sql!`update conversations set messages = ${sql!.json([{ role: "user", content: "Where is it?" }] as never)} where id = ${s.conv.id}`;
+  await call(s, "get_transfer_status", { recipient: "Lumen Print" });
+  const used = await ruleImpact(sql!, "late_swift");
+  assert.equal(used.length, 1);
+  assert.equal(used[0].conversation_id, s.conv.id);
+  assert.equal(used[0].business, "Brightline Studios Ltd");
 });

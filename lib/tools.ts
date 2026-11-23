@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
-import { Rules, settlementRuleId } from "./rules.ts";
+import { Rules, marketOf, settlementRuleId } from "./rules.ts";
 import { maskAccount, money, statusLabel } from "./format.ts";
 import {
   addBusinessDays,
@@ -891,7 +891,8 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx, mod
     await audit(ctx, { kind: "error", tool: name, summary: `${name} · invalid input`, input: rawInput });
     return { ok: false, reason: `INVALID_INPUT: ${parsed.error.message}` };
   }
-  const rules = await Rules.load(ctx.sql); // fresh every call: a Rules screen edit applies at once
+  // Fresh every call: a Rules screen edit applies at once, with the customer's market's own values.
+  const rules = await Rules.load(ctx.sql, marketOf(ctx.user?.country));
   // Check 1: an action with a switch on the Rules screen is refused while it's off.
   const sw = rules.get(`action_${name}`);
   if (sw && !rules.on(`action_${name}`)) {

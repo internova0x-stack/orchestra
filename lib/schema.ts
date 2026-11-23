@@ -457,10 +457,28 @@ alter table conversations add column if not exists taken_over_at timestamptz;
 -- Which version of this schema the database has, so a new server process skips the DDL (and its table
 -- locks) when nothing changed. Written by ensureSeeded after the schema runs.
 create table if not exists app_meta (key text primary key, value text not null);
+
+-- Rules management: changes wait for a supervisor's approval (a supervisor's own edit goes live at once),
+-- keep their history, and can set a value for one market only (an override of the default value).
+alter table rule_changes add column if not exists market text;
+alter table rule_changes add column if not exists status text not null default 'live';
+alter table rule_changes add column if not exists source text;
+alter table rule_changes add column if not exists note text;
+alter table rule_changes add column if not exists decided_by text;
+alter table rule_changes add column if not exists decided_at timestamptz;
+create table if not exists rule_overrides (
+  rule_id text not null references rules(id) on delete cascade,
+  market text not null check (market in ('NG','UK','US')),
+  value text not null,
+  updated_by text not null,
+  updated_at timestamptz not null default now(),
+  primary key (rule_id, market)
+);
 `;
 
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
+  "rule_overrides",
   "audit_log",
   "ussd_sessions",
   "bill_payments",

@@ -111,7 +111,7 @@ export async function ruleRead(ctx: ToolCtx, rules: Rules, id: string, label?: s
   const sym = { $: "USD", "£": "GBP", "₦": "NGN" }[r.unit ?? ""];
   const unit = r.unit && r.value.trim() === "1" ? r.unit.replace(/(day|hour)s\b/, "$1") : r.unit;
   const value = sym ? money(Number(r.value), sym).replace(/\.00$/, "") : unit ? `${r.value} ${unit}` : r.value;
-  await audit(ctx, { kind: "rule", summary: `rule · ${label ?? r.name} · ${value}` });
+  await audit(ctx, { kind: "rule", summary: `rule · ${label ?? r.name} · ${value}`, input: { rule: id, value: r.value } });
 }
 
 /** Refuse with a plain-language reason for Alexis and a short label for the activity panel. */

@@ -361,6 +361,32 @@ a { color: var(--brand-accent); }
   .phone { width: 100%; height: calc(100dvh - 32px); border-radius: 0; border: 0; }
 }
 
+/* ---------- Rules management: sign-in, markets, approvals, history ---------- */
+.rules-page { display: flex; flex-direction: column; gap: var(--space-3); height: 100%; min-height: 0; }
+.rules-page .rules-grid { flex: 1; min-height: 0; }
+.rules-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.rules-who { margin-left: auto; }
+.tag-market { margin-left: var(--space-2); color: var(--brand-accent); background: var(--brand-50); }
+.tag-live { color: var(--ok); background: var(--ok-bg); }
+.tag-pending { color: var(--wait); background: var(--wait-bg); }
+.tag-declined { color: var(--stop); background: var(--stop-bg); }
+.pending { flex: none; max-height: 40vh; overflow-y: auto; }
+.pending .panel-head { flex-wrap: wrap; }
+.pending-list { list-style: none; margin: 0; padding: 0; }
+.pending-list > li { padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--border); display: grid; gap: var(--space-2); }
+.pending-main { display: flex; gap: var(--space-4); justify-content: space-between; flex-wrap: wrap; }
+.pending-buttons { display: flex; gap: var(--space-2); align-items: flex-start; flex-wrap: wrap; }
+.pending-quote { margin: var(--space-1) 0 0; padding-left: var(--space-3); border-left: 2px solid var(--border-strong); color: var(--text-2); font-size: var(--size-sm); }
+.rule-detail-row td { background: var(--surface-sunk); }
+.rule-detail { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); padding: var(--space-2) 0; }
+.rule-detail .claim-h { margin-top: 0; }
+.history-list, .impact ul { margin: var(--space-2) 0 0; padding-left: 0; list-style: none; display: grid; gap: var(--space-2); font-size: var(--size-sm); }
+.history-list .copy { margin-left: var(--space-2); min-height: 32px; }
+.rule-value .copy { margin-top: var(--space-2); }
+.policy-result { padding: var(--space-3) var(--space-4); width: 100%; font-size: var(--size-sm); }
+.policy-result ul { margin: var(--space-2) 0; padding-left: var(--space-6); }
+@media (max-width: 899px) { .rule-detail { grid-template-columns: 1fr; } .rules-who { margin-left: 0; width: 100%; } }
+
 /* ---------- Dashboard: hours saved ---------- */
 .dash { display: grid; gap: var(--space-4); align-content: start; height: 100%; overflow-y: auto; }
 .dash-note { margin: 0; }
