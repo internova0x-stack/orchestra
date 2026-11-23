@@ -71,8 +71,11 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Listen mode: `lib/listen.ts` (`ingestInteraction` from `/api/v1/interactions` and the CRM connectors; conversations
   with `origin = 'listen'`, channel 'helpdesk', `listen` jsonb with the match and analysis; never replies or acts).
 - CRM connectors: `lib/crm/` (contract, the four connectors to published APIs, the sandbox stand-in, `service.ts`:
-  settings in `crm_connectors`, credentials only in env vars, `handleCrmWebhook` → listen mode → write-back);
-  webhook `/api/v1/connectors/{kind}/webhook`; managed on the API page (`/api/admin/connectors`).
+  settings in `crm_connectors`; a bank connects its own account on the API page (`connectWithCredentials`: checked with the product, then
+  kept AES-256-GCM encrypted by `lib/crm/credentials.ts`, key `CREDENTIALS_KEY` or derived from the database address; only the account and
+  last 4 go back to the browser; Disconnect forgets them), env vars only for the Orchestra team's own test accounts; demos (mode 'sandbox')
+  are a pretend product, never Active; `handleCrmWebhook` → listen mode → write-back);
+  webhook `/api/v1/connectors/{kind}/webhook/{token}` (the secret token in the address, shown only to API managers) or `/webhook` with an API key; managed on the API page (`/api/admin/connectors`).
   Data entry: `lib/crm/dataEntry.ts` (`dataEntryOnEvent` from `emitEvent`, `recordResolved` from the Inbox's refresh; `crm_records`).
 - Proactive failure messages: `lib/proactive.ts` (`notifyFailure` from the Events API's failure types; `proactive_*`
   rules; conversations with `origin = 'alexis'` and `proactive`; `deliverDue` for quiet hours). CRM team replies:
@@ -130,7 +133,8 @@ Tomi owns the project, is non-technical and doesn't write or edit code.
   delete them. The activity panel is a live view of that table.
 - Every tool returns `{ ok, data | reason, reference }`. Actions carry the record they apply to; a
   second attempt on the same record is refused and returns the first reference.
-- API keys live only in environment variables (Vercel's settings; `.env.local` for a local copy, which
+- API keys live only in environment variables (a bank's own helpdesk credentials, typed on the API page, are the exception:
+  encrypted in `crm_connectors`, owner Nov 23) (Vercel's settings; `.env.local` for a local copy, which
   is in `.gitignore` before anything else is committed). Never in client code, never in git. The browser
   talks only to this app's routes.
 - Every tool call, refusal, approval and rule edit is written to the audit log.

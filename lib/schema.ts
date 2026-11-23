@@ -272,6 +272,14 @@ alter table crm_connectors add column if not exists last_error text;
 alter table crm_connectors add column if not exists last_error_status int;
 alter table crm_connectors add column if not exists last_error_at timestamptz;
 alter table crm_connectors add column if not exists recent jsonb not null default '[]';
+-- A bank connects its own helpdesk on the API page (Nov 23): the details it typed, encrypted (lib/crm/credentials.ts),
+-- the account and the secret's last 4 for the screen, and the secret part of the connector's webhook address.
+alter table crm_connectors add column if not exists credentials text;
+alter table crm_connectors add column if not exists account text;
+alter table crm_connectors add column if not exists secret_last4 text;
+alter table crm_connectors add column if not exists webhook_token text;
+alter table crm_connectors add column if not exists connected_by text;
+alter table crm_connectors add column if not exists connected_at timestamptz;
 create table if not exists crm_records (
   conversation_id uuid not null references conversations(id) on delete cascade,
   kind text not null,

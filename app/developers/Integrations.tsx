@@ -8,10 +8,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Connector API), the four CRM connectors, webhook endpoints and API keys. Operations and IT admins change them;
 // supervisors and compliance can look.
 
-interface Health { state: "attention" | "active" | "off"; label: string | null; fix: "setup" | "reconnect" | "errors" | null; failures: number }
+interface Field { id: string; label: string; placeholder: string; secret?: boolean; suffix?: string; hint?: string }
+interface Health { state: "attention" | "active" | "off" | "demo"; label: string | null; fix: "setup" | "reconnect" | "errors" | null; failures: number }
 interface Conn {
   kind: string; name: string; mode: "off" | "sandbox" | "live"; write_back: boolean; data_entry: boolean; groups: Record<string, string>;
-  envReady: boolean; envNeeded: string[]; sample: unknown; health: Health; ticketsWeek: number; last_error: string | null; last_received_at: string | null;
+  envReady: boolean; envNeeded: string[]; fromTeam: boolean; fields: Field[]; webhookPath: string | null; account: string | null; secret_last4: string | null; sample: unknown; health: Health; ticketsWeek: number; last_error: string | null; last_received_at: string | null;
   activity: { id: number; kind: string; summary: string; created_at: string }[]; writes: { id: number; method: string; path: string; body: unknown; at: string }[];
 }
 interface Key { id: string; name: string; prefix: string; created_by: string; created_at: string; last_used_at: string | null; revoked_at: string | null }
@@ -23,7 +24,7 @@ type Tab = "all" | "connectors" | "webhooks" | "keys";
 type Tone = "warn" | "ok" | "info" | "muted";
 interface Item {
   id: string; tab: Exclude<Tab, "all">; name: string; sub: string; letter: string; tile: 1 | 2 | 3 | 4 | 5;
-  state: "attention" | "active" | "off"; chip: { text: string; tone: Tone } | null;
+  state: "attention" | "active" | "off" | "demo"; chip: { text: string; tone: Tone } | null;
   primary: { label: string; run: () => void } | null;
   menu: { label: string; run: () => void; danger?: boolean }[];
 }
@@ -107,6 +108,23 @@ export default function Integrations() {
     if (j && body.mode) setConns((cs) => cs.map((c) => (c.kind === kind ? { ...c, mode: body.mode as Conn["mode"], health: body.mode === "off" ? { ...c.health, state: "off" } : c.health.state === "off" ? { ...c.health, state: "active" } : c.health } : c)));
     return j;
   };
+  /** Connect a bank's own helpdesk: the error comes back to the form, not the top of the list. */
+  async function connectCrm(kind: string, name: string, fields: Record<string, string>): Promise<string | null> {
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await fetch("/api/admin/connectors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, action: "connect", fields }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) return j.error ?? "That didn't go through. Try again.";
+      setNote({ text: `✓ Connected to ${j.account}. Now step 2: tell ${name.split(" ")[0]} about new tickets.`, tone: "ok" });
+      await load();
+      return null;
+    } catch {
+      return "That didn't go through. Check the connection and try again.";
+    } finally {
+      setBusy(false);
+    }
+  }
   const open = (id: string) => { setSelected(id); setAdding(null); setNote(null); };
 
   // Every connection as a row.
@@ -125,24 +143,26 @@ export default function Integrations() {
     }
     for (const c of conns) {
       const h = c.health;
+      const short = c.name.split(" ")[0];
+      const live = c.mode === "live", demo = c.mode === "sandbox", waiting = live && !c.last_received_at;
       out.push({
         id: `crm:${c.kind}`, tab: "connectors", name: c.name, letter: c.name[0], tile: TILE[c.kind] ?? 5,
-        sub: c.mode === "off" ? "CRM connector · Off" : `CRM connector · Write-back ${c.write_back ? "on" : "off"} · Data entry ${c.data_entry ? "on" : "off"} · ${Object.keys(c.groups).length} team${Object.keys(c.groups).length === 1 ? "" : "s"} mapped · ${c.ticketsWeek} ticket${c.ticketsWeek === 1 ? "" : "s"} this week`,
+        sub: c.mode === "off" ? "Helpdesk · Not connected"
+          : demo ? `Demo · a pretend ${short} with sample tickets · nothing real connected`
+          : `Helpdesk · ${c.fromTeam ? "the Orchestra team's test account" : c.account ?? short} · ${waiting ? "waiting for the first ticket" : `${c.ticketsWeek} ticket${c.ticketsWeek === 1 ? "" : "s"} this week · last ${ago(c.last_received_at!)} ago`}`,
         state: h.state,
-        chip: h.state === "attention" ? { text: h.label!, tone: "warn" } : c.mode === "live" ? { text: "✓ Live", tone: "ok" } : c.mode === "sandbox" ? { text: "Sandbox", tone: "info" } : null,
+        chip: h.state === "attention" ? { text: h.label!, tone: "warn" } : demo ? { text: "Demo", tone: "warn" } : waiting ? { text: "Step 2 to do", tone: "warn" } : live ? { text: "✓ Connected", tone: "ok" } : null,
         primary: !canManage ? null
           : h.fix === "reconnect" ? { label: "Reconnect", run: () => crm(c.kind, { action: "reconnect" }, () => `${c.name} is working again.`) }
           : h.fix === "errors" ? { label: "See errors", run: () => open(`crm:${c.kind}`) }
-          : h.fix === "setup" ? { label: "Set up", run: () => open(`crm:${c.kind}`) }
           : c.mode === "off" ? { label: "Connect", run: () => open(`crm:${c.kind}`) }
-          : { label: "Disconnect", run: () => crm(c.kind, { mode: "off" }, () => `${c.name} is disconnected. Nothing is read from it or written to it.`) },
+          : waiting ? { label: "Finish setup", run: () => open(`crm:${c.kind}`) }
+          : { label: demo ? "End demo" : "Disconnect", run: () => crm(c.kind, { action: "disconnect", mode: "off" }, () => demo ? "Demo ended." : `${c.name} is disconnected and its stored details removed.`) },
         menu: [
-          { label: "Settings", run: () => open(`crm:${c.kind}`) },
-          ...(canManage && c.mode !== "off" ? [{ label: "Send a test ticket", run: () => crm(c.kind, { action: "test" }, (j) => j.written_back ? "Test ticket read, analysed and written back." : "Received: nothing new to analyse.") }] : []),
-          ...(canManage && c.mode === "live" ? [{ label: "Switch to sandbox", run: () => crm(c.kind, { mode: "sandbox" }, () => "Switched to the sandbox.") }] : []),
-          ...(canManage && c.mode === "sandbox" && c.envReady ? [{ label: "Go live", run: () => crm(c.kind, { mode: "live" }, () => "Live.") }] : []),
-          { label: "Copy webhook address", run: () => { navigator.clipboard?.writeText(`${window.location.origin}/api/v1/connectors/${c.kind}/webhook`).catch(() => {}); setNote({ text: "Webhook address copied.", tone: "ok" }); } },
-          ...(canManage && c.mode !== "off" ? [{ label: "Disconnect", run: () => crm(c.kind, { mode: "off" }, () => `${c.name} is disconnected.`), danger: true }] : []),
+          { label: c.mode === "off" ? "Connect" : "Settings", run: () => open(`crm:${c.kind}`) },
+          ...(canManage && demo ? [{ label: "Send a sample ticket", run: () => crm(c.kind, { action: "test" }, (j) => j.written_back ? "Sample ticket read, analysed and written back." : "Received: nothing new to analyse.") }] : []),
+          ...(canManage && live && c.webhookPath ? [{ label: "Copy webhook address", run: () => { navigator.clipboard?.writeText(`${window.location.origin}${c.webhookPath}`).catch(() => {}); setNote({ text: "Webhook address copied. Keep it private.", tone: "ok" }); } }] : []),
+          ...(canManage && c.mode !== "off" ? [{ label: demo ? "End the demo" : "Disconnect", run: () => crm(c.kind, { action: "disconnect", mode: "off" }, () => demo ? "Demo ended." : `${c.name} is disconnected.`), danger: true }] : []),
         ],
       });
     }
@@ -180,6 +200,7 @@ export default function Integrations() {
     ["Needs attention", shown.filter((i) => i.state === "attention")],
     ["Active", shown.filter((i) => i.state === "active")],
     ["Not active", shown.filter((i) => i.state === "off")],
+    ...(shown.some((i) => i.state === "demo") ? [["Demos", shown.filter((i) => i.state === "demo")] as [string, Item[]]] : []),
   ];
 
   return (
@@ -249,7 +270,7 @@ export default function Integrations() {
         {!adding && selected === "bank" && bankInfo && <BankPanel b={bankInfo} />}
         {!adding && selected.startsWith("crm:") && (() => {
           const c = conns.find((x) => `crm:${x.kind}` === selected);
-          return c ? <CrmPanel c={c} canManage={canManage} busy={busy} act={(body, ok) => crm(c.kind, body as { mode?: string }, ok)} /> : null;
+          return c ? <CrmPanel c={c} canManage={canManage} busy={busy} act={(body, ok) => crm(c.kind, body as { mode?: string }, ok)} onReload={() => load()} onConnect={(fields) => connectCrm(c.kind, c.name, fields)} /> : null;
         })()}
         {!adding && selected.startsWith("hook:") && (() => {
           const e = endpoints.find((x) => `hook:${x.id}` === selected);
@@ -293,72 +314,161 @@ function Toggle({ on, label, hint, disabled, onChange }: { on: boolean; label: s
   );
 }
 
-function CrmPanel({ c, canManage, busy, act }: { c: Conn; canManage: boolean; busy: boolean; act: (body: object, ok?: (j: Record<string, unknown>) => string | null) => Promise<unknown> }) {
-  const [groups, setGroups] = useState(toLines(c.groups));
-  useEffect(() => { setGroups(toLines(c.groups)); }, [c.kind, c.groups]);
-  const unit = c.kind === "salesforce" ? "queues" : c.kind === "hubspot" ? "owners" : "groups";
+const SHORT: Record<string, string> = { zendesk: "Zendesk", freshdesk: "Freshdesk", salesforce: "Salesforce", hubspot: "HubSpot" };
+
+/** Where to paste the webhook address in each product, and what to send (step 2). */
+const HOOK_STEPS: Record<string, string[]> = {
+  zendesk: [
+    "Admin Center → Apps and integrations → Webhooks → Create webhook: paste the address, method POST, format JSON.",
+    "Objects and rules → Triggers → Add trigger: when a ticket is created (and when the requester replies), action Notify webhook.",
+    "Use this as the trigger's body: {\"ticket_id\": \"{{ticket.id}}\"}",
+  ],
+  freshdesk: [
+    "Admin → Automations → Ticket creation → New rule.",
+    "Action Trigger webhook: method POST, paste the address, content JSON.",
+    "Body: {\"ticket_id\": \"{{ticket.id}}\"}",
+  ],
+  salesforce: [
+    "Setup → Flows → New record-triggered flow on Case, when a record is created.",
+    "Add an HTTP callout (POST) to the address, sending the Case's Id as caseId.",
+    "Activate the flow.",
+  ],
+  hubspot: [
+    "Automation → Workflows → create a ticket-based workflow, enrolled when a ticket is created.",
+    "Add the action Send a webhook: method POST, paste the address.",
+    "Turn the workflow on. HubSpot sends the ticket's id with each call.",
+  ],
+};
+
+function ConnectForm({ c, busy, onConnect, onDemo, replacing, onCancel }: {
+  c: Conn; busy: boolean; onConnect: (fields: Record<string, string>) => Promise<string | null>; onDemo?: () => void; replacing?: boolean; onCancel?: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const ready = c.fields.every((f) => (values[f.id] ?? "").trim());
+  const name = SHORT[c.kind] ?? c.name;
   return (
-    <div>
-      <PanelHead letter={c.name[0]} tile={TILE[c.kind] ?? 5} name={c.name} sub={`${c.mode === "live" ? "Live" : c.mode === "sandbox" ? "Sandbox (a stand-in for the product)" : "Off"} · ${c.envReady ? "credentials set in Vercel" : "credentials not set"}`} />
-      {c.health.state === "attention" && (
-        <div className="int-alert" role="alert">
-          <b>{c.health.label}.</b>{" "}
-          {c.health.fix === "setup" ? `Add ${c.envNeeded.join(", ")} in Vercel (Settings, Environment Variables), redeploy, then press Reconnect.` : c.last_error}
-          {c.health.failures > 0 && ` ${c.health.failures} of the last 20 calls failed.`}
-        </div>
-      )}
-      {c.mode === "off" ? (
-        <div className="int-connect">
-          <h4 className="int-lbl">Connect {c.name}</h4>
-          <div className="int-option">
-            <b>Try it in the sandbox</b>
-            <p className="label">A stand-in {c.name.split(" ")[0]} inside Orchestra, so you can try the whole flow with test tickets. Nothing reaches a real {c.name.split(" ")[0]} account.</p>
-            <button className="btn btn-primary" disabled={!canManage || busy} onClick={() => act({ mode: "sandbox" }, () => `${c.name} is connected to the sandbox. Send a test ticket from the ··· menu.`)}>Use the sandbox</button>
-          </div>
-          <div className="int-option">
-            <b>Connect your own {c.name.split(" ")[0]}</b>
-            <p className="label">{c.name.split(" ")[0]} doesn&apos;t open a sign-in window here: Orchestra connects with an API credential that your {c.name.split(" ")[0]} admin creates, kept only in Vercel&apos;s settings, never on this screen.</p>
-            <ol className="label int-steps">
-              <li>{c.kind === "zendesk" ? "In Zendesk: Admin Center → Apps and integrations → Zendesk API → add an API token." : c.kind === "freshdesk" ? "In Freshdesk: Profile settings → View API key." : c.kind === "salesforce" ? "In Salesforce: create a Connected App with the client-credentials flow." : "In HubSpot: Settings → Integrations → Private apps → create an app with the tickets scope."}</li>
-              <li>In Vercel: Settings → Environment Variables, add {c.envNeeded.join(", ")}, then redeploy.</li>
-              <li>Come back here and press Go live.</li>
-              <li>Point {c.name.split(" ")[0]}&apos;s webhook at Orchestra (Set it up in {c.name.split(" ")[0]}, below).</li>
-            </ol>
-            <button className="btn" disabled={!canManage || busy || !c.envReady} title={c.envReady ? "" : `Needs ${c.envNeeded.join(", ")} in Vercel first`}
-              onClick={() => act({ mode: "live" }, () => `${c.name} is live.`)}>{c.envReady ? "Go live" : "Go live (credentials not set yet)"}</button>
-          </div>
-        </div>
-      ) : <>
-      <div className="int-seg wide" role="radiogroup" aria-label="Mode">
-        {(["sandbox", "live"] as const).map((m) => (
-          <button key={m} role="radio" aria-checked={c.mode === m} className={c.mode === m ? "on" : ""} disabled={!canManage || busy || (m === "live" && !c.envReady)}
-            title={m === "live" && !c.envReady ? `Needs ${c.envNeeded.join(", ")} in Vercel` : ""} onClick={() => act({ mode: m }, () => `${c.name}: ${m === "sandbox" ? "sandbox" : "live"}.`)}>
-            {m === "sandbox" ? "Sandbox" : "Live"}
-          </button>
-        ))}
+    <form className="int-form" onSubmit={async (e) => { e.preventDefault(); setError(null); const err = await onConnect(values); if (err) setError(err); }}>
+      {c.fields.map((f) => (
+        <label key={f.id} className="int-field">
+          <span>{f.label}</span>
+          <span className="int-input">
+            <input type={f.secret ? "password" : "text"} autoComplete="off" spellCheck={false} placeholder={f.placeholder} value={values[f.id] ?? ""}
+              onChange={(e) => setValues((v) => ({ ...v, [f.id]: e.target.value }))} />
+            {f.suffix && <span className="int-suffix">{f.suffix}</span>}
+          </span>
+          {f.hint && <span className="label">{f.hint}{f.secret ? " Stored encrypted, never shown again." : ""}</span>}
+        </label>
+      ))}
+      {error && <div className="int-alert" role="alert">{error}</div>}
+      <div className="int-actions">
+        <button className="btn btn-primary" type="submit" disabled={!ready || busy}>{busy ? "Checking with " + name + "…" : replacing ? "Test and replace" : "Test and connect"}</button>
+        {!ready && !busy && <span className="label">Fill in {c.fields.length === 1 ? "the field" : `all ${c.fields.length}`} first</span>}
+        {onCancel && <button type="button" className="copy" onClick={onCancel}>Cancel</button>}
       </div>
-      <Toggle on={c.write_back} label="Write the result into the ticket" hint="tags, priority, team, internal note" disabled={!canManage || busy} onChange={(v) => act({ write_back: v })} />
+      {onDemo && <p className="label int-demo-line">No {name} account? <button type="button" className="copy" onClick={onDemo}>Try a demo instead</button>: a pretend {name} with sample tickets. Nothing real is connected.</p>}
+    </form>
+  );
+}
+
+function CrmPanel({ c, canManage, busy, act, onReload, onConnect }: {
+  c: Conn; canManage: boolean; busy: boolean; act: (body: object, ok?: (j: Record<string, unknown>) => string | null) => Promise<unknown>;
+  onReload: () => void; onConnect: (fields: Record<string, string>) => Promise<string | null>;
+}) {
+  const [groups, setGroups] = useState(toLines(c.groups));
+  const [replace, setReplace] = useState(false);
+  const [showHook, setShowHook] = useState(false);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setGroups(toLines(c.groups)); }, [c.kind, c.groups]);
+  useEffect(() => { setReplace(false); setShowHook(false); }, [c.kind, c.mode]);
+  const unit = c.kind === "salesforce" ? "queues" : c.kind === "hubspot" ? "owners" : "groups";
+  const name = SHORT[c.kind] ?? c.name;
+  const address = c.webhookPath ? `${typeof window !== "undefined" ? window.location.origin : ""}${c.webhookPath}` : null;
+  const connect = onConnect;
+
+  const hookBox = address && (
+    <div className="int-hook">
+      <div className="int-addr"><span className="ref">{address}</span>
+        <button className="btn" onClick={() => { navigator.clipboard?.writeText(address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {}); }}>{copied ? "Copied" : "Copy"}</button></div>
+      <ol className="int-steps label">{HOOK_STEPS[c.kind].map((s) => <li key={s}>{s}</li>)}</ol>
+      <p className="label">Keep this address private: anyone with it can send tickets to Orchestra.</p>
+    </div>
+  );
+
+  const settings = (
+    <>
+      <Toggle on={c.write_back} label="Write findings into the ticket" hint="tags, priority, team, internal note" disabled={!canManage || busy} onChange={(v) => act({ write_back: v })} />
       <Toggle on={c.data_entry} label="Data entry" hint="record Orchestra's own conversations as tickets" disabled={!canManage || busy} onChange={(v) => act({ data_entry: v })} />
-      </>}
-      <h4 className="int-lbl">Teams → {c.name.split(" ")[0]} {unit}</h4>
-      <textarea className="reply-box" rows={4} value={groups} onChange={(e) => setGroups(e.target.value)} disabled={!canManage} aria-label={`Teams to ${unit}`} placeholder="Payments team = 360001234" />
+      <h4 className="int-lbl">Teams → {name} {unit}</h4>
+      <textarea className="reply-box" rows={3} value={groups} onChange={(e) => setGroups(e.target.value)} disabled={!canManage} aria-label={`Teams to ${unit}`} placeholder="Payments team = 360001234" />
       {canManage && <button className="btn" disabled={busy} onClick={() => act({ groups: fromLines(groups) }, () => "Teams saved.")}>Save teams</button>}
       <h4 className="int-lbl">Recent activity</h4>
       {c.activity.length === 0 ? <p className="label">Nothing yet.</p> : (
         <ul className="int-act">{c.activity.map((a) => <li key={a.id} className={a.kind === "error" ? "bad" : ""}><span>{a.summary.replace(`${c.name} connector · `, "Settings changed: ").replace(`${c.name} `, "").replace(/^· /, "")}</span><span className="int-sub">{ago(a.created_at)}</span></li>)}</ul>
       )}
-      <details className="int-more-info">
-        <summary>Set it up in {c.name.split(" ")[0]}</summary>
-        <p className="label">Point a webhook ({c.kind === "zendesk" ? "Admin Center → Webhooks, called by a trigger on ticket created or updated by the requester" : c.kind === "freshdesk" ? "Admin → Automations → Ticket creation and updates → Trigger webhook" : c.kind === "salesforce" ? "a record-triggered Flow on Case with an HTTP callout" : "a ticket workflow with Send a webhook"}) at this address, with an Orchestra API key as the bearer token, sending this body:</p>
-        <pre className="dev-code">{`POST ${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/connectors/${c.kind}/webhook\nAuthorization: Bearer orc_…\n\n${JSON.stringify(c.sample, null, 2)}`}</pre>
-        <p className="label">Live needs {c.envNeeded.join(", ")} in Vercel&apos;s environment variables.</p>
-      </details>
-      {c.mode === "sandbox" && c.writes.length > 0 && (
+    </>
+  );
+
+  // Not connected: the form.
+  if (c.mode === "off") return (
+    <div>
+      <PanelHead letter={c.name[0]} tile={TILE[c.kind] ?? 5} name={`Connect ${c.name}`} sub="Orchestra reads new tickets, sorts them and writes its findings back as tags and an internal note." />
+      <div className="int-stepper"><span className="on">1 · Your account</span><span>2 · New tickets</span></div>
+      {canManage ? <ConnectForm c={c} busy={busy} onConnect={connect} onDemo={() => act({ mode: "sandbox" }, () => `${c.name} demo is on: a pretend ${name} with sample tickets.`)} />
+        : <p className="label">An operations or IT admin connects {name}.</p>}
+    </div>
+  );
+
+  // A demo: pretend product.
+  if (c.mode === "sandbox") return (
+    <div>
+      <PanelHead letter={c.name[0]} tile={TILE[c.kind] ?? 5} name={`${c.name} demo`} sub={`A pretend ${name} inside Orchestra with sample tickets. Nothing real is connected.`} />
+      {canManage && <div className="int-actions">
+        <button className="btn btn-primary" disabled={busy} onClick={() => act({ action: "test" }, (j) => j.written_back ? "Sample ticket read, analysed and written back." : "Received: nothing new to analyse.")}>Send a sample ticket</button>
+        <button className="btn" disabled={busy} onClick={() => act({ action: "disconnect" }, () => "Demo ended.")}>End the demo</button>
+      </div>}
+      {canManage && (replace
+        ? <><h4 className="int-lbl">Connect your real {name}</h4><ConnectForm c={c} busy={busy} onConnect={connect} onCancel={() => setReplace(false)} /></>
+        : <p className="label">Ready for the real thing? <button className="copy" onClick={() => setReplace(true)}>Connect your {name} account</button></p>)}
+      {settings}
+      {c.writes.length > 0 && (
         <details className="int-more-info">
-          <summary>What Orchestra wrote into the stand-in ({c.writes.length})</summary>
+          <summary>What Orchestra wrote into the pretend {name} ({c.writes.length})</summary>
           <ul className="claim-list">{c.writes.map((w) => <li key={w.id}><span className="ref">{w.method} {w.path}</span><pre className="dev-code">{JSON.stringify(w.body, null, 2)}</pre></li>)}</ul>
         </details>
       )}
+    </div>
+  );
+
+  // Live, waiting for the first ticket: step 2.
+  const waiting = !c.last_received_at;
+  return (
+    <div>
+      <PanelHead letter={c.name[0]} tile={TILE[c.kind] ?? 5} name={c.name} sub={c.fromTeam ? "Connected with the Orchestra team's test account" : `Connected to ${c.account}${c.secret_last4 ? ` · ending ${c.secret_last4}` : ""}`} />
+      {c.health.state === "attention" && (
+        <div className="int-alert" role="alert"><b>{c.health.label}.</b> {c.last_error}{c.health.failures > 0 && ` ${c.health.failures} of the last 20 calls failed.`}</div>
+      )}
+      {waiting ? (
+        <>
+          <div className="int-stepper"><span className="done">✓ Your account</span><span className="on">2 · New tickets</span></div>
+          <p>So Orchestra hears about each new ticket, add this address in {name}:</p>
+          {hookBox}
+          <div className="int-actions"><button className="btn" onClick={onReload}>Check for the first ticket</button><span className="label">It turns green when one arrives.</span></div>
+          <hr className="int-hr" />
+        </>
+      ) : (
+        <p className="label">Last ticket {ago(c.last_received_at!)} ago · {c.ticketsWeek} this week.</p>
+      )}
+      {canManage && (
+        <div className="int-actions">
+          {!c.fromTeam && <button className="btn" onClick={() => setReplace((v) => !v)} aria-expanded={replace}>Replace details</button>}
+          {!waiting && <button className="btn" onClick={() => setShowHook((v) => !v)} aria-expanded={showHook}>Webhook address</button>}
+          <button className="btn int-danger" disabled={busy} onClick={() => act({ action: "disconnect" }, () => `${c.name} is disconnected and its stored details removed.`)}>Disconnect</button>
+        </div>
+      )}
+      {replace && <ConnectForm c={c} busy={busy} replacing onConnect={async (f) => { const e = await connect(f); if (!e) setReplace(false); return e; }} onCancel={() => setReplace(false)} />}
+      {showHook && !waiting && hookBox}
+      {settings}
     </div>
   );
 }

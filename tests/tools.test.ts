@@ -1865,7 +1865,7 @@ test("CRM connectors: each of the four reads its ticket, and writes tags, priori
   const { ruleClassify } = await import("../lib/listen.ts");
   await seed(sql!, MONDAY);
   assert.equal((await handleCrmWebhook(sql!, "zendesk", SAMPLE_WEBHOOK.zendesk) as { error: string }).error, "not_connected", "off until switched on");
-  assert.deepEqual(await saveConnector(sql!, "zendesk", { mode: "live" }, "Bayo"), { ok: false, error: "Set ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN in Vercel's environment variables first." });
+  assert.deepEqual(await saveConnector(sql!, "zendesk", { mode: "live" }, "Bayo"), { ok: false, error: "Connect your Zendesk account first." });
   const classify = async (t: string) => ({ analysis: ruleClassify(t) });
   for (const kind of ["zendesk", "freshdesk", "salesforce", "hubspot"] as const) {
     await saveConnector(sql!, kind, { mode: "sandbox", groups: { "Payments team": kind === "salesforce" ? "00G000000PAY" : "360001", "Fraud team": "360009" } }, "Bayo");
@@ -2014,14 +2014,63 @@ test("connector health: a failing call puts a connector in Needs attention; Reco
   await saveConnector(sql!, "freshdesk", { mode: "sandbox" }, "Bayo");
   const health = async () => healthOf((await connectorSettings(sql!)).find((c) => c.kind === "freshdesk")!);
   await noteHealth(sql!, "freshdesk", true);
-  assert.equal((await health()).state, "active");
+  assert.equal((await health()).state, "demo", "a demo is never counted as active");
   await noteHealth(sql!, "freshdesk", false, { message: "PUT /api/v2/tickets/2001: 401 Unauthorized", status: 401 });
   assert.deepEqual([(await health()).state, (await health()).label, (await health()).fix], ["attention", "Sign-in failed", "reconnect"]);
   await noteHealth(sql!, "freshdesk", false, { message: "PUT /api/v2/tickets/2001: 422 bad group", status: 422 });
   assert.equal((await health()).label, "Write-back failing");
   assert.equal((await health()).failures, 2);
   assert.deepEqual(await checkConnection(sql!, "freshdesk"), { ok: true }, "the sandbox answers the credentials check");
-  assert.equal((await health()).state, "active", "a working call clears it");
+  assert.equal((await health()).state, "demo", "a working call clears it");
   await saveConnector(sql!, "freshdesk", { mode: "off" }, "Bayo");
   assert.equal((await health()).state, "off");
 });
+
+test("connecting a bank's own helpdesk: checked with the product, stored encrypted, never sent back; Disconnect forgets it", { skip }, async () => {
+  const svc = await import("../lib/crm/service.ts");
+  const { cleanCreds, sealCreds, openCreds } = await import("../lib/crm/credentials.ts");
+  // Typed details are tidied: a pasted address keeps only the first part.
+  assert.deepEqual(cleanCreds("zendesk", { subdomain: "https://YourBank.zendesk.com/agent", email: "it@yourbank.com", token: "abc" }), { ok: true, creds: { subdomain: "YourBank", email: "it@yourbank.com", token: "abc" } });
+  assert.deepEqual(cleanCreds("zendesk", { subdomain: "yourbank", email: "it@yourbank.com", token: "" }), { ok: false, error: "API token is missing." });
+  const sealed = sealCreds({ token: "secret-123" });
+  assert.ok(!sealed.includes("secret-123"), "encrypted");
+  assert.deepEqual(openCreds(sealed), { token: "secret-123" });
+  assert.equal(openCreds(sealed.slice(0, -4) + "AAAA"), null, "tampering is refused");
+
+  // Zendesk turns the token down: nothing is stored, the connector stays off.
+  const calls: string[] = [];
+  const fake = (status: number) => (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+    return new Response(JSON.stringify(status === 200 ? { user: { id: 1 } } : { error: "Couldn't authenticate you" }), { status, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  const typed = { subdomain: "yourbank", email: "it@yourbank.com", token: "tok-ending-3f9a" };
+  const bad = await svc.connectWithCredentials(sql!, "zendesk", typed, "Zainab Bello", fake(401));
+  assert.equal(bad.ok, false);
+  assert.match((bad as { error: string }).error, /turned these details down/);
+  assert.equal((await svc.connectorSettings(sql!)).find((c) => c.kind === "zendesk")!.mode, "off");
+
+  // Accepted: stored encrypted, live, with the account and the last 4 for the screen, and a webhook address.
+  const ok = await svc.connectWithCredentials(sql!, "zendesk", typed, "Zainab Bello", fake(200));
+  assert.deepEqual(ok, { ok: true, account: "yourbank.zendesk.com as it@yourbank.com" });
+  assert.ok(calls.some((c) => c === "GET https://yourbank.zendesk.com/api/v2/users/me.json"), "checked with Zendesk first");
+  const [row] = await sql!`select credentials, account, secret_last4, webhook_token from crm_connectors where kind = 'zendesk'`;
+  assert.ok(!String(row.credentials).includes("tok-ending-3f9a"), "the token isn't stored readable");
+  assert.equal(row.secret_last4, "3f9a");
+  const z = (await svc.connectorSettings(sql!)).find((c) => c.kind === "zendesk")!;
+  assert.equal(z.mode, "live");
+  assert.ok(z.envReady && !z.fromTeam);
+  assert.ok(!JSON.stringify(z).includes("tok-ending-3f9a"), "settings never carry the secret");
+  assert.equal(svc.healthOf(z).state, "active");
+
+  // The webhook address's secret part.
+  assert.equal(await svc.webhookTokenOk(sql!, "zendesk", row.webhook_token as string), true);
+  assert.equal(await svc.webhookTokenOk(sql!, "zendesk", "guess"), false);
+  assert.equal(await svc.webhookTokenOk(sql!, "freshdesk", row.webhook_token as string), false, "each connector has its own");
+
+  // Disconnect: off, and the stored details are gone.
+  await svc.disconnect(sql!, "zendesk", "Zainab Bello");
+  const [after] = await sql!`select mode, credentials, account from crm_connectors where kind = 'zendesk'`;
+  assert.deepEqual([after.mode, after.credentials, after.account], ["off", null, null]);
+  assert.ok((await sql!`select summary from audit_log where tool = 'crm_connector' and summary like 'Zendesk · connected to%'`).length === 1);
+});
+

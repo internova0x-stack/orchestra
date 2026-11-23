@@ -186,6 +186,21 @@ any of the four: field names and limits should be confirmed in each product's cu
 live. HubSpot's replies to customers go through its inbox, which the connector doesn't send to: a reply is recorded
 on the ticket as a note to send. One new test covers all four.
 
+Connecting from the API page (Nov 23, Tomi: "the bank doesn't have access to Vercel"): Connect opens a form for
+the product's own details (Zendesk address, admin email, API token; Freshdesk address and API key; Salesforce
+address and connected app's consumer key and secret; HubSpot private app token). "Test and connect" checks them
+with the product (a cheap read) before anything turns on; they are then kept encrypted (`lib/crm/credentials.ts`,
+AES-256-GCM, key `CREDENTIALS_KEY` or one derived from the database address) and never sent back, only the account
+and the last 4. Step 2 shows the connector's own webhook address (a secret token at the end, so the helpdesk needs no
+API key) with the product's three setup steps; the row says "Step 2 to do" until the first ticket arrives.
+Disconnect forgets the details. Demos (the pretend product, mode 'sandbox') have their own Demos group with a
+yellow tag and are never counted as Active. Vercel's variables still work for the Orchestra team's own test
+accounts. Checked: tests (tidying the typed details, encryption, a refused and an accepted check against a fake
+product, the webhook token, Disconnect) and the page in a browser. Still unchecked: the products' menu paths and
+webhook bodies in the step 2 instructions, written from knowledge of each API; the official developer sites were
+blocked from this workspace. Setting `CREDENTIALS_KEY` in Vercel is recommended (changing it later means
+reconnecting).
+
 ## Listen mode (Nov 23, Tomi: "build the listen mode first")
 
 Orchestra listens to tickets and emails already in the bank's own helpdesk (`lib/listen.ts`,

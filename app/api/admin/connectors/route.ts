@@ -3,7 +3,9 @@ import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 import { requireApiAdmin } from "@/lib/api/admin.ts";
 import { CRM_KINDS, type CrmKind } from "@/lib/crm/contract.ts";
-import { checkConnection, connectorActivity, connectorSettings, handleCrmWebhook, healthOf, sandboxCalls, saveConnector, type CrmMode } from "@/lib/crm/service.ts";
+import { checkConnection, connectWithCredentials, connectorActivity, connectorSettings, disconnect, handleCrmWebhook, healthOf, sandboxCalls, saveConnector, webhookToken, type CrmMode } from "@/lib/crm/service.ts";
+import { FIELDS } from "@/lib/crm/credentials.ts";
+import { can } from "@/lib/auth.ts";
 import { SAMPLE_WEBHOOK } from "@/lib/crm/sandbox.ts";
 
 export const runtime = "nodejs";
@@ -20,8 +22,11 @@ export async function GET(req: Request) {
   const list = await connectorSettings(sql);
   const week = await sql<{ source: string; n: number }[]>`
     select listen->>'source' as source, count(*)::int as n from conversations where listen is not null and created_at > now() - interval '7 days' group by 1`;
+  // The webhook address carries a secret: only people who manage the API page see it.
+  const manager = can(viewer.role, "api_manage");
   const connectors = await Promise.all(list.map(async (c) => ({
-    ...c, health: healthOf(c), sample: SAMPLE_WEBHOOK[c.kind], activity: await connectorActivity(sql, c.kind),
+    ...c, health: healthOf(c), sample: SAMPLE_WEBHOOK[c.kind], activity: await connectorActivity(sql, c.kind), fields: FIELDS[c.kind],
+    webhookPath: manager && c.mode !== "off" ? `/api/v1/connectors/${c.kind}/webhook/${await webhookToken(sql, c.kind)}` : null,
     ticketsWeek: week.find((w) => w.source === c.kind)?.n ?? 0,
     writes: c.mode === "sandbox" ? await sandboxCalls(sql, c.kind) : [],
   })));
@@ -32,11 +37,16 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!process.env.DATABASE_URL) return Response.json({ ok: false }, { status: 503 });
   const sql = db();
-  const body = (await req.json().catch(() => ({}))) as { staffId?: string; kind?: string; action?: string; mode?: string; write_back?: boolean; data_entry?: boolean; groups?: Record<string, string> };
+  const body = (await req.json().catch(() => ({}))) as { kind?: string; action?: string; mode?: string; write_back?: boolean; data_entry?: boolean; groups?: Record<string, string>; fields?: Record<string, unknown> };
   const s = await requireApiAdmin(sql, req);
   if (s instanceof Response) return s;
   if (!CRM_KINDS.includes(body.kind as CrmKind)) return Response.json({ ok: false, error: "Choose a connector." }, { status: 400 });
   const kind = body.kind as CrmKind;
+  if (body.action === "connect") {
+    const out = await connectWithCredentials(sql, kind, body.fields && typeof body.fields === "object" ? body.fields : {}, s.name);
+    return Response.json(out, { status: out.ok ? 200 : 400 });
+  }
+  if (body.action === "disconnect" || body.mode === "off") return Response.json(await disconnect(sql, kind, s.name));
   if (body.action === "reconnect") {
     const out = await checkConnection(sql, kind);
     return Response.json(out, { status: out.ok ? 200 : 502 });

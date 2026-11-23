@@ -830,3 +830,25 @@ h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .
 .dash-table.team-table th:last-child, .dash-table.team-table td.team-more { text-align: right; }
 .team-table .c-name { width: 25%; } .team-table .c-email { width: 28%; } .team-table .c-role { width: 24%; } .team-table .c-when { width: 15%; }
 .dash-table.team-table thead th:not(:first-child) { text-align: left; }
+/* Connecting a bank's own helpdesk (Tomi, Nov 23): the form, step 2's webhook address, demos. */
+.int-stepper { display: flex; gap: var(--space-2); margin: var(--space-2) 0 var(--space-4); font-size: var(--size-xs); color: var(--text-2); }
+.int-stepper span { flex: 1; border-top: 3px solid var(--edge-strong); padding-top: var(--space-1); }
+.int-stepper .on { border-color: var(--brand-600); color: var(--text-1); }
+.int-stepper .done { border-color: var(--ok); color: var(--ok); }
+.int-form { display: grid; gap: var(--space-3); margin-bottom: var(--space-3); }
+.int-field { display: grid; gap: var(--space-1); font-size: var(--size-sm); color: var(--text-2); }
+.int-input { display: flex; align-items: center; border: 1px solid var(--edge-strong); border-radius: var(--radius-md); background: var(--surface-sunk); }
+.int-input:focus-within { border-color: var(--brand-600); }
+.int-input input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text-1); padding: var(--space-2) var(--space-3); font: inherit; outline: none; }
+.int-suffix { padding-right: var(--space-3); color: var(--text-2); }
+.int-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
+.int-demo-line { border-top: 1px solid var(--edge); padding-top: var(--space-3); margin: var(--space-1) 0 0; }
+.int-hook { display: grid; gap: var(--space-2); margin: var(--space-2) 0; }
+.int-addr { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border: 1px solid var(--edge-strong); border-radius: var(--radius-md); background: var(--surface-sunk); }
+.int-addr .ref { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--size-xs); }
+.int-hook .int-steps { margin: 0; }
+.int-hr { border: 0; border-top: 1px solid var(--edge); margin: var(--space-4) 0; }
+.btn.int-danger { color: var(--stop); }
+.int-chip.warn { white-space: nowrap; }
+.int-panel, .int-panel > div, .int-hook, .int-addr { min-width: 0; }
+.int-hook .int-steps li, .int-hook p { overflow-wrap: anywhere; }

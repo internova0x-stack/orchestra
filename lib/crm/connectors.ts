@@ -6,7 +6,7 @@ import { CrmError, type CrmConnector, type CrmKind, type NewTicket, type WriteBa
 // Before going live with a real account, check each mapping against the product's current API reference: these
 // are written from the published documentation, and products change field names and limits.
 
-type Fetch = typeof fetch;
+export type Fetch = typeof fetch;
 
 function client(base: string, headers: Record<string, string>, fetcher: Fetch) {
   return async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
