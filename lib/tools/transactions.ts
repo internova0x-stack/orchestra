@@ -4,13 +4,9 @@ import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type To
 import type { Rules } from "../rules.ts";
 import { money, statusLabel } from "../format.ts";
 import { dateTime } from "../time.ts";
+import { bank } from "../bank/index.ts";
 
 // Use case 2: "What is this charge?", duplicates, unrecognised payments, and opening a dispute.
-
-interface TxRow {
-  id: string; card_id: string | null; descriptor: string; merchant_name: string | null; location: string | null;
-  channel: string; amount: string; currency: string; status: string; decline_reason: string | null; at: Date;
-}
 
 const listInput = z.object({
   merchant: z.string().optional().describe("Part of the merchant's name as it appears on the statement"),
@@ -26,14 +22,11 @@ export const listTransactions = {
   schema: listInput,
   async run(input: z.infer<typeof listInput>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
     const days = input.days ?? 30;
-    const rows = await ctx.sql<TxRow[]>`
-      select id, card_id, descriptor, merchant_name, location, channel, amount, currency, status, decline_reason, at
-      from transactions where holder_id = ${ctx.user!.business_id} and at > ${new Date(ctx.now.getTime() - days * 86_400_000)}
-        ${input.merchant ? ctx.sql`and (descriptor ilike ${"%" + input.merchant + "%"} or merchant_name ilike ${"%" + input.merchant + "%"})` : ctx.sql``}
-        ${input.amount != null ? ctx.sql`and amount = ${input.amount}` : ctx.sql``}
-      order by at desc limit 12`;
+    const rows = (await bank(ctx.sql).searchCardTransactions(ctx.user!.business_id, {
+      since: new Date(ctx.now.getTime() - days * 86_400_000).toISOString(), merchant: input.merchant, amount: input.amount,
+    })).slice(0, 12);
     const items = rows.map((r) => {
-      const twin = rows.find((o) => o.id !== r.id && o.descriptor === r.descriptor && o.amount === r.amount && Math.abs(new Date(o.at).getTime() - new Date(r.at).getTime()) < 86_400_000 && o.status !== "declined");
+      const twin = rows.find((o) => o.id !== r.id && o.descriptor === r.descriptor && Number(o.amount) === Number(r.amount) && Math.abs(new Date(o.at).getTime() - new Date(r.at).getTime()) < 86_400_000 && o.status !== "declined");
       return {
         id: r.id,
         when: dateTime(new Date(r.at)),
@@ -69,9 +62,7 @@ export const openDispute = {
     const T = "open_dispute";
     const user = ctx.user!;
     const id = input.transaction_id.trim().toUpperCase();
-    const [tx] = await ctx.sql<TxRow[]>`
-      select id, card_id, descriptor, merchant_name, location, channel, amount, currency, status, decline_reason, at
-      from transactions where id = ${id} and holder_id = ${user.business_id}`;
+    const [tx] = await bank(ctx.sql).searchCardTransactions(user.business_id, { id });
     if (!tx) return refuse(ctx, T, input, "No transaction with that id on this account.", "transaction not found");
     if (tx.status === "pending") return refuse(ctx, T, input, "This is a pending hold, not a settled charge, so it can't be disputed. Explain that it drops off if the merchant doesn't collect it (see the Cards rules).", "pending hold");
     if (tx.status !== "settled") return refuse(ctx, T, input, `This transaction is ${tx.status}, so there's nothing to dispute.`, `transaction ${tx.status}`);

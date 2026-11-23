@@ -16,10 +16,19 @@ info:
       The bank never sends Orchestra the reason, so the agent can't reveal it.
     - Full account numbers may be returned; Orchestra masks them to the last 4 digits before the AI sees them.
     - Actions carry an `Idempotency-Key` header. The same key twice must return the first result, never act twice.
-    - A record that doesn't exist, or doesn't belong to the holder, is a 404.
+    - A record that doesn't exist, or doesn't belong to the holder, is a 404. One exception: looking up a payment by
+      id says `elsewhere: true` when the id is another holder's, with nothing else about it, so the agent can hand it
+      to a person instead of saying it doesn't exist.
+    - An action the bank won't take answers 200 with `accepted: false` and a `status` saying why.
 
-    **Version 1 covers** the identity check, the customer, payouts, incoming payments, verification,
-    balances, fees and currency conversions, restrictions, and the recall request.
+    **Version 1 covers** every record the agent reads and every action it takes at the bank: the identity check,
+    the customer and their contact details, payouts and the recall request, incoming payments, verification,
+    balances, fees and currency conversions (and a goodwill fee refund), restrictions, cards (freeze, replace) and
+    card transactions, card, POS, ATM and web payments with their stage-by-stage timeline, loans, merchant payouts
+    and holds, bill and airtime payments (refund), USSD and agent sessions, and unlocking online access.
+
+    Orchestra keeps its own records of the cases it opens (disputes, reversal requests, deferral requests, fee
+    waivers, recalls, handoffs) and its audit log; the bank only answers for its ledger.
 
     The reference implementation, backed by the prototype's simulated bank, is served at
     `/api/bank/v1` on the Orchestra prototype. All data there is invented.
@@ -35,6 +44,11 @@ tags:
   - name: Payouts
   - name: Incoming payments
   - name: Account
+  - name: Cards
+  - name: Payments
+  - name: Lending
+  - name: Merchants
+  - name: Bills and USSD
   - name: Actions
 
 paths:
@@ -165,6 +179,7 @@ paths:
       operationId: listFees
       parameters:
         - $ref: "#/components/parameters/holderId"
+        - { name: id, in: query, description: "One fee by id", schema: { type: string } }
         - { name: kind, in: query, schema: { type: string, enum: [fee, conversion] } }
         - { name: transfer, in: query, description: "A payout reference", schema: { type: string } }
         - { name: since, in: query, schema: { type: string, format: date-time } }
@@ -225,6 +240,354 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RecallResult" }
               example: { accepted: true, bank_reference: "RCL-77810", status: "requested" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /users/{userId}/contact:
+    get:
+      tags: [Identity]
+      summary: The phone, email and sign-in lock on file
+      description: Orchestra sends one-time codes and reset links only to these, and masks them before the AI sees them.
+      operationId: getContact
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Contact details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{userId}/unlock:
+    post:
+      tags: [Identity, Actions]
+      summary: Unlock online access after failed sign-ins
+      description: "Only a lock from failed sign-in attempts. A lock the bank placed is refused (`accepted: false`, `status: locked_by_bank`). Sent after the stronger identity check and the customer's yes."
+      operationId: unlockLogin
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionRequest" }
+            example: { reference: "UNL-EMEKA", requested_by: "Alexis" }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /holders/{holderId}/cards:
+    get:
+      tags: [Cards]
+      summary: The holder's cards
+      description: Newest first, replaced cards included (Orchestra skips them).
+      operationId: listCards
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: last4, in: query, schema: { type: string }, example: "7710" }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Card" } }
+
+  /holders/{holderId}/cards/{cardId}/freeze:
+    post:
+      tags: [Cards, Actions]
+      summary: Freeze a card
+      description: No new payments go through on it. Freezing a frozen card is accepted and changes nothing.
+      operationId: freezeCard
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: cardId, in: path, required: true, schema: { type: string }, example: "CARD-7710" }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionRequest" }
+            example: { reference: "FRZ-7710", requested_by: "Alexis" }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /holders/{holderId}/cards/{cardId}/replace:
+    post:
+      tags: [Cards, Actions]
+      summary: Order a replacement card
+      description: "Stops the card and sends a new one to the delivery address on file (never one given in chat). `reason`: lost, stolen, damaged or expired."
+      operationId: replaceCard
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: cardId, in: path, required: true, schema: { type: string }, example: "CARD-7710" }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionRequest" }
+            example: { reference: "CRD-7001", requested_by: "Alexis", reason: "lost" }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /holders/{holderId}/card-transactions:
+    get:
+      tags: [Cards]
+      summary: Search card transactions
+      description: Newest first, at most 50.
+      operationId: searchCardTransactions
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: id, in: query, schema: { type: string }, example: "TX-90021" }
+        - { name: card, in: query, description: "A card id", schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, settled, declined, reversed] } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: merchant, in: query, description: "Part of the statement name or the merchant's name", schema: { type: string } }
+        - { name: amount, in: query, schema: { type: number } }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/CardTransaction" } }
+
+  /holders/{holderId}/payments:
+    get:
+      tags: [Payments]
+      summary: Search card, POS, ATM and web payments
+      description: Newest first, at most 20. Includes payments that failed at the merchant or terminal while the account was debited.
+      operationId: searchPayments
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: amount, in: query, schema: { type: number }, example: 18750 }
+        - { name: channel, in: query, schema: { type: string, enum: [card, POS, ATM, web] } }
+        - { name: card_last4, in: query, schema: { type: string } }
+        - { name: merchant, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Payment" } }
+
+  /holders/{holderId}/payments/{paymentId}:
+    get:
+      tags: [Payments]
+      summary: One payment by id
+      description: |
+        The payment if it's this holder's. If the id is another holder's, `payment` is null and `elsewhere` is true,
+        and nothing else about it is returned.
+      operationId: getPayment
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: paymentId, in: path, required: true, schema: { type: string }, example: "PAY-62003" }
+      responses:
+        "200":
+          description: The payment, or where it isn't
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payment, elsewhere]
+                properties:
+                  payment: { oneOf: [{ $ref: "#/components/schemas/Payment" }, { type: "null" }] }
+                  elsewhere: { type: boolean }
+
+  /holders/{holderId}/payments/{paymentId}/events:
+    get:
+      tags: [Payments]
+      summary: A payment's timeline, stage by stage
+      description: "Authorisation, capture, settlement and payout, each with its status, time and the party that reported it, in time order. Report what each party said, conflicts included: Orchestra spots them and doesn't guess."
+      operationId: getPaymentEvents
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: paymentId, in: path, required: true, schema: { type: string }, example: "PAY-62004" }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/PaymentEvent" } }
+
+  /holders/{holderId}/loans:
+    get:
+      tags: [Lending]
+      summary: The holder's loans
+      description: Newest first.
+      operationId: listLoans
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: id, in: query, schema: { type: string }, example: "LN-30021" }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Loan" } }
+
+  /holders/{holderId}/merchant-payouts:
+    get:
+      tags: [Merchants]
+      summary: A merchant's payouts
+      description: "Newest first. A payout on a review hold has `review_hold: true` and no reason."
+      operationId: listMerchantPayouts
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: id, in: query, schema: { type: string }, example: "PY-21007" }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/MerchantPayout" } }
+
+  /holders/{holderId}/merchant-holds:
+    get:
+      tags: [Merchants]
+      summary: Holds on a merchant's funds
+      description: A review hold has no reason in it, ever.
+      operationId: listMerchantHolds
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/MerchantHold" } }
+
+  /holders/{holderId}/bill-payments:
+    get:
+      tags: [Bills and USSD]
+      summary: Airtime, data and bill payments
+      description: Newest first, at most 10, with the provider's delivery status.
+      operationId: searchBillPayments
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: id, in: query, schema: { type: string }, example: "BP-30101" }
+        - { name: amount, in: query, schema: { type: number } }
+        - { name: kind, in: query, schema: { type: string, enum: [airtime, data, electricity, tv, water] } }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/BillPayment" } }
+
+  /holders/{holderId}/bill-payments/{billPaymentId}/refund:
+    post:
+      tags: [Bills and USSD, Actions]
+      summary: Refund a bill payment that failed at the provider
+      description: Only for `failed_at_provider`; anything else is refused. The bank stores Orchestra's `reference` as the refund reference. Sent after Orchestra's checks (stronger identity, the cap, the customer's yes).
+      operationId: refundBillPayment
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: billPaymentId, in: path, required: true, schema: { type: string }, example: "BP-30101" }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionRequest" }
+            example: { reference: "BRF-2201", requested_by: "Alexis" }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /holders/{holderId}/ussd-sessions:
+    get:
+      tags: [Bills and USSD]
+      summary: USSD sessions and agent-banking transactions
+      description: Newest first, at most 5.
+      operationId: searchUssdSessions
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: amount, in: query, schema: { type: number } }
+        - { name: kind, in: query, schema: { type: string, enum: [ussd, agent] } }
+      responses:
+        "200":
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/UssdSession" } }
+
+  /holders/{holderId}/fees/{feeId}/refund:
+    post:
+      tags: [Account, Actions]
+      summary: Refund a fee (goodwill waiver)
+      description: Orchestra calls this only after checking the fee is waivable, under the cap and within the customer's yearly waiver, and the customer said yes.
+      operationId: refundFee
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: feeId, in: path, required: true, schema: { type: string }, example: "FEE-1001" }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionRequest" }
+            example: { reference: "WVR-3101", requested_by: "Alexis", reason: "goodwill waiver" }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
         "400": { description: Missing Idempotency-Key or a malformed body }
 
 components:
@@ -371,3 +734,149 @@ components:
         accepted: { type: boolean }
         bank_reference: { type: [string, "null"] }
         status: { type: string, example: "requested" }
+    ActionRequest:
+      type: object
+      required: [reference, requested_by]
+      properties:
+        reference: { type: string, description: "Orchestra's reference for the action" }
+        requested_by: { type: string }
+        reason: { type: [string, "null"] }
+    ActionResult:
+      type: object
+      required: [accepted, status]
+      properties:
+        accepted: { type: boolean }
+        bank_reference: { type: [string, "null"] }
+        status: { type: string, description: "What happened, or why not (e.g. frozen, refunded, locked_by_bank, not_found)" }
+    Contact:
+      type: object
+      required: [phone, email, login_locked]
+      properties:
+        phone: { type: [string, "null"] }
+        email: { type: [string, "null"] }
+        login_locked: { type: [string, "null"], description: "failed_logins, any other value for a lock the bank placed, or null" }
+    Card:
+      type: object
+      required: [id, last4, status, currency, created_at]
+      properties:
+        id: { type: string }
+        last4: { type: string }
+        status: { type: string, enum: [active, frozen, replaced, expired] }
+        currency: { type: string }
+        daily_limit: { oneOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }] }
+        delivery_address: { type: [string, "null"], description: "Orchestra shortens it before the AI sees it" }
+        created_at: { type: string, format: date-time }
+    CardTransaction:
+      type: object
+      required: [id, descriptor, channel, amount, currency, status, at]
+      properties:
+        id: { type: string }
+        card_id: { type: [string, "null"] }
+        card_last4: { type: [string, "null"] }
+        descriptor: { type: string, description: "The name on the statement" }
+        merchant_name: { type: [string, "null"] }
+        location: { type: [string, "null"] }
+        channel: { type: string, enum: [card, POS, ATM, web, transfer] }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        status: { type: string, enum: [pending, settled, declined, reversed] }
+        decline_reason: { type: [string, "null"] }
+        at: { type: string, format: date-time }
+    Payment:
+      type: object
+      required: [id, holder_id, channel, merchant_name, amount, currency, outcome, at]
+      properties:
+        id: { type: string }
+        holder_id: { type: string }
+        channel: { type: string, enum: [card, POS, ATM, web] }
+        merchant_name: { type: string }
+        location: { type: [string, "null"] }
+        terminal_bank: { type: [string, "null"], description: "Another bank's ATM or terminal; null for your own" }
+        processor: { type: [string, "null"] }
+        card_last4: { type: [string, "null"] }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        outcome: { type: string, enum: [successful, failed_debited, declined] }
+        failure_detail: { type: [string, "null"] }
+        at: { type: string, format: date-time }
+    PaymentEvent:
+      type: object
+      required: [stage, status, reported_by, at]
+      properties:
+        stage: { type: string, enum: [authorization, capture, settlement, payout] }
+        status: { type: string, enum: [ok, failed] }
+        detail: { type: [string, "null"] }
+        reported_by: { type: string }
+        at: { type: string, format: date-time }
+    Loan:
+      type: object
+      required: [id, product, currency, principal, balance, annual_rate, monthly_payment, next_due_at, arrears, status, started_at]
+      properties:
+        id: { type: string }
+        product: { type: string }
+        currency: { type: string }
+        principal: { $ref: "#/components/schemas/Money" }
+        balance: { $ref: "#/components/schemas/Money" }
+        annual_rate: { type: string, description: "Percent a year", example: "6.900" }
+        monthly_payment: { $ref: "#/components/schemas/Money" }
+        next_due_at: { type: string, format: date-time }
+        arrears: { $ref: "#/components/schemas/Money" }
+        status: { type: string, enum: [current, in_arrears, default] }
+        started_at: { type: string, format: date-time }
+    MerchantPayout:
+      type: object
+      required: [id, amount, currency, scheduled_for, status, sales, fees, refunds, disputes, review_hold]
+      properties:
+        id: { type: string }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        scheduled_for: { type: string, format: date-time }
+        status: { type: string, enum: [scheduled, paid, delayed, rejected, on_hold] }
+        delay_reason: { type: [string, "null"], description: "Never for a payout on a review hold" }
+        sales: { $ref: "#/components/schemas/Money" }
+        fees: { $ref: "#/components/schemas/Money" }
+        refunds: { $ref: "#/components/schemas/Money" }
+        disputes: { $ref: "#/components/schemas/Money" }
+        paid_at: { type: [string, "null"], format: date-time }
+        review_hold: { type: boolean }
+    MerchantHold:
+      type: object
+      required: [id, amount, currency, type]
+      properties:
+        id: { type: string }
+        payout_id: { type: [string, "null"] }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        type: { type: string, enum: [review_hold, customer_can_fix] }
+        customer_reason: { type: [string, "null"], description: "Only for customer_can_fix" }
+    BillPayment:
+      type: object
+      required: [id, biller, kind, customer_ref, amount, currency, status, at]
+      properties:
+        id: { type: string }
+        biller: { type: string }
+        kind: { type: string, enum: [airtime, data, electricity, tv, water] }
+        customer_ref: { type: string, description: "The phone, meter or account number paid for; Orchestra shortens it" }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        status: { type: string, enum: [delivered, pending, failed_at_provider, refunded] }
+        token: { type: [string, "null"] }
+        provider_ref: { type: [string, "null"] }
+        refund_reference: { type: [string, "null"] }
+        at: { type: string, format: date-time }
+    UssdSession:
+      type: object
+      required: [id, kind, action, amount, currency, outcome, at]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [ussd, agent] }
+        code: { type: [string, "null"] }
+        agent_name: { type: [string, "null"] }
+        agent_id: { type: [string, "null"] }
+        location: { type: [string, "null"] }
+        action: { type: string }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        outcome: { type: string }
+        linked_ref: { type: [string, "null"] }
+        at: { type: string, format: date-time }

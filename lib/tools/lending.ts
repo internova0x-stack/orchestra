@@ -4,21 +4,17 @@ import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type To
 import type { Rules } from "../rules.ts";
 import { money } from "../format.ts";
 import { addBusinessDays, dateTime, dayMonthYear, longDate } from "../time.ts";
+import { bank } from "../bank/index.ts";
+import type { Loan, MerchantPayout } from "../bank/contract.ts";
 
 // Use case 7: loans. Use case 8: merchant payouts and holds.
 
-interface LoanRow {
-  id: string; product: string; currency: string; principal: string; balance: string; annual_rate: string;
-  monthly_payment: string; next_due_at: Date; arrears: string; status: string;
-}
+type LoanRow = Loan;
 
 const loanInput = z.object({ loan_id: z.string().optional().describe("The loan's id, if the customer has more than one") });
 
 async function findLoan(ctx: ToolCtx, id?: string): Promise<LoanRow | null> {
-  const rows = await ctx.sql<LoanRow[]>`
-    select id, product, currency, principal, balance, annual_rate, monthly_payment, next_due_at, arrears, status
-    from loans where holder_id = ${ctx.user!.business_id} ${id ? ctx.sql`and id = ${id.trim().toUpperCase()}` : ctx.sql``}
-    order by started_at desc`;
+  const rows = await bank(ctx.sql).listLoans(ctx.user!.business_id, { id: id?.trim().toUpperCase() });
   return rows[0] ?? null;
 }
 
@@ -104,10 +100,7 @@ export const requestDeferral = {
 
 // ---------------------------------------------------------------- use case 8
 
-interface PayoutRow {
-  id: string; amount: string; currency: string; scheduled_for: Date; status: string; delay_reason: string | null;
-  sales: string; fees: string; refunds: string; disputes: string; paid_at: Date | null; review_hold: boolean;
-}
+type PayoutRow = MerchantPayout;
 
 const payoutInput = z.object({ payout_id: z.string().optional().describe("The payout's id, e.g. PY-21007; leave out for the latest") });
 
@@ -118,11 +111,7 @@ export const getPayoutStatus = {
     "For a merchant (a business account that takes card payments): a payout's amount, scheduled date, status, the cause of any delay from the record, and its breakdown into sales, fees, refunds and dispute reserves so the totals reconcile. A payout on a review hold shows \"On hold\" only: follow the review-hold rule.",
   schema: payoutInput,
   async run(input: z.infer<typeof payoutInput>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
-    const rows = await ctx.sql<PayoutRow[]>`
-      select p.*, exists (select 1 from merchant_holds h where h.payout_id = p.id and h.kind = 'review_hold') as review_hold
-      from merchant_payouts p where p.business_id = ${ctx.user!.business_id}
-        ${input.payout_id ? ctx.sql`and p.id = ${input.payout_id.trim().toUpperCase()}` : ctx.sql``}
-      order by p.scheduled_for desc limit 3`;
+    const rows: PayoutRow[] = (await bank(ctx.sql).listMerchantPayouts(ctx.user!.business_id, { id: input.payout_id?.trim().toUpperCase() })).slice(0, 3);
     if (!rows.length) {
       await audit(ctx, { kind: "lookup", tool: "get_payout_status", summary: "get_payout_status · none", input });
       return { ok: true, data: { found: false, note: "No merchant payouts on this account." } };
@@ -151,10 +140,9 @@ export const listHolds = {
   description: "Holds on a merchant's funds, each with its amount and the stated reason. A risk or compliance review appears as \"review hold\" with no reason: follow the review-hold rule.",
   schema: z.object({}),
   async run(_input: Record<string, never>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
-    // The internal reason is never selected.
-    const rows = await ctx.sql<{ id: string; payout_id: string | null; amount: string; currency: string; kind: string; customer_reason: string | null }[]>`
-      select id, payout_id, amount, currency, kind, customer_reason from merchant_holds where business_id = ${ctx.user!.business_id} order by created_at`;
-    const holds = rows.map((h) => (h.kind === "review_hold" ? { hold: h.id, amount: money(h.amount, h.currency), type: "review hold", ...(h.payout_id ? { payout: h.payout_id } : {}) } : { hold: h.id, amount: money(h.amount, h.currency), reason: h.customer_reason, ...(h.payout_id ? { payout: h.payout_id } : {}) }));
+    // The bank never sends the internal reason.
+    const rows = await bank(ctx.sql).listMerchantHolds(ctx.user!.business_id);
+    const holds = rows.map((h) => (h.type === "review_hold" ? { hold: h.id, amount: money(h.amount, h.currency), type: "review hold", ...(h.payout_id ? { payout: h.payout_id } : {}) } : { hold: h.id, amount: money(h.amount, h.currency), reason: h.customer_reason, ...(h.payout_id ? { payout: h.payout_id } : {}) }));
     await audit(ctx, { kind: "lookup", tool: "list_holds", summary: `list_holds · ${holds.some((h) => "type" in h) ? "review hold" : `${holds.length} hold${holds.length === 1 ? "" : "s"}`}`, result: holds });
     return { ok: true, data: holds.length ? { holds } : { holds: [], note: "No holds." } };
   },

@@ -86,9 +86,3 @@ export async function verifiedUser(sql: Sql, conv: Conversation, now: Date): Pro
   return user;
 }
 
-/** Most recent payout amount for a business: the second identity fact. */
-export async function lastPayout(sql: Sql, businessId: string) {
-  const rows = await sql<{ amount: string; currency: string }[]>`
-    select amount, currency from transfers where business_id = ${businessId} order by sent_at desc limit 1`;
-  return rows[0] ?? null;
-}

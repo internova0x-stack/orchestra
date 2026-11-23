@@ -6,9 +6,13 @@
 // over HTTP at /api/bank/v1, the reference implementation. The machine-readable version is
 // public/openapi/bank-connector-v1.yaml; the readable one is the console's API page.
 //
-// v1 covers the core records: the identity check, the customer, payouts, incoming payments,
-// verification, balances, fees, restrictions and the recall request. Cards, loans, bills and the other
-// areas still read the simulated bank directly and will follow the same pattern.
+// v1 covers every record Alexis reads and every action she takes at the bank: the identity check, the
+// customer and their contact details, payouts and the recall request, incoming payments, verification,
+// balances, fees and the fee refund, restrictions, cards (freeze, replace) and card transactions, card,
+// POS, ATM and web payments with their stage-by-stage timeline, loans, merchant payouts and holds, bill
+// and airtime payments (refund), USSD and agent sessions, and the online-access unlock.
+// Orchestra's own records (disputes, reversals, deferral requests, waivers, recalls, escalations and the
+// audit log) stay in Orchestra: they're the cases it opened, not the bank's ledger.
 //
 // Rules of the contract:
 // - Every record belongs to an account holder (a business or a personal account). Orchestra always
@@ -123,6 +127,147 @@ export interface RecallRequest {
 
 export interface RecallResult { accepted: boolean; bank_reference: string | null; status: string }
 
+export interface Contact {
+  /** The phone and email on file: Orchestra masks them before Alexis sees them and sends codes and links only to these. */
+  phone: string | null;
+  email: string | null;
+  /** Why online access is locked: "failed_logins" (the customer can be helped to unlock it), any other value (a lock the bank placed), or null. */
+  login_locked: string | null;
+}
+
+export interface Card {
+  id: string;
+  last4: string;
+  status: "active" | "frozen" | "replaced" | "expired";
+  currency: Currency;
+  daily_limit: string | null;
+  /** The delivery address on file: Orchestra shortens it before Alexis sees it. */
+  delivery_address: string | null;
+  created_at: string;
+}
+
+export interface CardTransaction {
+  id: string;
+  card_id: string | null;
+  card_last4: string | null;
+  /** The name on the statement. */
+  descriptor: string;
+  merchant_name: string | null;
+  location: string | null;
+  channel: "card" | "POS" | "ATM" | "web" | "transfer";
+  amount: string;
+  currency: Currency;
+  status: "pending" | "settled" | "declined" | "reversed";
+  decline_reason: string | null;
+  at: string;
+}
+
+export interface Payment {
+  id: string;
+  holder_id: string;
+  channel: "card" | "POS" | "ATM" | "web";
+  merchant_name: string;
+  location: string | null;
+  /** Another bank's ATM or terminal; null for the bank's own. */
+  terminal_bank: string | null;
+  processor: string | null;
+  card_last4: string | null;
+  amount: string;
+  currency: Currency;
+  outcome: "successful" | "failed_debited" | "declined";
+  failure_detail: string | null;
+  at: string;
+}
+
+export interface PaymentEvent {
+  stage: "authorization" | "capture" | "settlement" | "payout";
+  status: "ok" | "failed";
+  detail: string | null;
+  /** The party that reported the stage (the issuer, the acquirer, the processor, the merchant's provider). */
+  reported_by: string;
+  at: string;
+}
+
+export interface Loan {
+  id: string;
+  product: string;
+  currency: Currency;
+  principal: string;
+  balance: string;
+  /** Percent a year, e.g. "18.500". */
+  annual_rate: string;
+  monthly_payment: string;
+  next_due_at: string;
+  arrears: string;
+  status: "current" | "in_arrears" | "default";
+  started_at: string;
+}
+
+export interface MerchantPayout {
+  id: string;
+  amount: string;
+  currency: Currency;
+  scheduled_for: string;
+  status: "scheduled" | "paid" | "delayed" | "rejected" | "on_hold";
+  /** The cause of a delay or rejection, in words for the customer. Never sent for a payout on a review hold. */
+  delay_reason: string | null;
+  sales: string;
+  fees: string;
+  refunds: string;
+  disputes: string;
+  paid_at: string | null;
+  review_hold: boolean;
+}
+
+export interface MerchantHold {
+  id: string;
+  payout_id: string | null;
+  amount: string;
+  currency: Currency;
+  type: "review_hold" | "customer_can_fix";
+  /** Only for customer_can_fix. Never for a review hold. */
+  customer_reason: string | null;
+}
+
+export interface BillPayment {
+  id: string;
+  biller: string;
+  kind: "airtime" | "data" | "electricity" | "tv" | "water";
+  /** The phone, meter or account number paid for: Orchestra shortens it before Alexis sees it. */
+  customer_ref: string;
+  amount: string;
+  currency: Currency;
+  status: "delivered" | "pending" | "failed_at_provider" | "refunded";
+  token: string | null;
+  provider_ref: string | null;
+  refund_reference: string | null;
+  at: string;
+}
+
+export interface UssdSession {
+  id: string;
+  kind: "ussd" | "agent";
+  code: string | null;
+  agent_name: string | null;
+  agent_id: string | null;
+  location: string | null;
+  action: string;
+  amount: string;
+  currency: Currency;
+  outcome: string;
+  linked_ref: string | null;
+  at: string;
+}
+
+/** An action at the bank that Orchestra asks for with its own reference (e.g. CRD-7001, BRF-2201, WVR-3101). */
+export interface ActionRequest {
+  reference: string;
+  requested_by: string;
+  reason?: string | null;
+}
+
+export interface ActionResult { accepted: boolean; bank_reference: string | null; status: string }
+
 /** What Orchestra needs from a bank. */
 export interface BankConnector {
   readonly kind: "simulated" | "http";
@@ -132,7 +277,33 @@ export interface BankConnector {
   searchIncomingPayments(holderId: string, q: { amount?: number; currency?: string }): Promise<IncomingPayment[]>;
   getVerification(holderId: string): Promise<Verification | null>;
   getBalances(holderId: string): Promise<Balance[]>;
-  listFees(holderId: string, q: { kind?: "fee" | "conversion"; transfer?: string; since?: string }): Promise<FeeRecord[]>;
+  listFees(holderId: string, q: { id?: string; kind?: "fee" | "conversion"; transfer?: string; since?: string }): Promise<FeeRecord[]>;
   listRestrictions(holderId: string, q: { transfer?: string }): Promise<Restriction[]>;
   requestRecall(holderId: string, req: RecallRequest, idempotencyKey: string): Promise<RecallResult>;
+
+  getContact(userId: string): Promise<Contact | null>;
+  /** Lifts a lock from failed sign-in attempts only; a lock the bank placed is refused (accepted: false). */
+  unlockLogin(userId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+
+  listCards(holderId: string, q: { last4?: string }): Promise<Card[]>;
+  freezeCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+  /** Stops the card and sends a new one to the delivery address on file. */
+  replaceCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+  searchCardTransactions(holderId: string, q: { id?: string; card?: string; status?: CardTransaction["status"]; since?: string; merchant?: string; amount?: number }): Promise<CardTransaction[]>;
+
+  searchPayments(holderId: string, q: { amount?: number; channel?: string; card_last4?: string; merchant?: string }): Promise<Payment[]>;
+  /** One payment by id. `elsewhere` is true when the id exists on another holder's account; nothing else about it is returned. */
+  getPayment(holderId: string, paymentId: string): Promise<{ payment: Payment | null; elsewhere: boolean }>;
+  getPaymentEvents(holderId: string, paymentId: string): Promise<PaymentEvent[]>;
+
+  listLoans(holderId: string, q: { id?: string }): Promise<Loan[]>;
+  listMerchantPayouts(holderId: string, q: { id?: string }): Promise<MerchantPayout[]>;
+  listMerchantHolds(holderId: string): Promise<MerchantHold[]>;
+
+  searchBillPayments(holderId: string, q: { id?: string; amount?: number; kind?: string }): Promise<BillPayment[]>;
+  refundBillPayment(holderId: string, billPaymentId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+  searchUssdSessions(holderId: string, q: { amount?: number; kind?: string }): Promise<UssdSession[]>;
+
+  /** Refunds one fee (a goodwill waiver Orchestra has checked against its rules). */
+  refundFee(holderId: string, feeId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
 }

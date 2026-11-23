@@ -2,7 +2,8 @@ import { z } from "zod";
 import { audit, refuse, type Tier, type ToolCtx, type ToolResult } from "../toolkit.ts";
 import type { Rules } from "../rules.ts";
 import { dateTime } from "../time.ts";
-import { paymentView, type PaymentRow } from "./payments.ts";
+import { disputesOn, paymentView, type PaymentRow } from "./payments.ts";
+import { bank } from "../bank/index.ts";
 
 // Use case 9: transaction ID to payment match. Use case 11: where a payment broke and who owns the fix.
 
@@ -19,12 +20,9 @@ const FAULT: Record<string, { party: string; tell: string }> = {
 
 const idInput = z.object({ transaction_id: z.string().describe("The transaction or payment ID the customer gave, e.g. PAY-62003") });
 
+/** The payment if it's on this customer's account; `elsewhere` if the bank says the id is another holder's (nothing more). */
 async function own(ctx: ToolCtx, id: string): Promise<{ payment: PaymentRow | null; elsewhere: boolean }> {
-  const ref = id.trim().toUpperCase();
-  const rows = await ctx.sql<PaymentRow[]>`select * from payments where id = ${ref}`;
-  const p = rows[0];
-  if (!p) return { payment: null, elsewhere: false };
-  return p.holder_id === ctx.user!.business_id ? { payment: p, elsewhere: false } : { payment: null, elsewhere: true };
+  return bank(ctx.sql).getPayment(ctx.user!.business_id, id.trim().toUpperCase());
 }
 
 export const getPaymentById = {
@@ -44,10 +42,7 @@ export const getPaymentById = {
       await audit(ctx, { kind: "lookup", tool: "get_payment_by_id", summary: "get_payment_by_id · not found", input });
       return { ok: true, data: { found: false, note: "No payment with that ID. Ask them to check it, or search by amount, date and card's last 4 digits (find_payments)." } };
     }
-    const disputes = await ctx.sql<{ reference: string }[]>`
-      select d.reference from disputes d join transactions t on t.id = d.transaction_id
-      where t.holder_id = ${payment.holder_id} and t.amount = ${payment.amount} and abs(extract(epoch from (t.at - ${payment.at}))) < 3600`;
-    const data = { ...paymentView(payment), processor: payment.processor, disputes: disputes.map((d) => d.reference) };
+    const data = { ...paymentView(payment), processor: payment.processor, disputes: await disputesOn(ctx, payment) };
     await audit(ctx, { kind: "lookup", tool: "get_payment_by_id", summary: `get_payment_by_id · ${payment.id} · ${data.amount} at ${payment.merchant_name}`, input, result: data });
     return { ok: true, data };
   },
@@ -62,8 +57,7 @@ export const getPaymentTimeline = {
   async run(input: z.infer<typeof idInput>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
     const { payment, elsewhere } = await own(ctx, input.transaction_id);
     if (!payment) return refuse(ctx, "get_payment_timeline", input, elsewhere ? "That payment isn't on this customer's account. Share nothing about it; escalate." : "No payment with that ID on this account.", "payment not found");
-    const events = await ctx.sql<{ stage: string; status: string; detail: string | null; reported_by: string; at: Date }[]>`
-      select stage, status, detail, reported_by, at from payment_events where payment_id = ${payment.id} order by at, id`;
+    const events = await bank(ctx.sql).getPaymentEvents(payment.holder_id, payment.id);
     const timeline = events.map((e) => ({ stage: LABEL[e.stage], status: e.status === "ok" ? "Done" : "Failed", time: dateTime(new Date(e.at)), reported_by: e.reported_by, ...(e.detail ? { detail: e.detail } : {}) }));
 
     // Conflicts: two parties reporting different statuses for one stage, or a later stage before an earlier one.

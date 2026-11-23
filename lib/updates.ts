@@ -1,4 +1,5 @@
 import type { Sql } from "./db.ts";
+import { bank } from "./bank/index.ts";
 import { money } from "./format.ts";
 import { dayMonthYear } from "./time.ts";
 import { emitEvent } from "./api/webhooks.ts";
@@ -25,13 +26,14 @@ export async function watch(
 
 /** The subject's status now, straight from its own table. */
 export async function currentStatus(sql: Sql, kind: WatchKind, reference: string): Promise<string | null> {
+  // Verification is the bank's record (the reference is the holder id); the rest are Orchestra's cases.
+  if (kind === "verification") return (await bank(sql).getVerification(reference))?.status ?? null;
   const q = {
     reversal: sql`select status from reversals where reference = ${reference}`,
     recall: sql`select status from recalls where reference = ${reference}`,
     dispute: sql`select status from disputes where reference = ${reference}`,
     deferral: sql`select status from deferral_requests where reference = ${reference}`,
     case: sql`select status from escalations where reference = ${reference}`,
-    verification: sql`select verification_status as status from businesses where id = ${reference}`,
   }[kind];
   const rows = (await q) as unknown as { status: string }[];
   return rows[0]?.status ?? null;
@@ -82,11 +84,13 @@ async function runUpdatesInTx(sql: Sql, now: Date, sent: { holder_id: string; us
       const late = !changed && !w.late_notified && w.expected_by != null && new Date(w.expected_by) < now && !CLOSED.has(status);
       if (!changed && !late) continue;
       // No proactive message while the customer is on a review hold.
-      const [held] = await tx<{ n: number }[]>`
-        select ((select count(*) from restrictions where business_id = ${w.holder_id} and kind = 'review_hold')
-              + (select count(*) from merchant_holds where business_id = ${w.holder_id} and kind = 'review_hold'))::int as n`;
+      const b = bank(tx as unknown as Sql);
+      const held = {
+        n: (await b.listRestrictions(w.holder_id, {})).filter((r) => r.type === "review_hold").length
+          + (await b.listMerchantHolds(w.holder_id)).filter((h) => h.type === "review_hold").length,
+      };
       const [recent] = await tx<{ n: number }[]>`select count(*)::int as n from outbox where watch_id = ${w.id} and sent_at > ${new Date(now.getTime() - 86_400_000)}`;
-      const [contact] = w.user_id ? await tx<{ phone: string | null }[]>`select phone from business_users where id = ${w.user_id}` : [{ phone: null }];
+      const contact = w.user_id ? await b.getContact(w.user_id) : { phone: null };
       // One update per case per day: a change inside the day waits for tomorrow's run, still unsent.
       if (held.n === 0 && recent.n > 0) continue;
       const canSend = held.n === 0 && contact?.phone;

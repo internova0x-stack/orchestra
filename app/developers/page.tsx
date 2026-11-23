@@ -28,10 +28,28 @@ const BANK_ENDPOINTS: [string, string, string][] = [
   ["GET", "/holders/{holderId}/fees", "Fees charged and currency conversions"],
   ["GET", "/holders/{holderId}/restrictions", "Restrictions; a review hold is a flag with no reason"],
   ["POST", "/holders/{holderId}/recalls", "Request a recall (with an Idempotency-Key), after Orchestra's checks and the customer's yes"],
+  ["GET", "/users/{userId}/contact", "The phone and email on file (codes and reset links go only there) and any sign-in lock"],
+  ["POST", "/users/{userId}/unlock", "Unlock online access after failed sign-ins; a lock the bank placed is refused"],
+  ["GET", "/holders/{holderId}/cards", "The holder's cards: last 4, status, daily limit, delivery address"],
+  ["POST", "/holders/{holderId}/cards/{cardId}/freeze", "Freeze a card"],
+  ["POST", "/holders/{holderId}/cards/{cardId}/replace", "Order a replacement to the address on file"],
+  ["GET", "/holders/{holderId}/card-transactions", "Card transactions by merchant, amount, card, status or date, with decline reasons"],
+  ["GET", "/holders/{holderId}/payments", "Card, POS, ATM and web payments, including failed-but-debited ones"],
+  ["GET", "/holders/{holderId}/payments/{paymentId}", "One payment by id; says only \"elsewhere\" if it's another holder's"],
+  ["GET", "/holders/{holderId}/payments/{paymentId}/events", "The payment's stages (authorisation to payout) and who reported each"],
+  ["GET", "/holders/{holderId}/loans", "Loans: balance, rate, next payment, arrears"],
+  ["GET", "/holders/{holderId}/merchant-payouts", "A merchant's payouts with the breakdown; a review hold is a flag with no reason"],
+  ["GET", "/holders/{holderId}/merchant-holds", "Holds on a merchant's funds; a review hold has no reason"],
+  ["GET", "/holders/{holderId}/bill-payments", "Airtime, data and bill payments with the provider's delivery status"],
+  ["POST", "/holders/{holderId}/bill-payments/{billPaymentId}/refund", "Refund a bill payment that failed at the provider"],
+  ["GET", "/holders/{holderId}/ussd-sessions", "USSD sessions and agent-banking transactions"],
+  ["POST", "/holders/{holderId}/fees/{feeId}/refund", "Refund a fee as a goodwill waiver, after Orchestra's checks"],
 ];
 
 const RULES = [
   "Every record belongs to an account holder; Orchestra passes the verified customer's holder id and the bank returns only theirs (anything else is a 404).",
+  "One exception: a payment looked up by id that is another holder's comes back as elsewhere: true with nothing else, so Alexis hands it to a person.",
+  "An action the bank won't take answers accepted: false with a status saying why; Alexis then hands the case to a person.",
   "Amounts are decimal strings in the currency's major unit (\"4200.00\"); currencies are ISO 4217; times are ISO 8601.",
   "A review hold is a flag only. The bank never sends the reason, so Alexis can't reveal it.",
   "Full account numbers may be returned; Orchestra masks them to the last 4 before the AI sees them.",
@@ -76,8 +94,11 @@ export default function DevelopersPage() {
             <li>Alexis now reads that bank. Remove the two settings to go back to the simulated bank.</li>
           </ol>
           <p className="label">
-            Version 1 covers identity, the customer, payouts, incoming payments, verification, balances, fees, restrictions and recalls.
-            Cards, loans, bills, disputes and the other areas still read the simulated bank, and follow the same pattern next.
+            Version 1 covers every record Alexis reads and every action she takes at the bank: identity and contact details,
+            payouts and recalls, incoming payments, verification, balances, fees, restrictions, cards and card transactions,
+            payments and their timelines, loans, merchant payouts and holds, bills, USSD and agent sessions, and unlocking
+            online access. The cases Orchestra opens itself (disputes, reversal and deferral requests, waivers, handoffs) stay
+            in Orchestra.
           </p>
 
           <h3 className="dev-h">Try the reference implementation</h3>

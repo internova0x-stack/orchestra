@@ -102,9 +102,20 @@ bank: any implementation over HTTPS when `BANK_API_URL` and `BANK_API_KEY` are s
 10 s timeout, one retry on reads, Idempotency-Key on actions), otherwise the simulated bank (`lib/bank/simulated.ts`).
 The simulated bank also serves the contract at `/api/bank/v1` (needs `BANK_API_KEY`; outside the site password).
 Through it: the identity check, the verified customer's profile, payouts, incoming payments, verification,
-balances, fees, restrictions and recalls (a supervisor's approval submits an over-cap recall). Cards, loans, bills
-and the rest still read the simulated database. A test runs the tools over HTTP against the reference server and
-checks every answer matches. Step 2: the Orchestra API (channels, events, webhooks, keys).
+balances, fees, restrictions and recalls (a supervisor's approval submits an over-cap recall). A test runs the tools
+over HTTP against the reference server and checks every answer matches. Step 2: the Orchestra API (channels, events,
+webhooks, keys).
+
+Extended to every area (Nov 23, Tomi: "extend the bank connector to other areas"): contact details and the
+online-access unlock, cards (freeze, replace) and card transactions, payments with their stage-by-stage timeline
+(looking up another holder's payment id says only `elsewhere`), loans, merchant payouts and holds, bill payments
+(refund), USSD and agent sessions, and the goodwill fee refund. 25 endpoints in all. No tool reads the bank's
+tables directly any more; the proactive-updates job reads holds, contact details and verification through it too.
+Orchestra's own case records (disputes, reversal and deferral requests, waivers, recalls, escalations, claim drafts)
+stay in its database; where a check spans both (a dispute matching a payment), Orchestra matches its record with the
+bank's transaction. An action the bank refuses (`accepted: false`) becomes a handoff. The HTTP test now also covers
+cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
+bill-refund actions.
 
 ## First runs with the real model (Nov 23)
 

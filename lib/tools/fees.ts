@@ -3,6 +3,7 @@ import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type To
 import type { Rules } from "../rules.ts";
 import { money } from "../format.ts";
 import { dateTime } from "../time.ts";
+import { bank } from "../bank/index.ts";
 
 // Use case 5 (the rest): waiving a fee. Use case 15 (the rest): account limits and tiers.
 
@@ -21,8 +22,7 @@ export const waiveFee = {
     const T = "waive_fee";
     const user = ctx.user!;
     const id = input.fee_id.trim().toUpperCase();
-    const [fee] = await ctx.sql<{ id: string; kind: string; description: string; amount: string; currency: string; waivable: boolean; charged_at: Date }[]>`
-      select id, kind, description, amount, currency, waivable, charged_at from fees where id = ${id} and business_id = ${user.business_id}`;
+    const [fee] = await bank(ctx.sql).listFees(user.business_id, { id });
     if (!fee || fee.kind !== "fee") return refuse(ctx, T, input, "No fee with that id on this account.", "fee not found");
     const [done] = await ctx.sql<{ reference: string }[]>`select reference from waivers where fee_id = ${fee.id}`;
     if (done) {
@@ -45,6 +45,8 @@ export const waiveFee = {
     if (waiting) return waiting;
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('waiver_seq')::text as seq`;
     const reference = `WVR-${seq}`;
+    const refunded = await bank(ctx.sql).refundFee(user.business_id, fee.id, { reference, requested_by: "Alexis", reason: "goodwill waiver" }, `fee-refund-${fee.id}`);
+    if (!refunded.accepted) return refuse(ctx, T, input, "The bank didn't accept the refund. Escalate so a person looks at the fee.", `bank refused: ${refunded.status}`);
     await ctx.sql`insert into waivers (reference, fee_id, holder_id, conversation_id, amount, currency)
       values (${reference}, ${fee.id}, ${user.business_id}, ${ctx.conv.id}, ${fee.amount}, ${fee.currency})`;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${fee.id} · ${amount} waived`, input, result: { reference } });
@@ -59,8 +61,7 @@ export const getAccountLimits = {
     "The verified customer's account tier and limits (single transfer, daily transfers, balance) and exactly what's needed to move up, such as linking a BVN or NIN. For a hold or block placed by the bank, use get_account_restrictions and its rules instead.",
   schema: z.object({}),
   async run(_input: Record<string, never>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
-    const [b] = await ctx.sql<{ kind: string; kyc_tier: number | null; account_number: string | null }[]>`
-      select kind, kyc_tier, account_number from businesses where id = ${ctx.user!.business_id}`;
+    const b = { kyc_tier: (await bank(ctx.sql).getVerification(ctx.user!.business_id))?.kyc_tier ?? null };
     // The rules are already this customer's country's (Rules.load with their market): only countries that
     // use numbered tiers talk about tiers; elsewhere it's how verification and limits work there.
     let data: Record<string, unknown>;

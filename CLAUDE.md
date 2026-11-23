@@ -63,8 +63,10 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
-- Bank Connector API (`lib/bank/`): tools reach the bank's core records through `bank(sql)`, never with their own
-  SQL for those records; `BANK_API_URL` + `BANK_API_KEY` switch to a real bank; `/api/bank/v1` is the reference
+- Bank Connector API (`lib/bank/`): tools reach every bank record and action (customer, contact, payouts, incoming
+  payments, verification, balances, fees, restrictions, cards, card transactions, payments and timelines, loans,
+  merchant payouts and holds, bills, USSD) through `bank(sql)`, never with their own SQL for those records; Orchestra's
+  own case records (disputes, reversals, deferrals, waivers, recalls, escalations) stay local; `BANK_API_URL` + `BANK_API_KEY` switch to a real bank; `/api/bank/v1` is the reference
   implementation; `public/openapi/bank-connector-v1.yaml` is the contract (a test keeps it in step with the server).
   API page: `/developers`.
 - Orchestra API (`lib/api/`, `/api/v1`, `public/openapi/orchestra-api-v1.yaml`): Channel API (`channel.ts`), Events API

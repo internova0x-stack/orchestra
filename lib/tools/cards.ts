@@ -3,10 +3,10 @@ import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type To
 import type { Rules } from "../rules.ts";
 import { money, statusLabel } from "../format.ts";
 import { dateTime } from "../time.ts";
+import { bank } from "../bank/index.ts";
+import type { Card } from "../bank/contract.ts";
 
 // Use case 1: card issues. Look up a card, freeze it (tier 2), order a replacement (tier 3).
-
-interface CardRow { id: string; last4: string; status: string; currency: string; daily_limit: string | null; delivery_address: string | null }
 
 const FEE_RULE: Record<string, string> = { USD: "replacement_fee_usd", GBP: "replacement_fee_gbp", NGN: "replacement_fee_ngn" };
 
@@ -17,13 +17,9 @@ const maskAddress = (a: string | null) => {
   return parts.length > 1 ? `•••, ${parts.slice(-2).join(", ")}` : "•••";
 };
 
-async function findCard(ctx: ToolCtx, last4?: string): Promise<CardRow | null> {
-  const rows = await ctx.sql<CardRow[]>`
-    select id, last4, status, currency, daily_limit, delivery_address from cards
-    where holder_id = ${ctx.user!.business_id} and status <> 'replaced'
-      ${last4 ? ctx.sql`and last4 = ${last4}` : ctx.sql``}
-    order by created_at desc`;
-  return rows[0] ?? null;
+async function findCard(ctx: ToolCtx, last4?: string): Promise<Card | null> {
+  const cards = await bank(ctx.sql).listCards(ctx.user!.business_id, { last4 });
+  return cards.find((c) => c.status !== "replaced") ?? null;
 }
 
 const cardInput = z.object({ last4: z.string().regex(/^\d{4}$/).optional().describe("The card's last 4 digits, if the customer has more than one card") });
@@ -40,10 +36,7 @@ export const getCard = {
       await audit(ctx, { kind: "lookup", tool: "get_card", summary: "get_card · no card found", input });
       return { ok: true, data: { found: false, note: "No card on this account matches. Ask which card, by its last 4 digits." } };
     }
-    const declines = await ctx.sql<{ descriptor: string; merchant_name: string | null; amount: string; currency: string; decline_reason: string | null; at: Date }[]>`
-      select descriptor, merchant_name, amount, currency, decline_reason, at from transactions
-      where card_id = ${card.id} and status = 'declined' and at > ${new Date(ctx.now.getTime() - 14 * 86_400_000)}
-      order by at desc limit 5`;
+    const declines = (await bank(ctx.sql).searchCardTransactions(ctx.user!.business_id, { card: card.id, status: "declined", since: new Date(ctx.now.getTime() - 14 * 86_400_000).toISOString() })).slice(0, 5);
     const data = {
       card: `•••• ${card.last4}`,
       status: statusLabel(card.status),
@@ -71,7 +64,8 @@ export const freezeCard = {
     }
     const waiting = await confirmFirst(ctx, T, card.id, `freeze card •••• ${card.last4}`, `Freeze the card ending ${card.last4}?`, "No new payments will go through on it until it's unfrozen in the app. Payments already made aren't affected.");
     if (waiting) return waiting;
-    await ctx.sql`update cards set status = 'frozen' where id = ${card.id}`;
+    const done = await bank(ctx.sql).freezeCard(ctx.user!.business_id, card.id, { reference: `FRZ-${card.last4}`, requested_by: "Alexis" }, `freeze-${ctx.conv.id}-${card.id}`);
+    if (!done.accepted) return refuse(ctx, T, input, "The bank didn't accept the freeze. Hand off urgently so a person freezes the card.", `bank refused: ${done.status}`);
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · •••• ${card.last4} · frozen`, input });
     return { ok: true, reference: `FRZ-${card.last4}`, data: { frozen: true, card: `•••• ${card.last4}`, note: "Ask whether any recent transactions aren't theirs; if so, look at them (use case 2)." } };
   },
@@ -113,9 +107,10 @@ export const orderReplacement = {
     if (waiting) return waiting;
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('replacement_seq')::text as seq`;
     const reference = `CRD-${seq}`;
+    const ordered = await bank(ctx.sql).replaceCard(user.business_id, card.id, { reference, requested_by: "Alexis", reason: input.reason }, `replace-${card.id}`);
+    if (!ordered.accepted) return refuse(ctx, T, input, "The bank didn't accept the replacement order. Hand off so a person orders it.", `bank refused: ${ordered.status}`);
     await ctx.sql`insert into card_replacements (reference, card_id, holder_id, conversation_id, fee, currency)
       values (${reference}, ${card.id}, ${user.business_id}, ${ctx.conv.id}, ${fee}, ${card.currency})`;
-    await ctx.sql`update cards set status = 'replaced' where id = ${card.id}`;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · •••• ${card.last4} · ${reference} ordered`, input, result: { reference, fee: feeText } });
     return { ok: true, reference, data: { reference, fee: feeText, sent_to: maskAddress(card.delivery_address), delivery: rules.get("card_delivery")?.value, note: "The old card no longer works. Explain activation and setting a PIN in the app when it arrives." } };
   },

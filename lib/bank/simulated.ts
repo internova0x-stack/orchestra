@@ -1,5 +1,5 @@
 import type { Sql } from "../db.ts";
-import type { BankConnector, BankUser, Balance, FeeRecord, IdentityCheck, IncomingPayment, Restriction, Transfer, Verification } from "./contract.ts";
+import type { ActionResult, BankConnector, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
 
 // The simulated bank behind the Bank Connector API: the seeded tables in this app's own database.
 // It is the reference implementation of the contract (also served over HTTP at /api/bank/v1).
@@ -7,6 +7,19 @@ import type { BankConnector, BankUser, Balance, FeeRecord, IdentityCheck, Incomi
 const iso = (d: Date | string | null) => (d == null ? null : new Date(d).toISOString());
 const letters = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
 const alnum = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const up = (s: string) => s.trim().toUpperCase();
+const str = (v: unknown) => (v == null ? null : String(v));
+const done = (status: string): ActionResult => ({ accepted: true, bank_reference: null, status });
+const refused = (status: string): ActionResult => ({ accepted: false, bank_reference: null, status });
+
+/** Turns a row's dates into ISO strings and its numbers into decimal strings, as the contract sends them. */
+function wire<T>(row: Record<string, unknown>, dates: string[], amounts: string[]): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const k of dates) out[k] = iso(row[k] as Date | null);
+  for (const k of amounts) out[k] = str(row[k]);
+  return out as T;
+}
+const PAYMENT_AMOUNTS = ["amount"];
 
 export function simulatedBank(sql: Sql): BankConnector {
   return {
@@ -84,11 +97,11 @@ export function simulatedBank(sql: Sql): BankConnector {
       const rows = await sql<(Omit<FeeRecord, "charged_at"> & { charged_at: Date })[]>`
         select id, kind, description, trigger, transfer_id, currency, amount, from_currency, from_amount, to_currency, to_amount, rate, charged_at, waivable
         from fees where business_id = ${holderId}
+          ${q.id ? sql`and id = ${up(q.id)}` : sql``}
           ${q.since ? sql`and charged_at > ${new Date(q.since)}` : sql``}
           ${q.kind ? sql`and kind = ${q.kind}` : sql``}
           ${q.transfer ? sql`and transfer_id = ${q.transfer.trim().toUpperCase()}` : sql``}
         order by charged_at desc limit 40`;
-      const str = (v: unknown) => (v == null ? null : String(v));
       return rows.map((r) => ({
         ...r, amount: String(r.amount), from_amount: str(r.from_amount), to_amount: str(r.to_amount), rate: str(r.rate), charged_at: iso(r.charged_at)!,
       }));
@@ -112,6 +125,150 @@ export function simulatedBank(sql: Sql): BankConnector {
      */
     async requestRecall() {
       return { accepted: true, bank_reference: null, status: "requested" };
+    },
+
+    async getContact(userId): Promise<Contact | null> {
+      const [c] = await sql<Contact[]>`select phone, email, login_locked from business_users where id = ${userId}`;
+      return c ?? null;
+    },
+
+    async unlockLogin(userId) {
+      const [c] = await sql<{ login_locked: string | null }[]>`select login_locked from business_users where id = ${userId}`;
+      if (!c) return refused("not_found");
+      if (!c.login_locked) return done("not_locked");
+      if (c.login_locked !== "failed_logins") return refused("locked_by_bank");
+      await sql`update business_users set login_locked = null where id = ${userId}`;
+      return done("unlocked");
+    },
+
+    async listCards(holderId, q): Promise<Card[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select id, last4, status, currency, daily_limit, delivery_address, created_at from cards
+        where holder_id = ${holderId} ${q.last4 ? sql`and last4 = ${q.last4}` : sql``}
+        order by created_at desc`;
+      return rows.map((r) => wire<Card>(r, ["created_at"], ["daily_limit"]));
+    },
+
+    async freezeCard(holderId, cardId) {
+      const [c] = await sql<{ status: string }[]>`select status from cards where id = ${cardId} and holder_id = ${holderId}`;
+      if (!c) return refused("not_found");
+      if (c.status === "frozen") return done("frozen");
+      if (c.status !== "active") return refused(c.status);
+      await sql`update cards set status = 'frozen' where id = ${cardId}`;
+      return done("frozen");
+    },
+
+    async replaceCard(holderId, cardId) {
+      const [c] = await sql<{ status: string }[]>`select status from cards where id = ${cardId} and holder_id = ${holderId}`;
+      if (!c) return refused("not_found");
+      await sql`update cards set status = 'replaced' where id = ${cardId}`;
+      return done("ordered");
+    },
+
+    async searchCardTransactions(holderId, q): Promise<CardTransaction[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select t.id, t.card_id, c.last4 as card_last4, t.descriptor, t.merchant_name, t.location, t.channel, t.amount, t.currency, t.status, t.decline_reason, t.at
+        from transactions t left join cards c on c.id = t.card_id
+        where t.holder_id = ${holderId}
+          ${q.id ? sql`and t.id = ${up(q.id)}` : sql``}
+          ${q.card ? sql`and t.card_id = ${q.card}` : sql``}
+          ${q.status ? sql`and t.status = ${q.status}` : sql``}
+          ${q.since ? sql`and t.at > ${new Date(q.since)}` : sql``}
+          ${q.merchant ? sql`and (t.descriptor ilike ${"%" + q.merchant + "%"} or t.merchant_name ilike ${"%" + q.merchant + "%"})` : sql``}
+          ${q.amount != null ? sql`and t.amount = ${q.amount}` : sql``}
+        order by t.at desc limit 50`;
+      return rows.map((r) => wire<CardTransaction>(r, ["at"], ["amount"]));
+    },
+
+    async searchPayments(holderId, q): Promise<Payment[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select * from payments where holder_id = ${holderId}
+          ${q.amount != null ? sql`and amount = ${q.amount}` : sql``}
+          ${q.channel ? sql`and channel = ${q.channel}` : sql``}
+          ${q.card_last4 ? sql`and card_last4 = ${q.card_last4}` : sql``}
+          ${q.merchant ? sql`and merchant_name ilike ${"%" + q.merchant + "%"}` : sql``}
+        order by at desc limit 20`;
+      return rows.map((r) => wire<Payment>(r, ["at"], PAYMENT_AMOUNTS));
+    },
+
+    async getPayment(holderId, paymentId) {
+      const [r] = await sql<Record<string, unknown>[]>`select * from payments where id = ${up(paymentId)}`;
+      if (!r) return { payment: null, elsewhere: false };
+      // Another holder's payment: say only that it isn't this holder's.
+      if (r.holder_id !== holderId) return { payment: null, elsewhere: true };
+      return { payment: wire<Payment>(r, ["at"], PAYMENT_AMOUNTS), elsewhere: false };
+    },
+
+    async getPaymentEvents(holderId, paymentId): Promise<PaymentEvent[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select e.stage, e.status, e.detail, e.reported_by, e.at from payment_events e join payments p on p.id = e.payment_id
+        where p.id = ${up(paymentId)} and p.holder_id = ${holderId} order by e.at, e.id`;
+      return rows.map((r) => wire<PaymentEvent>(r, ["at"], []));
+    },
+
+    async listLoans(holderId, q): Promise<Loan[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select id, product, currency, principal, balance, annual_rate, monthly_payment, next_due_at, arrears, status, started_at
+        from loans where holder_id = ${holderId} ${q.id ? sql`and id = ${up(q.id)}` : sql``}
+        order by started_at desc`;
+      return rows.map((r) => wire<Loan>(r, ["next_due_at", "started_at"], ["principal", "balance", "annual_rate", "monthly_payment", "arrears"]));
+    },
+
+    async listMerchantPayouts(holderId, q): Promise<MerchantPayout[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select p.id, p.amount, p.currency, p.scheduled_for, p.status, p.delay_reason, p.sales, p.fees, p.refunds, p.disputes, p.paid_at,
+          exists (select 1 from merchant_holds h where h.payout_id = p.id and h.kind = 'review_hold') as review_hold
+        from merchant_payouts p where p.business_id = ${holderId} ${q.id ? sql`and p.id = ${up(q.id)}` : sql``}
+        order by p.scheduled_for desc limit 10`;
+      // A payout on a review hold carries no reason.
+      return rows.map((r) => wire<MerchantPayout>(r.review_hold ? { ...r, delay_reason: null } : r, ["scheduled_for", "paid_at"], ["amount", "sales", "fees", "refunds", "disputes"]));
+    },
+
+    async listMerchantHolds(holderId): Promise<MerchantHold[]> {
+      // The internal reason is never selected, so it can't leave the bank.
+      const rows = await sql<{ id: string; payout_id: string | null; amount: string; currency: string; kind: string; customer_reason: string | null }[]>`
+        select id, payout_id, amount, currency, kind, customer_reason from merchant_holds where business_id = ${holderId} order by created_at`;
+      return rows.map((h) => ({
+        id: h.id, payout_id: h.payout_id, amount: String(h.amount), currency: h.currency,
+        type: h.kind === "review_hold" ? ("review_hold" as const) : ("customer_can_fix" as const),
+        customer_reason: h.kind === "review_hold" ? null : h.customer_reason,
+      }));
+    },
+
+    async searchBillPayments(holderId, q): Promise<BillPayment[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select id, biller, kind, customer_ref, amount, currency, status, token, provider_ref, refund_reference, at
+        from bill_payments where holder_id = ${holderId}
+          ${q.id ? sql`and id = ${up(q.id)}` : sql``}
+          ${q.amount != null ? sql`and amount = ${q.amount}` : sql``}
+          ${q.kind ? sql`and kind = ${q.kind}` : sql``}
+        order by at desc limit 10`;
+      return rows.map((r) => wire<BillPayment>(r, ["at"], ["amount"]));
+    },
+
+    async refundBillPayment(holderId, id, req) {
+      const [b] = await sql<{ status: string; refund_reference: string | null }[]>`select status, refund_reference from bill_payments where id = ${up(id)} and holder_id = ${holderId}`;
+      if (!b) return refused("not_found");
+      if (b.refund_reference) return { accepted: true, bank_reference: b.refund_reference, status: "refunded" };
+      if (b.status !== "failed_at_provider") return refused(b.status);
+      await sql`update bill_payments set status = 'refunded', refund_reference = ${req.reference} where id = ${up(id)}`;
+      return done("refunded");
+    },
+
+    async searchUssdSessions(holderId, q): Promise<UssdSession[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select id, kind, code, agent_name, agent_id, location, action, amount, currency, outcome, linked_ref, at
+        from ussd_sessions where holder_id = ${holderId}
+          ${q.amount != null ? sql`and amount = ${q.amount}` : sql``}
+          ${q.kind ? sql`and kind = ${q.kind}` : sql``}
+        order by at desc limit 5`;
+      return rows.map((r) => wire<UssdSession>(r, ["at"], ["amount"]));
+    },
+
+    /** The simulated bank takes a checked refund as given: Orchestra's waivers table is the record. */
+    async refundFee(holderId, feeId) {
+      const [f] = await sql<{ id: string }[]>`select id from fees where id = ${up(feeId)} and business_id = ${holderId} and kind = 'fee'`;
+      return f ? done("refunded") : refused("not_found");
     },
   };
 }

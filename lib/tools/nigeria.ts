@@ -3,10 +3,12 @@ import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type To
 import type { Rules } from "../rules.ts";
 import { money } from "../format.ts";
 import { dateTime } from "../time.ts";
+import { bank } from "../bank/index.ts";
+import type { BillPayment } from "../bank/contract.ts";
 
 // Use case 14: airtime, data and bill payments. Use case 16: USSD sessions and agent banking.
 
-interface BillRow { id: string; biller: string; kind: string; customer_ref: string; amount: string; currency: string; status: string; token: string | null; provider_ref: string | null; at: Date; refund_reference: string | null }
+type BillRow = BillPayment;
 
 const STATUS: Record<string, string> = { delivered: "Delivered", pending: "Pending at the provider", failed_at_provider: "Failed at the provider", refunded: "Refunded" };
 
@@ -26,11 +28,7 @@ export const getBillPaymentStatus = {
     "Airtime, data and bill payments on the verified customer's account: the biller, the number paid for (shortened), the amount, and the provider's delivery status: delivered (with the token or reference), pending, failed at the provider, or refunded.",
   schema: findInput,
   async run(input: z.infer<typeof findInput>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
-    const found = await ctx.sql<BillRow[]>`
-      select * from bill_payments where holder_id = ${ctx.user!.business_id}
-        ${input.amount != null ? ctx.sql`and amount = ${input.amount}` : ctx.sql``}
-        ${input.kind ? ctx.sql`and kind = ${input.kind}` : ctx.sql``}
-      order by at desc limit 10`;
+    const found = await bank(ctx.sql).searchBillPayments(ctx.user!.business_id, { amount: input.amount, kind: input.kind });
     const rows: BillRow[] = input.number ? found.filter((r) => r.customer_ref.replace(/\D/g, "").endsWith(input.number!.replace(/\D/g, ""))) : [...found];
     const items = rows.slice(0, 5).map((b) => ({
       id: b.id, biller: b.biller, paid_for: maskRef(b.customer_ref), amount: money(b.amount, b.currency), when: dateTime(new Date(b.at)),
@@ -57,7 +55,7 @@ export const refundBillPayment = {
   async run(input: { payment_id: string }, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const T = "refund_bill_payment";
     const user = ctx.user!;
-    const [b] = await ctx.sql<BillRow[]>`select * from bill_payments where id = ${input.payment_id.trim().toUpperCase()} and holder_id = ${user.business_id}`;
+    const [b] = await bank(ctx.sql).searchBillPayments(user.business_id, { id: input.payment_id.trim().toUpperCase() });
     if (!b) return refuse(ctx, T, input, "No bill or airtime payment with that id on this account.", "payment not found");
     if (b.refund_reference) {
       await audit(ctx, { kind: "refusal", tool: T, summary: `${T} · refused: already refunded ${b.refund_reference}`, input, refusal_reason: "Duplicate refund" });
@@ -74,7 +72,8 @@ export const refundBillPayment = {
     if (waiting) return waiting;
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('bill_refund_seq')::text as seq`;
     const reference = `BRF-${seq}`;
-    await ctx.sql`update bill_payments set status = 'refunded', refund_reference = ${reference} where id = ${b.id}`;
+    const done = await bank(ctx.sql).refundBillPayment(user.business_id, b.id, { reference, requested_by: "Alexis" }, `bill-refund-${b.id}`);
+    if (!done.accepted) return refuse(ctx, T, input, "The bank didn't accept the refund. Hand off (trigger bill_payment_problem) so a person looks at it.", `bank refused: ${done.status}`);
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${b.id} · ${amount} refunded`, input, result: { reference } });
     return { ok: true, reference, data: { reference, refunded: amount, note: "Say it's been refunded to their account, with the reference." } };
   },
@@ -87,11 +86,7 @@ export const getUssdSession = {
     "A USSD session or an agent-banking transaction on the verified customer's account: the code or the agent (name, ID, location), what was attempted, the amount and the outcome. A USSD debit without value continues in the matching flow (a transfer or a failed payment); any cash problem at an agent location goes to the team, who contact the agent.",
   schema: z.object({ amount: z.number().optional(), kind: z.enum(["ussd", "agent"]).optional() }),
   async run(input: { amount?: number; kind?: "ussd" | "agent" }, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
-    const rows = await ctx.sql<{ id: string; kind: string; code: string | null; agent_name: string | null; agent_id: string | null; location: string | null; action: string; amount: string; currency: string; outcome: string; at: Date }[]>`
-      select * from ussd_sessions where holder_id = ${ctx.user!.business_id}
-        ${input.amount != null ? ctx.sql`and amount = ${input.amount}` : ctx.sql``}
-        ${input.kind ? ctx.sql`and kind = ${input.kind}` : ctx.sql``}
-      order by at desc limit 5`;
+    const rows = await bank(ctx.sql).searchUssdSessions(ctx.user!.business_id, { amount: input.amount, kind: input.kind });
     const items = rows.map((u) => ({
       id: u.id, type: u.kind === "ussd" ? "USSD session" : "Agent transaction", when: dateTime(new Date(u.at)),
       ...(u.code ? { code: u.code } : {}), ...(u.agent_name ? { agent: `${u.agent_name} (${u.agent_id}), ${u.location}` } : {}),

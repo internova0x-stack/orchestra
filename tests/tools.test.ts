@@ -1267,6 +1267,21 @@ test("bank connector: the tools give the same answers over HTTP as from the simu
       incoming: (await call(await session("maya", MONDAY), "find_incoming_payment", { amount: 2750, currency: "GBP", payer: "Ashby" })).data,
       held: (await call(await session("lena", MONDAY), "get_transfer_status", { recipient: "Varga" })).data,
       identity: await checkIdentity(sql!, { full_name: "Ada Okafor", date_of_birth: "1988-03-14", registration_number: "11482037" }),
+      // The other areas (Tomi, Nov 23: "extend the bank connector to other areas").
+      card: (await call(await session("emeka", MONDAY), "get_card", {})).data,
+      transactions: (await call(await session("grace", MONDAY), "list_transactions", { merchant: "Hollow Tree" })).data,
+      payments: (await call(await session("chioma", MONDAY), "find_payments", { amount: 18750 })).data,
+      reversal: (await call(await session("chioma", MONDAY), "get_reversal_status", { payment_id: "PAY-61001" })).data,
+      paymentById: (await call(await session("grace", MONDAY), "get_payment_by_id", { transaction_id: "PAY-62003" })).data,
+      elsewhere: (await call(await session("grace", MONDAY), "get_payment_by_id", { transaction_id: "PAY-61001" })).reason,
+      timeline: (await call(await session("grace", MONDAY), "get_payment_timeline", { transaction_id: "PAY-62004" })).data,
+      loan: (await call(await session("david", MONDAY), "get_loan", {})).data,
+      payout: (await call(await session("chidi", MONDAY), "get_payout_status", { payout_id: "PY-21007" })).data,
+      heldPayout: (await call(await session("kemi", MONDAY), "get_payout_status", {})).data,
+      holds: (await call(await session("kemi", MONDAY), "list_holds", {})).data,
+      bills: (await call(await session("amara", MONDAY), "get_bill_payment_status", {})).data,
+      ussd: (await call(await session("amara", MONDAY), "get_ussd_session", {})).data,
+      limits: (await call(await session("amara", MONDAY), "get_account_limits", {})).data,
     };
     return out;
   };
@@ -1286,6 +1301,31 @@ test("bank connector: the tools give the same answers over HTTP as from the simu
     const r = await call(s, "initiate_recall", { reference: "PO-88150" });
     assert.ok(r.ok, JSON.stringify(r));
     assert.ok(calls.some((c) => c === "POST /v1/holders/brightline/recalls"));
+    for (const path of ["/cards", "/card-transactions", "/payments", "/payments/PAY-62004/events", "/loans", "/merchant-payouts", "/merchant-holds", "/bill-payments", "/ussd-sessions"]) {
+      assert.ok(calls.some((c) => c.startsWith("GET /v1/holders/") && c.endsWith(path)), `the tools read ${path} from the bank`);
+    }
+
+    // The actions go to the bank too: freeze a card, refund a failed airtime payment, unlock online access, waive a fee.
+    const emeka = await session("emeka", MONDAY, true);
+    await call(emeka, "freeze_card", {});
+    await confirmPending(emeka);
+    assert.ok((await call(emeka, "freeze_card", {})).ok);
+    assert.ok(calls.some((c) => c === "POST /v1/holders/emeka/cards/CARD-7710/freeze"));
+    const [card] = await sql!<{ status: string }[]>`select status from cards where id = 'CARD-7710'`;
+    assert.equal(card.status, "frozen", "the bank froze the card");
+    await call(emeka, "unlock_account", {});
+    await confirmPending(emeka);
+    assert.ok((await call(emeka, "unlock_account", {})).ok);
+    assert.ok(calls.some((c) => c === "POST /v1/users/emeka/unlock"));
+    assert.ok(calls.some((c) => c === "GET /v1/users/emeka/contact"));
+    const amara = await session("amara", MONDAY, true);
+    await call(amara, "refund_bill_payment", { payment_id: "BP-30101" });
+    await confirmPending(amara);
+    const refund = await call(amara, "refund_bill_payment", { payment_id: "BP-30101" });
+    assert.ok(refund.ok, JSON.stringify(refund));
+    assert.ok(calls.some((c) => c === "POST /v1/holders/amara/bill-payments/BP-30101/refund"));
+    const [bill] = await sql!<{ status: string; refund_reference: string }[]>`select status, refund_reference from bill_payments where id = 'BP-30101'`;
+    assert.deepEqual(bill, { status: "refunded", refund_reference: refund.reference }, "the bank recorded Orchestra's reference");
   } finally {
     delete process.env.BANK_API_URL;
     delete process.env.BANK_API_KEY;
@@ -1298,8 +1338,16 @@ test("bank connector: the OpenAPI file and the reference server list the same en
   const fs = await import("node:fs");
   const yaml = fs.readFileSync(new URL("../public/openapi/bank-connector-v1.yaml", import.meta.url), "utf8");
   const paths = [...yaml.matchAll(/^  (\/[^:]+):$/gm)].map((m) => m[1]).sort();
-  assert.deepEqual(paths, ["/holders/{holderId}/balances", "/holders/{holderId}/fees", "/holders/{holderId}/incoming-payments", "/holders/{holderId}/recalls",
-    "/holders/{holderId}/restrictions", "/holders/{holderId}/transfers", "/holders/{holderId}/verification", "/identity/verify", "/users/{userId}"]);
+  assert.deepEqual(paths, [
+    "/holders/{holderId}/balances", "/holders/{holderId}/bill-payments", "/holders/{holderId}/bill-payments/{billPaymentId}/refund",
+    "/holders/{holderId}/card-transactions", "/holders/{holderId}/cards", "/holders/{holderId}/cards/{cardId}/freeze",
+    "/holders/{holderId}/cards/{cardId}/replace", "/holders/{holderId}/fees", "/holders/{holderId}/fees/{feeId}/refund",
+    "/holders/{holderId}/incoming-payments", "/holders/{holderId}/loans", "/holders/{holderId}/merchant-holds",
+    "/holders/{holderId}/merchant-payouts", "/holders/{holderId}/payments", "/holders/{holderId}/payments/{paymentId}",
+    "/holders/{holderId}/payments/{paymentId}/events", "/holders/{holderId}/recalls", "/holders/{holderId}/restrictions",
+    "/holders/{holderId}/transfers", "/holders/{holderId}/ussd-sessions", "/holders/{holderId}/verification", "/identity/verify",
+    "/users/{userId}", "/users/{userId}/contact", "/users/{userId}/unlock",
+  ]);
   const served = fs.readFileSync(new URL("../lib/bank/serve.ts", import.meta.url), "utf8");
   for (const p of paths) {
     const last = p.split("/").filter((x) => x && !x.startsWith("{")).pop()!;

@@ -5,6 +5,7 @@ import { maskAccount, money } from "../format.ts";
 import { dateTime, longDate } from "../time.ts";
 import { watch } from "../updates.ts";
 import { emitEvent } from "../api/webhooks.ts";
+import { bank } from "../bank/index.ts";
 
 // Use case 18: back-office claim and evidence drafting. Alexis gathers the facts from the records
 // and the case history into a draft for another bank, a processor or a card scheme, marks anything
@@ -50,9 +51,11 @@ export const draftClaimPack = {
     let subject = ref;
 
     if (i.kind === "recall") {
-      const [t] = await ctx.sql<{ id: string; recipient_name: string; recipient_account: string; recipient_bank: string | null; recipient_country: string | null; amount: string; currency: string; route: string; sent_at: Date; status: string; recall: string | null; recall_status: string | null }[]>`
-        select t.*, r.reference as recall, r.status as recall_status from transfers t left join recalls r on r.transfer_id = t.id
-        where t.business_id = ${user.business_id} and (t.id = ${ref} or r.reference = ${ref})`;
+      // The recall is Orchestra's record; the payout comes from the bank.
+      const [byRecall] = await ctx.sql<{ transfer_id: string }[]>`select transfer_id from recalls where reference = ${ref} and business_id = ${user.business_id}`;
+      const [transfer] = await bank(ctx.sql).searchTransfers(user.business_id, { reference: byRecall?.transfer_id ?? ref });
+      const [recall] = transfer ? await ctx.sql<{ reference: string; status: string }[]>`select reference, status from recalls where transfer_id = ${transfer.id}` : [];
+      const t = transfer ? { ...transfer, recall: recall?.reference ?? null, recall_status: recall?.status ?? null } : null;
       if (!t) return refuse(ctx, T, i, "No payout or recall with that reference on this account.", "not found");
       subject = t.recall ?? t.id;
       if (!t.recall) missing.push("No recall has been requested on this payout yet; request one first or note why not.");
@@ -69,10 +72,11 @@ export const draftClaimPack = {
         request: "Please return the funds to the remitting account, or confirm the beneficiary's consent is being sought. We understand recovery depends on the beneficiary and isn't guaranteed.",
       };
     } else if (i.kind === "chargeback") {
-      const [d] = await ctx.sql<{ reference: string; transaction_id: string; amount: string; currency: string; reason: string; descriptor: string; merchant_name: string | null; location: string | null; at: Date; card_last4: string | null }[]>`
-        select d.reference, d.transaction_id, d.amount, d.currency, d.reason, t.descriptor, t.merchant_name, t.location, t.at, c.last4 as card_last4
-        from disputes d join transactions t on t.id = d.transaction_id left join cards c on c.id = t.card_id
-        where d.reference = ${ref} and d.holder_id = ${user.business_id}`;
+      // The dispute is Orchestra's record; the transaction comes from the bank.
+      const [dispute] = await ctx.sql<{ reference: string; transaction_id: string; amount: string; currency: string; reason: string }[]>`
+        select reference, transaction_id, amount, currency, reason from disputes where reference = ${ref} and holder_id = ${user.business_id}`;
+      const [tx] = dispute ? await bank(ctx.sql).searchCardTransactions(user.business_id, { id: dispute.transaction_id }) : [];
+      const d = dispute && tx ? { ...dispute, descriptor: tx.descriptor, merchant_name: tx.merchant_name, location: tx.location, at: tx.at, card_last4: tx.card_last4 } : null;
       if (!d) return refuse(ctx, T, i, "No dispute with that reference on this account. Open the dispute first.", "not found");
       subject = d.reference;
       const window = rules.num("dispute_window", 120);
@@ -89,12 +93,10 @@ export const draftClaimPack = {
         request: "Please raise a chargeback for the amount above on the stated reason.",
       };
     } else {
-      const [p] = await ctx.sql<{ id: string; merchant_name: string; processor: string | null; amount: string; currency: string; at: Date; card_last4: string | null }[]>`
-        select id, merchant_name, processor, amount, currency, at, card_last4 from payments where id = ${ref} and holder_id = ${user.business_id}`;
+      const { payment: p } = await bank(ctx.sql).getPayment(user.business_id, ref);
       if (!p) return refuse(ctx, T, i, "No payment with that reference on this account.", "not found");
       subject = p.id;
-      const events = await ctx.sql<{ stage: string; status: string; reported_by: string; at: Date }[]>`
-        select stage, status, reported_by, at from payment_events where payment_id = ${p.id} order by at, id`;
+      const events = await bank(ctx.sql).getPaymentEvents(user.business_id, p.id);
       const stages = new Map<string, Set<string>>();
       for (const e of events) stages.set(e.stage, (stages.get(e.stage) ?? new Set()).add(e.status));
       if ([...stages.values()].some((st) => st.size > 1)) missing.push("UNCERTAIN: parties report conflicting statuses for the same stage. Don't send until staff resolve it.");

@@ -2,6 +2,8 @@ import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { AWAITING_CODE, audit, confirmFirst, refuse, type Tier, type ToolCtx, type ToolResult } from "../toolkit.ts";
 import type { Rules } from "../rules.ts";
+import { bank } from "../bank/index.ts";
+import type { Contact } from "../bank/contract.ts";
 
 // Use case 4: account access and recovery, and the stronger identity check it needs (Guardrails:
 // "Stronger: tier 3 actions, and anything in account access and recovery").
@@ -13,11 +15,8 @@ export const maskEmail = (e: string | null) => {
   return `${name.slice(0, 1)}•••@${domain}`;
 };
 
-interface Contact { phone: string | null; email: string | null; login_locked: string | null }
-
 async function contact(ctx: ToolCtx): Promise<Contact> {
-  const [c] = await ctx.sql<Contact[]>`select phone, email, login_locked from business_users where id = ${ctx.user!.id}`;
-  return c;
+  return (await bank(ctx.sql).getContact(ctx.user!.id)) ?? { phone: null, email: null, login_locked: null };
 }
 
 export const sendOneTimeCode = {
@@ -83,7 +82,8 @@ export const unlockAccount = {
     }
     const waiting = await confirmFirst(ctx, T, user.id, "unlock online access", "Unlock your online access?", "You'll be able to sign in again straight away. I'd suggest resetting your password afterwards.");
     if (waiting) return waiting;
-    await ctx.sql`update business_users set login_locked = null where id = ${user.id}`;
+    const done = await bank(ctx.sql).unlockLogin(user.id, { reference: `UNL-${user.id.toUpperCase()}`, requested_by: "Alexis" }, `unlock-${ctx.conv.id}`);
+    if (!done.accepted) return refuse(ctx, T, {}, "The bank didn't lift the lock. Hand off so a person can look at it.", `bank refused: ${done.status}`);
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${user.first_name}'s online access unlocked` });
     return { ok: true, reference: `UNL-${user.id.toUpperCase()}`, data: { unlocked: true, note: "Tell them they can sign in now and suggest a password reset." } };
   },

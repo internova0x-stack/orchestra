@@ -4,13 +4,25 @@ import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type To
 import type { Rules } from "../rules.ts";
 import { money } from "../format.ts";
 import { dateTime } from "../time.ts";
+import { bank } from "../bank/index.ts";
+import type { Payment } from "../bank/contract.ts";
 
 // Use case 12: debited but no value. A POS, ATM or web payment failed at the merchant or terminal
 // while the account was debited. Find it, check its reversal, request one if it's past the window.
 
-export interface PaymentRow {
-  id: string; holder_id: string; channel: string; merchant_name: string; location: string | null; terminal_bank: string | null;
-  processor: string | null; card_last4: string | null; amount: string; currency: string; outcome: string; failure_detail: string | null; at: Date;
+export type PaymentRow = Payment;
+
+/**
+ * Disputes Orchestra has opened that match this payment: the same amount on a card transaction within an
+ * hour of it. Disputes are Orchestra's records; the transaction's time comes from the bank.
+ */
+export async function disputesOn(ctx: ToolCtx, p: Payment): Promise<string[]> {
+  const ds = await ctx.sql<{ reference: string; transaction_id: string }[]>`
+    select reference, transaction_id from disputes where holder_id = ${p.holder_id} and amount = ${p.amount}`;
+  if (!ds.length) return [];
+  const txs = await bank(ctx.sql).searchCardTransactions(p.holder_id, { amount: Number(p.amount) });
+  const near = new Set(txs.filter((t) => Math.abs(new Date(t.at).getTime() - new Date(p.at).getTime()) < 3_600_000).map((t) => t.id));
+  return ds.filter((d) => near.has(d.transaction_id)).map((d) => d.reference);
 }
 
 const OUTCOME: Record<string, string> = { successful: "Successful", failed_debited: "Failed at the merchant or terminal, but the account was debited", declined: "Declined, nothing debited" };
@@ -51,14 +63,7 @@ export const findPayments = {
     "Find card, POS, ATM and web payments on the verified customer's account by amount, date, channel, merchant and card's last 4 digits. Shows each payment's outcome, including a payment that failed at the merchant or terminal while the account was debited. If several match, list them and ask which; if none, widen the date once, then say nothing was found.",
   schema: findInput,
   async run(input: z.infer<typeof findInput>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
-    const { sql } = ctx;
-    let rows: PaymentRow[] = await sql<PaymentRow[]>`
-      select * from payments where holder_id = ${ctx.user!.business_id}
-        ${input.amount != null ? sql`and amount = ${input.amount}` : sql``}
-        ${input.channel ? sql`and channel = ${input.channel}` : sql``}
-        ${input.card_last4 ? sql`and card_last4 = ${input.card_last4}` : sql``}
-        ${input.merchant ? sql`and merchant_name ilike ${"%" + input.merchant + "%"}` : sql``}
-      order by at desc limit 20`;
+    let rows: PaymentRow[] = await bank(ctx.sql).searchPayments(ctx.user!.business_id, { amount: input.amount, channel: input.channel, card_last4: input.card_last4, merchant: input.merchant });
     if (input.on) {
       const target = new Date(`${input.on}T12:00:00Z`).getTime();
       rows = rows.filter((r) => Math.abs(new Date(r.at).getTime() - target) < 3 * 86_400_000);
@@ -72,8 +77,7 @@ export const findPayments = {
 const reversalInput = z.object({ payment_id: z.string().describe("The payment's id from find_payments, e.g. PAY-61001") });
 
 async function loadOwn(ctx: ToolCtx, id: string): Promise<PaymentRow | null> {
-  const [p] = await ctx.sql<PaymentRow[]>`select * from payments where id = ${id.trim().toUpperCase()} and holder_id = ${ctx.user!.business_id}`;
-  return p ?? null;
+  return (await bank(ctx.sql).getPayment(ctx.user!.business_id, id.trim().toUpperCase())).payment;
 }
 
 export const getReversalStatus = {
@@ -127,10 +131,8 @@ export const requestReversal = {
       await audit(ctx, { kind: "refusal", tool: T, summary: `${T} · refused: already ${existing.status === "completed" ? "reversed" : "requested"} ${existing.reference}`, input, refusal_reason: "Duplicate reversal" });
       return { ok: false, reference: existing.reference, reason: existing.status === "completed" ? `This payment has already been reversed (${existing.reference}). Show that entry.` : `A reversal is already under way (${existing.reference}). If it hasn't arrived, escalate; don't request another.` };
     }
-    const [dispute] = await ctx.sql<{ reference: string }[]>`
-      select d.reference from disputes d join transactions t on t.id = d.transaction_id
-      where t.holder_id = ${user.business_id} and t.amount = ${p.amount} and abs(extract(epoch from (t.at - ${p.at}))) < 3600`;
-    if (dispute) return refuse(ctx, T, input, `A dispute is already open on this payment (${dispute.reference}). Escalate rather than request a reversal.`, "dispute already open");
+    const [dispute] = await disputesOn(ctx, p);
+    if (dispute) return refuse(ctx, T, input, `A dispute is already open on this payment (${dispute}). Escalate rather than request a reversal.`, "dispute already open");
     const limit = rules.num("recall_limit", 3);
     const [{ n }] = await ctx.sql<{ n: number }[]>`
       select ((select count(*) from reversals where holder_id = ${user.business_id} and not automatic and requested_at > ${new Date(ctx.now.getTime() - 30 * 86_400_000)})

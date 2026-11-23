@@ -1,4 +1,4 @@
-import type { BankConnector, BankUser, Balance, FeeRecord, IdentityCheck, IncomingPayment, RecallRequest, RecallResult, Restriction, Transfer, Verification } from "./contract.ts";
+import type { ActionRequest, ActionResult, BankConnector, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, RecallRequest, RecallResult, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
 
 // The Bank Connector API over HTTPS: Orchestra calls any bank that implements the contract
 // (public/openapi/bank-connector-v1.yaml). Set BANK_API_URL (e.g. https://bank.example/orchestra/v1) and
@@ -54,6 +54,9 @@ export function httpBank(baseUrl: string, apiKey: string, fetcher: typeof fetch 
 
   const holder = (id: string) => `/holders/${encodeURIComponent(id)}`;
   const list = async <T>(p: Promise<{ data: T[] } | null>) => (await p)?.data ?? [];
+  const seg = encodeURIComponent;
+  const act = (path: string, req: ActionRequest, key: string) =>
+    call<ActionResult>("POST", path, { body: req, idempotencyKey: key }).then((r) => r ?? { accepted: false, bank_reference: null, status: "not_found" });
 
   return {
     kind: "http",
@@ -66,5 +69,22 @@ export function httpBank(baseUrl: string, apiKey: string, fetcher: typeof fetch 
     listFees: (h, q) => list(call<{ data: FeeRecord[] }>("GET", `${holder(h)}/fees`, { query: q })),
     listRestrictions: (h, q) => list(call<{ data: Restriction[] }>("GET", `${holder(h)}/restrictions`, { query: q })),
     requestRecall: (h, req: RecallRequest, key: string) => call<RecallResult>("POST", `${holder(h)}/recalls`, { body: req, idempotencyKey: key }),
+
+    getContact: (userId) => call<Contact | null>("GET", `/users/${seg(userId)}/contact`),
+    unlockLogin: (userId, req, key) => act(`/users/${seg(userId)}/unlock`, req, key),
+    listCards: (h, q) => list(call<{ data: Card[] }>("GET", `${holder(h)}/cards`, { query: q })),
+    freezeCard: (h, id, req, key) => act(`${holder(h)}/cards/${seg(id)}/freeze`, req, key),
+    replaceCard: (h, id, req, key) => act(`${holder(h)}/cards/${seg(id)}/replace`, req, key),
+    searchCardTransactions: (h, q) => list(call<{ data: CardTransaction[] }>("GET", `${holder(h)}/card-transactions`, { query: q })),
+    searchPayments: (h, q) => list(call<{ data: Payment[] }>("GET", `${holder(h)}/payments`, { query: q })),
+    getPayment: (h, id) => call<{ payment: Payment | null; elsewhere: boolean }>("GET", `${holder(h)}/payments/${seg(id)}`).then((r) => r ?? { payment: null, elsewhere: false }),
+    getPaymentEvents: (h, id) => list(call<{ data: PaymentEvent[] }>("GET", `${holder(h)}/payments/${seg(id)}/events`)),
+    listLoans: (h, q) => list(call<{ data: Loan[] }>("GET", `${holder(h)}/loans`, { query: q })),
+    listMerchantPayouts: (h, q) => list(call<{ data: MerchantPayout[] }>("GET", `${holder(h)}/merchant-payouts`, { query: q })),
+    listMerchantHolds: (h) => list(call<{ data: MerchantHold[] }>("GET", `${holder(h)}/merchant-holds`)),
+    searchBillPayments: (h, q) => list(call<{ data: BillPayment[] }>("GET", `${holder(h)}/bill-payments`, { query: q })),
+    refundBillPayment: (h, id, req, key) => act(`${holder(h)}/bill-payments/${seg(id)}/refund`, req, key),
+    searchUssdSessions: (h, q) => list(call<{ data: UssdSession[] }>("GET", `${holder(h)}/ussd-sessions`, { query: q })),
+    refundFee: (h, id, req, key) => act(`${holder(h)}/fees/${seg(id)}/refund`, req, key),
   };
 }
