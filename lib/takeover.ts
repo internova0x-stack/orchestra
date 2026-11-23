@@ -69,7 +69,7 @@ export async function takeOver(sql: Sql, conversationId: string, staff: StaffUse
       const closed = { type: "tool_result", tool_use_id: open, content: JSON.stringify({ ok: false, reason: "A member of the support team took over the conversation before this was completed." }), is_error: true };
       messages = appendTurn(messages, "user", [...(c.pending_results ?? []), closed]);
     }
-    await tx`update conversations set taken_over_by = ${staff.name}, taken_over_at = now(), messages = ${tx.json(messages as never)},
+    await tx`update conversations set taken_over_by = ${staff.name}, taken_over_at = now(), awaiting_team = null, messages = ${tx.json(messages as never)},
       pending_identity_tool_id = null, pending_code = null, pending_results = '[]', pending_action = null
       where id = ${conversationId}`;
     if (c.pending_action) await log(tx as unknown as Sql, conversationId, staff.name, "handoff", "takeover", `waiting confirmation cancelled · ${c.pending_action.label}`);

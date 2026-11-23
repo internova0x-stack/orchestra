@@ -1,6 +1,6 @@
 import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
-import { caseCounts, listCases } from "@/lib/cases.ts";
+import { ALL_CATEGORIES, caseCounts, listCases } from "@/lib/cases.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,5 +11,5 @@ export async function GET() {
   const sql = db();
   await ensureSeeded(sql);
   const cases = await listCases(sql);
-  return Response.json({ cases, counts: caseCounts(cases) }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ cases, counts: caseCounts(cases), categories: ALL_CATEGORIES }, { headers: { "Cache-Control": "no-store" } });
 }

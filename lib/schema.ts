@@ -470,6 +470,18 @@ alter table rule_changes add column if not exists decided_at timestamptz;
 alter table conversations add column if not exists channel text not null default 'app';
 alter table conversations add column if not exists email_subject text;
 
+-- Operations (Nov 23): a conversation waiting for the team (Alexis switched off, or the AI service down),
+-- the customer's language, and the team's review of a finished conversation.
+alter table conversations add column if not exists awaiting_team text;
+alter table conversations add column if not exists language text not null default 'en';
+create table if not exists conversation_reviews (
+  conversation_id uuid primary key references conversations(id) on delete cascade,
+  rating text not null check (rating in ('good','needs_work')),
+  note text,
+  reviewed_by text not null,
+  reviewed_at timestamptz not null default now()
+);
+
 create table if not exists rule_overrides (
   rule_id text not null references rules(id) on delete cascade,
   market text not null check (market in ('NG','UK','US')),
@@ -482,6 +494,7 @@ create table if not exists rule_overrides (
 
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
+  "conversation_reviews",
   "rule_overrides",
   "audit_log",
   "ussd_sessions",

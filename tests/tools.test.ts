@@ -940,6 +940,10 @@ test("cases: category, status and urgency are worked out from what's recorded", 
   assert.equal(categoryOf(["verify_identity", "get_transfer_status", "initiate_recall"], []), "Payouts");
   assert.equal(categoryOf(["get_transfer_status"], ["formal_complaint"]), "Complaint", "a complaint handoff says more than the tools");
   assert.equal(categoryOf(["verify_identity"], []), "General question");
+  assert.equal(categoryOf([], [], "My card payment failed and hasn't been working"), "Failed payments and reversals", "the customer's words before any lookup");
+  assert.equal(categoryOf([], [], "Where is my payment to Lumen Print?"), "Payouts");
+  assert.equal(categoryOf([], [], "I can't log in to the dashboard"), "Account access");
+  assert.equal(categoryOf(["get_card"], [], "My payment to Lumen Print failed"), "Cards", "a lookup outranks the words");
   assert.equal(categoryOf(["verify_identity"], ["payout_past_window"]), "Payouts", "a handoff with no lookups takes its reason's area");
   assert.equal(categoryOf(["find_incoming_payment"], ["payout_past_window"]), "Incoming payments", "what Alexis looked into comes first");
   const now = new Date("2026-11-23T12:00:00Z");

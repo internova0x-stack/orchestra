@@ -213,6 +213,11 @@ export const RULE_SET: RuleSeed[] = [
   l("business_open", "Response targets", "Business hours start", "09:00"),
   l("business_close", "Response targets", "Business hours end", "17:00"),
 
+  // Operations (Nov 23): the switch for Alexis herself, and outage mode with the notice customers see.
+  l("alexis_enabled", "Operations", "Alexis answers customers (off: every message goes to the team)", "on"),
+  l("outage_mode", "Operations", "Outage mode (Alexis and the customer app show the notice below)", "off"),
+  a("outage_notice", "Operations", "Outage notice", "Card payments and payouts are delayed while we fix a problem with a payment partner. No money is lost, and delayed payments will complete once it's fixed. We'll update this notice.", "sample"),
+
   // Time saved (sample values for the hours-saved dashboard, Nov 23): how long a person takes to handle
   // each kind of conversation, and what a handoff summary saves when the case still goes to a person.
   l("time_payouts", "Time saved", "Staff handling time: payouts", "12", "minutes"),

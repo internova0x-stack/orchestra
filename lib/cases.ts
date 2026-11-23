@@ -5,9 +5,9 @@ import { SESSION_IDLE_MINUTES } from "./config.ts";
 // status and urgency are worked out from what is already recorded (the audit log, the handoffs and
 // the conversation's own state), so nothing new is stored and nothing can drift out of step.
 
-export type CaseStatus = "In progress" | "Taken over" | "Waiting on customer" | "Resolved by Alexis" | "Handed off" | "Needs approval" | "Resolved by staff";
-export const STATUSES: CaseStatus[] = ["In progress", "Taken over", "Waiting on customer", "Resolved by Alexis", "Handed off", "Needs approval", "Resolved by staff"];
-const OPEN: CaseStatus[] = ["In progress", "Taken over", "Waiting on customer", "Handed off", "Needs approval"];
+export type CaseStatus = "In progress" | "Taken over" | "Waiting for the team" | "Waiting on customer" | "Resolved by Alexis" | "Handed off" | "Needs approval" | "Resolved by staff";
+export const STATUSES: CaseStatus[] = ["In progress", "Taken over", "Waiting for the team", "Waiting on customer", "Resolved by Alexis", "Handed off", "Needs approval", "Resolved by staff"];
+const OPEN: CaseStatus[] = ["In progress", "Taken over", "Waiting for the team", "Waiting on customer", "Handed off", "Needs approval"];
 
 /** Each tool's area of the business, for the case's category. Tools used in every kind of case are left out. */
 const CATEGORY_BY_TOOL: Record<string, string> = {
@@ -48,19 +48,50 @@ const AREA_BY_TRIGGER: Record<string, string> = {
 
 export const GENERAL = "General question";
 
-/** The case's category: a complaint or fraud handoff first, then the first area Alexis looked into, then the handoff's reason. */
-export function categoryOf(tools: string[], triggers: string[]): string {
+/** Every category a conversation can have, for the Inbox's filter and the dashboard. */
+export const ALL_CATEGORIES: string[] = [...new Set([...Object.values(CATEGORY_BY_TOOL), ...Object.values(AREA_BY_TRIGGER), ...Object.values(CATEGORY_BY_TRIGGER), GENERAL])].sort();
+
+/**
+ * Before any lookup (the identity check comes first), the customer's own words say what it's about.
+ * Checked in order, so "card payment failed" is a failed payment, not a card question.
+ */
+const CATEGORY_BY_WORDS: [RegExp, string][] = [
+  [/\b(complain|complaint|unacceptable|disgusted|ombudsman)\b/i, "Complaint"],
+  [/\b(scam|fraud|hacked|stolen|didn'?t (make|authori[sz]e)|not me)\b/i, "Fraud and scams"],
+  [/\b(airtime|data bundle|electricity|token|dstv|gotv|bill payment|meter)\b/i, "Airtime and bills"],
+  [/\b(ussd|\*\d{3}|agent|pos agent)\b/i, "USSD and agent banking"],
+  [/\b(loan|repayment|instal?ment|defer)\b/i, "Loans"],
+  [/\b(settlement|merchant payout|my payouts? from (card )?sales)\b/i, "Merchant payouts"],
+  [/\b(proof of payment|payment confirmation|receipt)\b/i, "Payouts"],
+  [/\b(failed|declined|debited|deducted|taken from my account|reversal|refund)\b/i, "Failed payments and reversals"],
+  [/\b(dispute|charged twice|double charge|don'?t recogni[sz]e|unknown charge)\b/i, "Transactions and disputes"],
+  [/\b(card|pin|atm)\b/i, "Cards"],
+  [/\b(password|log ?in|locked|reset|can'?t sign in|access)\b/i, "Account access"],
+  [/\b(verification|verify my (account|business)|kyc|documents?|open an account)\b/i, "Verification"],
+  [/\b(fee|charge|rate|fx|exchange|limit)\b/i, "Fees and limits"],
+  [/\b(balance|how much (money|do i have))\b/i, "Balances"],
+  [/\b(hasn'?t arrived|not received|paid us|incoming|customer (says|paid))\b/i, "Incoming payments"],
+  [/\b(payout|transfer|sent|payment to|wire|swift|recall|wrong (account|supplier|recipient))\b/i, "Payouts"],
+];
+
+/**
+ * The case's category: a complaint or fraud handoff first, then the first area Alexis looked into, then
+ * the handoff's reason, then what the customer wrote.
+ */
+export function categoryOf(tools: string[], triggers: string[], words?: string | null): string {
   for (const t of triggers) if (CATEGORY_BY_TRIGGER[t]) return CATEGORY_BY_TRIGGER[t];
   for (const t of tools) if (CATEGORY_BY_TOOL[t]) return CATEGORY_BY_TOOL[t];
   for (const t of triggers) if (AREA_BY_TRIGGER[t]) return AREA_BY_TRIGGER[t];
+  if (words) for (const [re, c] of CATEGORY_BY_WORDS) if (re.test(words)) return c;
   return GENERAL;
 }
 
 export interface Handoff { reference: string; urgency: string; status: string; action: { type?: string } | null; created_at: Date }
 
 /** Where the case stands. A person handling it now wins; then a handoff; then anything waiting on the customer; then idle means done. */
-export function statusOf(c: { handoffs: Handoff[]; waiting: boolean; lastActivity: Date; takenOverBy?: string | null }, now: Date): CaseStatus {
+export function statusOf(c: { handoffs: Handoff[]; waiting: boolean; lastActivity: Date; takenOverBy?: string | null; awaitingTeam?: string | null }, now: Date): CaseStatus {
   if (c.takenOverBy) return "Taken over";
+  if (c.awaitingTeam) return "Waiting for the team";
   const latest = [...c.handoffs].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0];
   if (latest) {
     if (latest.status !== "open") return "Resolved by staff";
@@ -114,6 +145,7 @@ export interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: CaseStatus; urgency: string | null; references: string[]; takenOverBy: string | null;
   channel: "app" | "whatsapp" | "email"; subject: string | null;
+  language: string; awaitingTeam: string | null; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
 }
 
@@ -121,19 +153,22 @@ interface ConvRow {
   id: string; created_at: Date; last_activity: Date; messages: Message[];
   pending_action: { confirmed?: boolean } | null; pending_identity_tool_id: string | null; pending_code: unknown; taken_over_by: string | null;
   channel: "app" | "whatsapp" | "email"; email_subject: string | null;
+  language: string; awaiting_team: string | null; review_rating: "good" | "needs_work" | null; review_note: string | null; reviewed_by: string | null;
   verified: boolean; customer: string | null; business: string | null; tools: string[] | null;
 }
 
 /** Every customer conversation, newest activity first. */
 export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> {
   const convs = await sql<ConvRow[]>`
-    select c.id, c.created_at, c.last_activity, c.messages, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by, c.channel, c.email_subject,
+    select c.id, c.created_at, c.last_activity, c.messages, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by, c.channel, c.email_subject, c.language, c.awaiting_team,
+      rv.rating as review_rating, rv.note as review_note, rv.reviewed_by,
       c.verified_user_id is not null as verified,
       coalesce(v.full_name, t.full_name) as customer, coalesce(vb.name, tb.name) as business,
       (select array_agg(a.tool order by a.id) from audit_log a where a.conversation_id = c.id and a.tool is not null) as tools
     from conversations c
       left join business_users v on v.id = c.verified_user_id left join businesses vb on vb.id = v.business_id
       left join business_users t on t.id = c.typing_user_id left join businesses tb on tb.id = t.business_id
+      left join conversation_reviews rv on rv.conversation_id = c.id
     where c.mode = 'customer' and jsonb_array_length(c.messages) > 0
     order by c.last_activity desc
     limit 300`;
@@ -152,8 +187,11 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
       customer: c.customer,
       business: c.business,
       verified: c.verified,
-      category: categoryOf(c.tools ?? [], hs.map((h) => h.trigger)),
-      status: statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by }, now),
+      category: categoryOf(c.tools ?? [], hs.map((h) => h.trigger), [c.email_subject, ...transcript.filter((m) => m.who === "Customer").map((m) => m.text)].filter(Boolean).join("\n")),
+      status: statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team }, now),
+      language: c.language ?? "en",
+      awaitingTeam: c.awaiting_team,
+      review: c.review_rating ? { rating: c.review_rating, note: c.review_note, by: c.reviewed_by! } : null,
       takenOverBy: c.taken_over_by,
       channel: c.channel ?? "app",
       subject: c.email_subject,

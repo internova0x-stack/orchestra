@@ -43,6 +43,7 @@ const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "nume
 export default function InboxPage() {
   const [cases, setCases] = useState<CaseRow[] | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
+  const [allCategories, setAllCategories] = useState<string[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [status, setStatus] = useState(ALL);
   const [category, setCategory] = useState(ALL);
@@ -80,6 +81,7 @@ export default function InboxPage() {
       setProblem(null);
       setCases(json.cases);
       setCounts(json.counts);
+      if (json.categories) setAllCategories(json.categories);
       // Open the newest conversation on arrival, so a message sent from the customer app shows at once.
       if (!picked.current && json.cases.length) { picked.current = true; setSelected(json.cases[0].id); }
     } catch {
@@ -119,7 +121,13 @@ export default function InboxPage() {
   const lines = detail?.transcript.length ?? 0;
   useEffect(() => { chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" }); }, [lines, selected]);
 
-  const categories = useMemo(() => [...new Set((cases ?? []).map((c) => c.category))].sort(), [cases]);
+  // Every category, not only those the current conversations have, with how many are in each.
+  const categories = useMemo(() => [...new Set([...allCategories, ...(cases ?? []).map((c) => c.category)])].sort(), [cases, allCategories]);
+  const inCategory = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const c of cases ?? []) n.set(c.category, (n.get(c.category) ?? 0) + 1);
+    return n;
+  }, [cases]);
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (cases ?? []).filter((c) =>
@@ -173,7 +181,7 @@ export default function InboxPage() {
             <input id="case-search" className="filter-input" placeholder="Search customer, business or reference" value={search} onChange={(e) => setSearch(e.target.value)} />
             <div className="filter-row">
               <Filter label="Status" value={status} onChange={setStatus} options={[[ALL, "Status"], ["open", "All open"], ...STATUS_ORDER.map((s) => [s, s] as [string, string])]} />
-              <Filter label="Category" value={category} onChange={setCategory} options={[[ALL, "Category"], ...categories.map((s) => [s, s] as [string, string])]} />
+              <Filter label="Category" value={category} onChange={setCategory} options={[[ALL, "Category"], ...categories.map((s) => [s, `${s} (${inCategory.get(s) ?? 0})`] as [string, string])]} />
               <Filter label="Urgency" value={urgency} onChange={setUrgency} options={[[ALL, "Urgency"], ["urgent", "Urgent"], ["high", "High"], ["normal", "Normal"], ["none", "Not handed off"]]} />
               <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["whatsapp", "WhatsApp"], ["email", "Email"]]} />
             </div>

@@ -17,6 +17,7 @@ import {
 import { sendOneTimeCode, sendResetLink, unlockAccount } from "./tools/access.ts";
 import { watch } from "./updates.ts";
 import { watchCase } from "./tools/watching.ts";
+import { findCase } from "./tools/resume.ts";
 import { draftClaimPack } from "./tools/claims.ts";
 import { draftCaseNotes, draftReply, summariseCase } from "./tools/staffmode.ts";
 import { getBillPaymentStatus, getUssdSession, refundBillPayment } from "./tools/nigeria.ts";
@@ -854,7 +855,7 @@ const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHu
   getCard, freezeCard, orderReplacement, listTransactions, openDispute,
   findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits,
   getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds,
-  watchCase, draftClaimPack, summariseCase, draftReply, draftCaseNotes,
+  watchCase, findCase, draftClaimPack, summariseCase, draftReply, draftCaseNotes,
   getBillPaymentStatus, refundBillPayment, getUssdSession];
 
 /** Staff mode (use case 19): lookups and drafts only, never actions on the account. */
@@ -862,7 +863,7 @@ export const STAFF_TOOLS = new Set([
   "search_knowledge_base", "get_transfer_status", "find_incoming_payment", "get_kyc_status", "get_account_restrictions",
   "get_balance", "get_fees", "get_card", "list_transactions", "find_payments", "get_reversal_status", "get_account_limits",
   "get_payment_by_id", "get_payment_timeline", "get_loan", "payoff_quote", "get_payout_status", "list_holds",
-  "get_bill_payment_status", "get_ussd_session",
+  "get_bill_payment_status", "get_ussd_session", "find_case",
   "summarise_case", "draft_reply", "draft_case_notes",
 ]);
 const STAFF_ONLY = new Set(["summarise_case", "draft_reply", "draft_case_notes"]);

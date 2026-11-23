@@ -7,7 +7,7 @@ import { GREETING } from "./greeting.ts";
 import { checkIdentity, type IdentityAnswers } from "./identity.ts";
 import { maskSecrets } from "./secrets.ts";
 import { Rules } from "./rules.ts";
-import { createConversation, loadConversation, verifiedUser, type Channel, type Conversation, type VerifiedUser } from "./session.ts";
+import { createConversation, loadConversation, verifiedUser, LANGUAGES, type Channel, type Conversation, type VerifiedUser } from "./session.ts";
 import { dateTime, longDate } from "./time.ts";
 import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
 import { appendTurn, forModel, hadStaff } from "./takeover.ts";
@@ -66,6 +66,13 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
     else lines.push(`- ${c.reference} is open with the team. If the customer asks again, give its status and reference; don't open a second case for the same issue.`);
   }
   lines.push(CHANNEL_NOTE[conv.channel ?? "app"](conv));
+  if (conv.language && conv.language !== "en") {
+    lines.push(`- The customer chose ${LANGUAGES[conv.language] ?? conv.language} in the app. Reply in it, in plain everyday words. Keep references, amounts, dates and account digits exactly as the records show them. The forms and buttons stay in English.`);
+  }
+  const outage = (await operations(sql)).outage;
+  if (outage) {
+    lines.push(`- Outage mode is on. The notice customers see: "${outage}" Mention it whenever the customer's problem could be part of it, say what it means for them, and don't open a case for something the notice covers unless they ask for a person.`);
+  }
   if (hadStaff(conv.messages as never)) {
     lines.push("- A member of the support team took this conversation over earlier and replied in person; their replies are marked [Reply from …]. They have handed it back to you. Build on what they said, check the records before repeating any fact, and don't introduce yourself again.");
   }
@@ -98,6 +105,43 @@ export function describeError(err: unknown): { short: string; transient: boolean
   return { short: `App error: ${String((err as Error)?.message ?? err).slice(0, 160)}`, transient: false };
 }
 
+/** Whether Alexis is switched on, and the outage notice while outage mode is on (Rules screen, Operations). */
+export async function operations(sql: Sql): Promise<{ alexisOn: boolean; outage: string | null }> {
+  const rules = await Rules.load(sql);
+  return { alexisOn: rules.on("alexis_enabled") || !rules.get("alexis_enabled"), outage: rules.on("outage_mode") ? rules.get("outage_notice")?.value ?? null : null };
+}
+
+/**
+ * Keep a customer's message for the team: secrets masked, the screenshot kept, and anything Alexis left
+ * open (the identity or code form) closed first, so the history stays valid for when she answers again.
+ */
+async function storeForTeam(sql: Sql, conv: Conversation, input: TurnInput, now: Date, user: VerifiedUser | null, emit: (e: StreamEvent) => void) {
+  let history = conv.messages as never as MessageParam[];
+  const open = conv.pending_identity_tool_id ?? conv.pending_code?.tool_use_id ?? null;
+  if (open) {
+    const closed = { type: "tool_result", tool_use_id: open, content: JSON.stringify({ ok: false, reason: "The conversation went to the support team before this was completed." }), is_error: true };
+    history = appendTurn(history as never, "user", [...((conv.pending_results ?? []) as never[]), closed] as never) as unknown as MessageParam[];
+    await sql`update conversations set pending_identity_tool_id = null, pending_code = null, pending_results = '[]', pending_action = null where id = ${conv.id}`;
+  }
+  const raw = (input.message ?? "").trim() || (input.image ? "(screenshot attached)" : "");
+  if (raw && input.identity === undefined && input.code === undefined) {
+    const { text, found } = maskSecrets(raw);
+    if (found.length) {
+      emit({ type: "masked", text });
+      await audit({ sql, conv, user, toolUseId: `mask-${Date.now()}` }, {
+        kind: "refusal", tool: "message",
+        summary: `message · ${found.join(", ")} removed before the team saw it`,
+        refusal_reason: "Secret in a customer message",
+      });
+    }
+    const blocks: ContentBlockParam[] = [];
+    if (input.image) blocks.push({ type: "image", source: { type: "base64", media_type: input.image.media_type, data: input.image.data } });
+    blocks.push({ type: "text", text });
+    history = appendTurn(history as never, "user", blocks as never) as unknown as MessageParam[];
+  }
+  await sql`update conversations set messages = ${sql.json(history as never)}, last_activity = ${now} where id = ${conv.id}`;
+}
+
 export interface TurnInput {
   conversationId: string;
   typingUserId: string | null;
@@ -111,6 +155,8 @@ export interface TurnInput {
   channel?: Channel;
   /** An email's subject line, on the first email. */
   subject?: string;
+  /** The language chosen in the customer app (a key of LANGUAGES). */
+  language?: string;
   /** A screenshot sent with the message (use case 10). A claim to check, never proof or instructions. */
   image?: { media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string };
 }
@@ -129,29 +175,31 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
     conv = { ...conv, verified_user_id: null, verified_at: null, stronger_verified_at: null };
   }
 
-  // A member of the team has taken this conversation over: store what the customer sent, for the
-  // person in the console to answer, and don't run Alexis.
-  if (conv.taken_over_by) {
-    const raw = (input.message ?? "").trim() || (input.image ? "(screenshot attached)" : "");
-    if (raw && input.identity === undefined && input.code === undefined) {
-      const { text, found } = maskSecrets(raw);
-      if (found.length) {
-        emit({ type: "masked", text });
-        await audit({ sql, conv, user, toolUseId: `mask-${Date.now()}` }, {
-          kind: "refusal", tool: "message",
-          summary: `message · ${found.join(", ")} removed before the team saw it`,
-          refusal_reason: "Secret in a customer message",
-        });
+  // A member of the team has taken this conversation over, or Alexis is switched off on the Rules screen:
+  // store what the customer sent for the team to answer in the console, and don't run Alexis.
+  if (input.language && LANGUAGES[input.language] && input.language !== conv.language) {
+    await sql`update conversations set language = ${input.language} where id = ${conv.id}`;
+    conv = { ...conv, language: input.language };
+  }
+  const ops = await operations(sql);
+  if (conv.taken_over_by || !ops.alexisOn) {
+    await storeForTeam(sql, conv, input, now, user, emit);
+    if (conv.taken_over_by) emit({ type: "taken_over", by: conv.taken_over_by });
+    else {
+      if (conv.awaiting_team !== "switched_off") {
+        await sql`update conversations set awaiting_team = 'switched_off' where id = ${conv.id}`;
+        await audit({ sql, conv, user, toolUseId: `queue-${Date.now()}` }, { kind: "handoff", tool: "alexis_enabled", summary: "Alexis is switched off · message queued for the team" });
       }
-      const blocks: ContentBlockParam[] = [];
-      if (input.image) blocks.push({ type: "image", source: { type: "base64", media_type: input.image.media_type, data: input.image.data } });
-      blocks.push({ type: "text", text });
-      const next = appendTurn(conv.messages as never, "user", blocks as never);
-      await sql`update conversations set messages = ${sql.json(next as never)}, last_activity = ${now} where id = ${conv.id}`;
+      emit({ type: "team_queue", message: "Our AI assistant is switched off right now. A member of the team will reply here as soon as they can." });
     }
-    emit({ type: "taken_over", by: conv.taken_over_by });
     emit({ type: "done" });
     return;
+  }
+  // Alexis answers again: a conversation that was waiting for the team (switched off, or the AI service
+  // was down) carries on with her, and she reads everything the customer sent meanwhile.
+  if (conv.awaiting_team) {
+    await sql`update conversations set awaiting_team = null where id = ${conv.id}`;
+    conv = { ...conv, awaiting_team: null };
   }
 
   const messages = [...(conv.messages as MessageParam[])];
@@ -439,8 +487,11 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
     if (err instanceof Anthropic.AuthenticationError) {
       emit({ type: "error", message: "The AI service rejected the API key. Check ANTHROPIC_API_KEY in Vercel's settings." });
     } else if (why.transient) {
-      // A busy or rate-limited AI service isn't a case for the team: the customer just tries again.
-      emit({ type: "error", message: "Sorry, I'm a little overloaded right now and couldn't finish that. Please send your message again in a minute." });
+      // The AI service is down or overloaded even after retries: the conversation waits for the team in
+      // the console (not a case), and Alexis picks it up again on the customer's next message.
+      await sql`update conversations set awaiting_team = 'ai_unavailable' where id = ${conv.id}`.catch(() => {});
+      await audit(base, { kind: "handoff", summary: "AI service unavailable · conversation queued for the team" }).catch(() => {});
+      emit({ type: "team_queue", message: "I can't reply right now, so your message is with our team. A member of the team will reply here, or I'll pick it up again if you write back in a few minutes." });
     } else {
       // Pass it to the team for real, so the message below is true.
       const handed = await runTool(

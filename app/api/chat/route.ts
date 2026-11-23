@@ -29,6 +29,7 @@ export async function POST(req: Request) {
     image?: { media_type: string; data: string };
     channel?: string;
     subject?: string;
+    language?: string;
   } | null;
   if (!body?.conversationId || !UUID.test(body.conversationId)) {
     return Response.json({ error: "bad_request" }, { status: 400 });
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
             image: imageOk(body.image) ? (body.image as { media_type: "image/jpeg"; data: string }) : undefined,
             channel: CHANNELS.includes(body.channel as Channel) ? (body.channel as Channel) : "app",
             subject: typeof body.subject === "string" ? body.subject.slice(0, 200) : undefined,
+            language: typeof body.language === "string" ? body.language.slice(0, 8) : undefined,
           },
           emit,
         );
