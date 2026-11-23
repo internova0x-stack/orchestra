@@ -723,3 +723,7 @@ a { color: var(--brand-accent); }
 .sidebar-collapsed .me-avatar { display: grid; }
 .sidebar-collapsed .me .btn-link { font-size: var(--size-xs); align-self: center; }
 @media (max-width: 899px) { .sidebar-toggle, .me-avatar { display: none !important; } .sidebar-collapsed .sidebar { width: auto; } .sidebar-collapsed .tab-label { display: inline; } }
+/* Top bar order (Nov 23): Reset demo, the theme icon, then who is signed in at the far right */
+.theme-toggle { width: 36px; padding: 0; display: inline-grid; place-items: center; }
+.theme-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.topbar-me { margin-right: 0; margin-left: var(--space-2); }

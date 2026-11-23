@@ -166,20 +166,24 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           <header className="topbar">
             <h1 className="page-title">{current}</h1>
             <div className="topbar-right">
+              {perms.includes("demo_reset") && (
+                <button className="btn" onClick={reset} disabled={resetting}>
+                  {resetting ? "Resetting…" : "Reset demo"}
+                </button>
+              )}
+              <button className="btn theme-toggle" onClick={switchTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  {theme === "dark"
+                    ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>
+                    : <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />}
+                </svg>
+              </button>
               {me && (
                 <Link href="/account" className="topbar-me" title="Your account">
                   <span className="topbar-avatar" aria-hidden="true">{me.name.charAt(0)}</span>
                   <span>{me.name}</span>
                   <span className="topbar-role">{me.roleName}</span>
                 </Link>
-              )}
-              <button className="btn" onClick={switchTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
-                {theme === "dark" ? "Light" : "Dark"}
-              </button>
-              {perms.includes("demo_reset") && (
-                <button className="btn" onClick={reset} disabled={resetting}>
-                  {resetting ? "Resetting…" : "Reset demo"}
-                </button>
               )}
             </div>
           </header>
