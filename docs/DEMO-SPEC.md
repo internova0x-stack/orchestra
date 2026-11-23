@@ -234,7 +234,7 @@ invoice-fraud warning); case 4's over-cap recall goes to a human.
   the Rules screen and both demo-moment changes; 13 scripted test conversations (one per planted case),
   pass mark 12 of 13, with zero: actions before identity check, held-account reasons revealed, secrets
   requested, duplicate recalls.
-- The escalation queue screen.
+- The Staff queue and Rules screens (docs/DESIGN.md).
 - Reply time: under 10 seconds for most turns, within Vercel's per-request time limit.
 
 ## Still open
