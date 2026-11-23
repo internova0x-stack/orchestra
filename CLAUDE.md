@@ -12,6 +12,10 @@ and watches Alexis change behaviour.
   the Rules screen) and the decisions taken on Nov 23. **Build only what is in it.**
 - `docs/DESIGN.md`: the three screens, the CSS tokens (dark by default, indigo), components, reply
   patterns and states. Use the tokens, never raw colours; never Nuvion's logo, colours or brand.
+- `prompts/core-instructions.md`: Alexis's system prompt, the Behaviour Guide's "Core instructions" word
+  for word. Use it as written; change it only when Tomi asks.
+- `docs/BEHAVIOUR.md`: voice, the shape of a conversation and model wording for hard moments.
+- `docs/ESCALATION.md`: handoff triggers and urgency, the handoff summary, the Staff queue.
 - `docs/KNOWLEDGE-BASE.md`: the dummy rule set the seed loads into `rules` (sourced and sample entries).
 - `docs/TESTS.md`: the 12 scripted conversations and 6 safety tests, the named sample users and
   payments the seed must contain, and the pass bar. A change that touches Alexis's behaviour is checked

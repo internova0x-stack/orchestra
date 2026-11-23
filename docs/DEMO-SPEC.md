@@ -224,6 +224,3 @@ turns, within Vercel's per-request time limit.
 ## Still open
 
 - The demo fintech's display name (the pitch is to Nuvion; the prototype is labelled as one).
-- Languages: English only for now.
-- Docs 5, 7 and 10 aren't written (Behaviour Guide, Escalation Playbook, Build Plan);
-  more are on their way before building starts.
