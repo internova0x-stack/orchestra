@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import Chat from "./Chat";
 
 const TABS = [
   { href: "/", label: "Chat" },
@@ -10,7 +11,7 @@ const TABS = [
   { href: "/staff", label: "Staff queue" },
 ];
 
-export const RESET_EVENT = "orchestra:reset";
+import { RESET_EVENT } from "./events";
 
 /** The app frame on every screen: prototype banner, top bar with tabs, theme switch and Reset demo. */
 export default function Frame({ children }: { children: React.ReactNode }) {
@@ -74,7 +75,14 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </header>
-      <main className="page">{children}</main>
+      <main className="page">
+        {/* The chat stays mounted on every tab, so a conversation survives a visit to the Staff
+            queue and the team's decision appears in it. */}
+        <div className="page-fill" hidden={path !== "/"}>
+          <Chat />
+        </div>
+        {path !== "/" && children}
+      </main>
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );

@@ -10,7 +10,16 @@ export interface Conversation {
   failed_attempts: number;
   pending_identity_tool_id: string | null;
   pending_results: unknown[];
+  pending_action: PendingAction | null;
   last_activity: Date;
+}
+
+/** An action Alexis has asked the customer to confirm. Only the customer's own yes confirms it. */
+export interface PendingAction {
+  tool: "initiate_recall";
+  transfer_id: string;
+  confirmed: boolean;
+  asked_at: string;
 }
 
 export interface VerifiedUser {

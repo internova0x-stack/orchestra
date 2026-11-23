@@ -39,7 +39,11 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   created by the app itself on first use and on Reset demo, so nobody pastes SQL into Supabase.
 - `app/api/chat` streams a turn as newline-delimited JSON · `app/api/activity` the audit log for the
   activity panel · `app/api/reset` Reset demo · `app/api/users` the customer picker · `app/api/proof` a payment
-  confirmation as a PDF (`lib/proofPdf.ts`, watermarked, no institution's name).
+  confirmation as a PDF (`lib/proofPdf.ts`, watermarked, no institution's name) · `app/api/staff` the Staff
+  queue (`lib/staff.ts`: Approve, Decline, Mark resolved; the screen acts as "Supervisor", no login).
+- Confirmation is enforced in code: a tier 2/3 tool's first call stores `conversations.pending_action` and
+  shows Yes/Cancel; only the customer's button or typed yes sets it confirmed (`runTurn`), never the model.
+- The Chat screen lives in `app/components/Frame.tsx` and stays mounted on every tab.
 - `npm run dev`, `npm run build`, `npm run typecheck`.
 - `npm test` with `TEST_DATABASE_URL` pointing at a throwaway Postgres runs the tools against the seeded
   bank (no model calls); without it the database tests are skipped.

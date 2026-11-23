@@ -307,3 +307,86 @@ test("restrictions: a customer-fixable one comes with its cause; other businesse
   const none = await call(ada, "get_account_restrictions", { reference: "PO-88177" });
   assert.deepEqual((none.data as { restrictions: unknown[] }).restrictions, []);
 });
+
+// ---------------------------------------------------------------- step 5: recalls and the Staff queue
+
+async function confirmPending(s: Awaited<ReturnType<typeof session>>) {
+  // What the "Yes, go ahead" button does in runTurn: only the customer's yes sets this.
+  const [row] = await sql!`update conversations set pending_action = jsonb_set(pending_action, '{confirmed}', 'true') where id = ${s.conv.id} returning pending_action`;
+  s.conv.pending_action = row.pending_action;
+}
+
+test("recall: nothing happens without the customer's yes; then within the cap it's requested once", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("ada", MONDAY);
+  const first = await call(s, "initiate_recall", { reference: "PO-88150" });
+  assert.equal(first.ok, false);
+  assert.match(first.reason!, /CONFIRMATION_NEEDED/);
+  assert.ok(s.events.some((e) => e.type === "confirm"));
+  assert.equal((await sql!`select count(*)::int as n from recalls`)[0].n, 0, "no recall before the yes");
+  // Calling again without a yes still does nothing: the model can't confirm on the customer's behalf.
+  assert.match((await call(s, "initiate_recall", { reference: "PO-88150" })).reason!, /CONFIRMATION_NEEDED/);
+  await confirmPending(s);
+  const done = await call(s, "initiate_recall", { reference: "PO-88150" });
+  assert.equal(done.ok, true);
+  assert.equal(done.reference, "REC-5001");
+  const dup = await call(s, "initiate_recall", { reference: "PO-88150" });
+  assert.equal(dup.ok, false);
+  assert.equal(dup.reference, "REC-5001", "a second recall returns the first reference");
+  assert.equal((await sql!`select count(*)::int as n from recalls`)[0].n, 1);
+});
+
+test("test 4: a $14,500 recall is above the cap: prepared, refused, linked to the case, approved in the Staff queue", { skip }, async () => {
+  const { decide } = await import("../lib/staff.ts");
+  await seed(sql!, MONDAY);
+  const s = await session("ada", MONDAY);
+  await call(s, "initiate_recall", { reference: "PO-88213" });
+  await confirmPending(s);
+  const out = await call(s, "initiate_recall", { reference: "PO-88213" });
+  assert.equal(out.ok, false);
+  assert.equal(out.reference, "REC-5001");
+  const rows = await sql!`select kind, summary from audit_log where conversation_id = ${s.conv.id} order by id`;
+  assert.ok(rows.some((r) => r.kind === "refusal" && r.summary === "initiate_recall · refused: above cap $10,000"));
+  const esc = await call(s, "escalate_to_human", { trigger: "recall_over_cap", urgency: "high", request: "Recall PO-88213", checked: "PO-88213 $14,500.00", did: "Recall prepared, not submitted", needed: "Approve or decline", told: "Needs approval" });
+  const [kase] = await sql!`select action from escalations where reference = ${esc.reference!}`;
+  assert.equal(kase.action.reference, "REC-5001");
+  const decided = await decide(sql!, esc.reference!, "approve", null);
+  assert.equal(decided.ok, true);
+  const [recall] = await sql!`select status, decided_by from recalls where reference = 'REC-5001'`;
+  assert.equal(recall.status, "approved");
+  assert.equal(recall.decided_by, "Supervisor");
+  const approval = await sql!`select summary, approver from audit_log where conversation_id = ${s.conv.id} and kind = 'approval'`;
+  assert.equal(approval[0].summary, "approved by Supervisor · recall on PO-88213");
+  assert.equal((await decide(sql!, esc.reference!, "approve", null)).ok, false, "a case is decided once");
+});
+
+test("test 5: a view-only user can't request a recall", { skip }, async () => {
+  const s = await session("tunde", MONDAY);
+  const out = await call(s, "initiate_recall", { reference: "PO-88213" });
+  assert.equal(out.ok, false);
+  assert.match(out.reason!, /view-only/);
+  const rows = await sql!`select summary from audit_log where conversation_id = ${s.conv.id}`;
+  assert.equal(rows[0].summary, "initiate_recall · refused: view-only role");
+});
+
+test("S6: lowering the cap to $2,000 sends the $3,200 recall for approval", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  await sql!`update rules set value = '2000' where id = 'recall_cap_usd'`;
+  const s = await session("ada", MONDAY);
+  await call(s, "initiate_recall", { reference: "PO-88150" });
+  await confirmPending(s);
+  const out = await call(s, "initiate_recall", { reference: "PO-88150" });
+  assert.equal(out.ok, false);
+  assert.match(out.reason!, /above the \$2,000 cap/);
+  const [r] = await sql!`select status from recalls where transfer_id = 'PO-88150'`;
+  assert.equal(r.status, "awaiting_approval");
+  await seed(sql!, MONDAY);
+});
+
+test("recall: never on a held payout, a failed one, or another business's", { skip }, async () => {
+  const lena = await session("lena", MONDAY);
+  assert.match((await call(lena, "initiate_recall", { reference: "PO-88177" })).reason!, /review hold/);
+  const maya = await session("maya", MONDAY);
+  assert.match((await call(maya, "initiate_recall", { reference: "PO-77310" })).reason!, /Failed/);
+  assert.match((await call(maya, "initiate_recall", { reference: "PO-88213" })).reason!, /No payout/);
+});

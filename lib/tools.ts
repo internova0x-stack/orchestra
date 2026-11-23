@@ -42,6 +42,7 @@ export type StreamEvent =
   | { type: "handoff"; reference: string; urgency: string; respond: string }
   | { type: "proof"; proof: ProofDoc }
   | { type: "masked"; text: string }
+  | { type: "confirm"; action: string; consequence: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -112,7 +113,8 @@ export async function audit(
 async function ruleRead(ctx: ToolCtx, rules: Rules, id: string, label?: string) {
   const r = rules.get(id);
   if (!r) return;
-  const value = r.unit && !["$", "£", "₦"].includes(r.unit) ? `${r.value} ${r.unit}` : r.value;
+  const sym = { $: "USD", "£": "GBP", "₦": "NGN" }[r.unit ?? ""];
+  const value = sym ? money(Number(r.value), sym).replace(/\.00$/, "") : r.unit ? `${r.value} ${r.unit}` : r.value;
   await audit(ctx, { kind: "rule", summary: `rule · ${label ?? r.name} · ${value}` });
 }
 
@@ -298,9 +300,21 @@ const escalateToHuman = {
       told: input.told,
       flags: input.flags?.length ? input.flags : ["None"],
     };
-    await sql`insert into escalations (reference, conversation_id, business_id, user_id, urgency, trigger, summary, respond_by)
+    // An over-cap recall prepared in this conversation becomes the case's action for a supervisor.
+    let action: { type: "recall"; reference: string; payout: string; amount: string } | null = null;
+    if (input.trigger === "recall_over_cap") {
+      const r = await sql<{ reference: string; transfer_id: string; amount: string; currency: string }[]>`
+        select reference, transfer_id, amount, currency from recalls
+        where conversation_id = ${ctx.conv.id} and status = 'awaiting_approval' and escalation_reference is null
+        order by created_at desc limit 1`;
+      if (r[0]) {
+        action = { type: "recall", reference: r[0].reference, payout: r[0].transfer_id, amount: money(r[0].amount, r[0].currency) };
+        await sql`update recalls set escalation_reference = ${reference} where reference = ${r[0].reference}`;
+      }
+    }
+    await sql`insert into escalations (reference, conversation_id, business_id, user_id, urgency, trigger, summary, respond_by, action)
       values (${reference}, ${ctx.conv.id}, ${ctx.user?.business_id ?? null}, ${ctx.user?.id ?? null}, ${urgency},
-              ${input.trigger}, ${sql.json(summary)}, ${due.at})`;
+              ${input.trigger}, ${sql.json(summary)}, ${due.at}, ${action ? sql.json(action) : null})`;
     await audit(ctx, { kind: "handoff", tool: "escalate_to_human", summary: `escalate_to_human · ${reference} · ${urgency}`, input, result: summary });
     ctx.emit({ type: "handoff", reference, urgency, respond: due.text });
     return {
@@ -687,10 +701,112 @@ const getAccountRestrictions = {
   },
 };
 
+
+// ---------------------------------------------------------------- initiate_recall
+
+const recallSchema = z.object({
+  reference: z.string().describe("The payout reference, e.g. PO-88213. Look the payout up with get_transfer_status first."),
+});
+
+const CAP_RULE: Record<string, string> = { USD: "recall_cap_usd", GBP: "recall_cap_gbp", NGN: "recall_cap_ngn" };
+
+const initiateRecall = {
+  name: "initiate_recall",
+  tier: 3 as Tier,
+  description:
+    "Ask the receiving bank to return a payout sent in error, for the verified user's business. Only users with payment rights can request one. The first call shows the customer a confirmation (\"Yes, go ahead\" or \"Cancel\") and returns CONFIRMATION_NEEDED: state the action and its consequence in your reply and wait. Call again only after the customer has said yes; the app knows whether they did. Within the cap, the recall is requested. Above the cap, it is prepared and must go to a human for approval: then escalate with trigger recall_over_cap. Recovery is never guaranteed; say so. A second recall on the same payout is refused and returns the first.",
+  schema: recallSchema,
+  async run(input: z.infer<typeof recallSchema>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
+    const user = ctx.user!;
+    const { sql } = ctx;
+    const ref = input.reference.trim().toUpperCase();
+    const T = "initiate_recall";
+    // 1. Switched on.
+    if (!rules.on("action_initiate_recall")) return refuse(ctx, T, input, "Recalls are switched off for this institution. Explain and offer a handoff.", "switched off");
+    // 2. Identity: the standard check (the one-time code is backlog, owner Nov 23), and the role.
+    if (user.role !== "payment_rights") {
+      return refuse(ctx, T, input, "This user's role is view-only, so they cannot request a recall. Tell them a team member with payment rights can ask, or their admin can change their role. You may still give information about the payout.", "view-only role");
+    }
+    // 3. The payout belongs to the verified user's business.
+    const rows = await sql<TransferRow[]>`
+      select t.*, exists (select 1 from restrictions r where r.transfer_id = t.id and r.kind = 'review_hold') as review_hold
+      from transfers t where upper(t.id) = ${ref} and t.business_id = ${user.business_id}`;
+    const t = rows[0];
+    if (!t) return refuse(ctx, T, input, "No payout with that reference on this account.", "payout not found");
+    // 4. Never on a review hold.
+    if (t.review_hold) return refuse(ctx, T, input, "review hold. No action can be taken; follow the review-hold instructions.", "review hold");
+    if (t.status === "failed" || t.status === "reversed") {
+      return refuse(ctx, T, input, `This payout is ${statusLabel(t.status)}, so there is nothing to recall.`, `payout ${t.status}`);
+    }
+    // 7. Not already done: a second recall on the same payout returns the first.
+    const existing = await sql<{ reference: string; status: string }[]>`select reference, status from recalls where transfer_id = ${t.id}`;
+    if (existing[0]) {
+      await audit(ctx, { kind: "refusal", tool: T, summary: `${T} · refused: already requested ${existing[0].reference}`, input, refusal_reason: "Duplicate recall" });
+      return { ok: false, reference: existing[0].reference, reason: `A recall for this payout already exists (${existing[0].reference}, ${existing[0].status.replace("_", " ")}). Give the customer that reference; a second recall can't be made.` };
+    }
+    // 6. Per-customer limit.
+    const limit = rules.num("recall_limit", 3);
+    const [{ n }] = await sql<{ n: number }[]>`
+      select count(*)::int as n from recalls where business_id = ${user.business_id} and created_at > ${new Date(ctx.now.getTime() - 30 * 86_400_000)}`;
+    if (n >= limit) {
+      return refuse(ctx, T, input, `This business has reached ${limit} recalls in 30 days, so a new one needs a person to review it. Don't accuse the customer of anything; say it needs staff review and escalate.`, "recall limit reached");
+    }
+    // 5. The cap, read from the rules on this call.
+    const capId = CAP_RULE[t.currency];
+    const cap = rules.num(capId, Infinity);
+    await ruleRead(ctx, rules, capId, `Recall cap (${t.currency})`);
+    const overCap = Number(t.amount) > cap;
+    const amount = money(t.amount, t.currency);
+    const capText = money(cap, t.currency).replace(/\.00$/, "");
+
+    // 8. The customer's yes, for this exact payout. Only the customer's message or button sets it.
+    const pending = ctx.conv.pending_action;
+    const confirmed = pending?.tool === T && pending.transfer_id === t.id && pending.confirmed;
+    if (!confirmed) {
+      const action: NonNullable<typeof ctx.conv.pending_action> = { tool: T, transfer_id: t.id, confirmed: false, asked_at: ctx.now.toISOString() };
+      await sql`update conversations set pending_action = ${sql.json(action as never)} where id = ${ctx.conv.id}`;
+      ctx.conv.pending_action = action;
+      const consequence = overCap
+        ? `It's above the ${capText} limit I can act on, so I'll prepare it and send it to our payments team for approval. Recovery isn't guaranteed.`
+        : "I'll ask the receiving bank to return it. Recovery depends on the receiving bank and isn't guaranteed.";
+      ctx.emit({ type: "confirm", action: `Recall the ${amount} payout to ${t.recipient_name} (${t.id})?`, consequence });
+      await audit(ctx, { kind: "rule", tool: T, summary: `${T} · ${t.id} · waiting for the customer's yes`, input });
+      return {
+        ok: false,
+        reason: `CONFIRMATION_NEEDED: the customer is being shown "Yes, go ahead" and "Cancel". In your reply, state the action (recall ${amount} to ${t.recipient_name}, ${t.id}) and its consequence (${consequence}) and wait for their answer. Do not call initiate_recall again until they say yes.`,
+      };
+    }
+
+    // Confirmed: the pending action is used up.
+    await sql`update conversations set pending_action = null where id = ${ctx.conv.id}`;
+    ctx.conv.pending_action = null;
+    const [{ seq }] = await sql<{ seq: string }[]>`select nextval('recall_seq')::text as seq`;
+    const reference = `REC-${seq}`;
+    if (overCap) {
+      await sql`insert into recalls (reference, transfer_id, business_id, conversation_id, user_id, amount, currency, status)
+        values (${reference}, ${t.id}, ${user.business_id}, ${ctx.conv.id}, ${user.id}, ${t.amount}, ${t.currency}, 'awaiting_approval')`;
+      await audit(ctx, { kind: "refusal", tool: T, summary: `${T} · refused: above cap ${capText}`, input, result: { prepared: reference }, refusal_reason: `Above the ${capText} recall cap` });
+      return {
+        ok: false,
+        reference,
+        reason: `The recall is above the ${capText} cap, so you cannot submit it. It has been prepared as ${reference} and needs a supervisor's approval. Now escalate with trigger recall_over_cap (urgency high), then tell the customer it needs approval from the payments team, that it's prepared with the details, when to expect a response, the reference, and that recovery isn't guaranteed once funds are credited.`,
+      };
+    }
+    await sql`insert into recalls (reference, transfer_id, business_id, conversation_id, user_id, amount, currency, status)
+      values (${reference}, ${t.id}, ${user.business_id}, ${ctx.conv.id}, ${user.id}, ${t.amount}, ${t.currency}, 'requested')`;
+    await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${t.id} · recall ${reference} requested`, input, result: { reference, amount } });
+    return {
+      ok: true,
+      reference,
+      data: { reference, payout: t.id, amount, status: "Recall requested from the receiving bank", note: "Tell the customer it's requested, the reference, and that recovery depends on the receiving bank and isn't guaranteed. Don't predict the outcome or a date." },
+    };
+  },
+};
+
 // ---------------------------------------------------------------- registry
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions];
+const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

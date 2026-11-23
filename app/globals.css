@@ -86,11 +86,14 @@ a { color: var(--brand-accent); }
 .tab {
   min-height: 40px; display: inline-flex; align-items: center; padding: 0 var(--space-4); border-radius: var(--radius-md);
   color: var(--text-2); text-decoration: none; font-size: var(--size-sm); font-weight: 600;
+  background: transparent; border: 0; cursor: pointer;
 }
 .tab:hover { color: var(--text-1); }
 .tab[aria-current='page'] { background: var(--brand-50); color: var(--brand-accent); }
 .topbar-right { display: flex; justify-content: flex-end; gap: var(--space-2); align-items: center; }
 .page { flex: 1; min-height: 0; padding: var(--space-4) var(--space-6) var(--space-6); }
+.page-fill { height: 100%; }
+.page-fill[hidden] { display: none; }
 
 .btn {
   min-height: 40px; padding: 0 var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--border-strong);
@@ -240,6 +243,39 @@ a { color: var(--brand-accent); }
 .row.k-error { border-left-color: var(--stop); }
 .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--brand-accent); animation: spin 0.8s linear infinite; flex: none; align-self: center; }
 .empty { color: var(--text-2); font-size: var(--size-sm); padding: var(--space-4); }
+
+/* ---------- Staff queue ---------- */
+.staff-grid { display: grid; grid-template-columns: 360px 1fr; gap: var(--space-4); height: 100%; }
+.case-list { overflow-y: auto; padding: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); }
+.case-row {
+  text-align: left; display: grid; gap: 2px; padding: var(--space-3); border-radius: var(--radius-md);
+  border: 1px solid transparent; background: transparent; cursor: pointer; min-height: 40px;
+}
+.case-row:hover { background: var(--surface-sunk); }
+.case-row[aria-current='true'] { background: var(--brand-50); border-color: var(--brand-600); }
+.case-top { display: flex; align-items: center; gap: var(--space-2); }
+.case-top .label { margin-left: auto; }
+.case-business { font-weight: 600; }
+.case-tabs { display: flex; gap: var(--space-1); padding: var(--space-2) var(--space-4) 0; }
+.case-body { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-6); }
+.summary { margin: 0; display: grid; gap: 0; }
+.summary div { display: grid; grid-template-columns: 220px 1fr; gap: var(--space-4); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.summary dt { color: var(--text-2); font-size: var(--size-sm); }
+.summary dd { margin: 0; }
+.transcript p { margin: 0 0 var(--space-3); white-space: pre-wrap; }
+.case-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border); }
+.note { flex: 1; min-width: 200px; min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--border-strong); }
+@media (max-width: 899px) {
+  .staff-grid { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .case-list { max-height: 240px; }
+  .summary div { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* Confirmation prompt and team updates */
+.confirm { margin-top: var(--space-3); display: grid; gap: var(--space-2); white-space: normal; }
+.confirm-action { font-weight: 600; }
+.confirm-buttons { display: flex; gap: var(--space-2); }
+.update { align-self: stretch; max-width: none; background: var(--info-bg); border-color: transparent; }
 
 /* ---------- Placeholder screens ---------- */
 .placeholder { max-width: 640px; margin: var(--space-8) auto; padding: var(--space-8); }

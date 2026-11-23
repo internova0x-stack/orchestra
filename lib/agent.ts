@@ -26,7 +26,7 @@ function coreInstructions(): string {
  * Facts about this session that the app knows and the customer didn't type. Kept apart from the
  * core instructions (which stay exactly as written and cached).
  */
-function sessionContext(now: Date, user: VerifiedUser | null, conv: Conversation): string {
+async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, conv: Conversation): Promise<string> {
   const lines = [
     "Session context (from the app, not from the customer):",
     `- It is ${longDate(now)}, ${dateTime(now).split(", ")[1]} Lagos time.`,
@@ -39,7 +39,24 @@ function sessionContext(now: Date, user: VerifiedUser | null, conv: Conversation
   } else {
     lines.push("- Identity not verified yet.");
   }
-  lines.push("- The customer sees each payment card you look up under your reply, and the identity form when you call verify_identity.");
+  const pa = conv.pending_action;
+  if (pa) {
+    lines.push(pa.confirmed
+      ? `- The customer has just confirmed the recall on ${pa.transfer_id}. Call initiate_recall for ${pa.transfer_id} now.`
+      : `- Waiting for the customer to confirm the recall on ${pa.transfer_id}. Only their yes confirms it.`);
+  }
+  // Decisions the support team has made on this conversation's cases since the handoff.
+  const cases = await sql<{ reference: string; status: string; resolution: string | null; action: { type: string; reference: string; payout: string } | null; decided_at: Date | null }[]>`
+    select reference, status, resolution, action, decided_at from escalations
+    where conversation_id = ${conv.id} order by created_at`;
+  for (const c of cases) {
+    const what = c.action?.type === "recall" ? `the recall ${c.action.reference} on ${c.action.payout}` : "the case";
+    if (c.status === "approved") lines.push(`- Update on ${c.reference}: a supervisor approved ${what}; it has been submitted to the receiving bank. Recovery is still not guaranteed.`);
+    else if (c.status === "declined") lines.push(`- Update on ${c.reference}: a supervisor declined ${what}. The team will explain why; don't guess.`);
+    else if (c.status === "resolved") lines.push(`- Update on ${c.reference}: the team marked the case resolved${c.resolution ? ` (${c.resolution})` : ""}.`);
+    else lines.push(`- ${c.reference} is open with the team. If the customer asks again, give its status and reference; don't open a second case for the same issue.`);
+  }
+  lines.push("- The customer sees each payment card you look up under your reply, the identity form when you call verify_identity, and Yes/Cancel buttons when an action needs their confirmation.");
   return lines.join("\n");
 }
 
@@ -50,7 +67,12 @@ export interface TurnInput {
   typingUserId: string | null;
   message?: string;
   identity?: IdentityAnswers;
+  /** Set by the "Yes, go ahead" (true) and "Cancel" (false) buttons. */
+  confirm?: boolean;
 }
+
+const YES = /^\s*(yes|yeah|yep|yup|sure|ok|okay|go ahead|please do|please go ahead|do it|confirm|confirmed|proceed)\b[^?]{0,60}$/i;
+const NO = /^\s*(no|nope|cancel|stop|don't|do not|wait)\b/i;
 
 /** Run one customer turn: a message, or the identity form's answers. Streams events to the screen. */
 export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent) => void): Promise<void> {
@@ -138,6 +160,23 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
       });
     }
     content.push({ type: "text", text });
+
+    // The customer's answer to a pending confirmation, from the buttons or a typed yes or no.
+    const pa = conv.pending_action;
+    if (pa && !pa.confirmed) {
+      const yes = input.confirm === true || (input.confirm === undefined && YES.test(text) && !NO.test(text));
+      const no = input.confirm === false || (input.confirm === undefined && NO.test(text));
+      if (yes) {
+        const next = { ...pa, confirmed: true };
+        await sql`update conversations set pending_action = ${sql.json(next as never)} where id = ${conv.id}`;
+        conv = { ...conv, pending_action: next };
+        await audit({ sql, conv, user, toolUseId: `confirm-${Date.now()}` }, { kind: "rule", tool: pa.tool, summary: `customer confirmed · recall on ${pa.transfer_id}` });
+      } else if (no) {
+        await sql`update conversations set pending_action = null where id = ${conv.id}`;
+        conv = { ...conv, pending_action: null };
+        await audit({ sql, conv, user, toolUseId: `confirm-${Date.now()}` }, { kind: "rule", tool: pa.tool, summary: `customer cancelled · recall on ${pa.transfer_id}` });
+      }
+    }
   }
   await sql`update conversations set pending_identity_tool_id = null, pending_results = '[]', last_activity = ${now} where id = ${conv.id}`;
   conv = { ...conv, pending_identity_tool_id: null, pending_results: [] };
@@ -165,7 +204,7 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
         output_config: { effort: EFFORT },
         system: [
           { type: "text", text: coreInstructions(), cache_control: { type: "ephemeral" } },
-          { type: "text", text: sessionContext(new Date(), user, conv) },
+          { type: "text", text: await sessionContext(sql, new Date(), user, conv) },
         ],
         tools,
         messages,
@@ -175,7 +214,7 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
       for await (const event of stream) {
         if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
           emit({ type: "tool_start", id: event.content_block.id, name: event.content_block.name });
-        } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        } else if (event.type === "content_block_delta" && event.delta.type === "text_delta" && event.delta.text) {
           if (wroteText && !brokeLine) {
             emit({ type: "break" });
             brokeLine = true;

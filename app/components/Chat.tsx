@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GREETING, OPENERS } from "@/lib/greeting";
-import { RESET_EVENT } from "./Frame";
+import { RESET_EVENT } from "./events";
 
 // ---------------------------------------------------------------- types
 
@@ -21,6 +21,8 @@ interface Msg {
   identity?: "open" | "sent";
   handoff?: Handoff;
   proof?: Proof;
+  confirm?: { action: string; consequence: string; state: "open" | "answered" };
+  update?: boolean;
   thinking?: boolean;
   showLabel?: boolean;
 }
@@ -39,6 +41,7 @@ const CHIP: Record<string, { tone: string; icon: "check" | "clock" | "cross" | "
   Unallocated: { tone: "wait", icon: "clock" },
   Pending: { tone: "wait", icon: "clock" }, Processing: { tone: "wait", icon: "clock" }, "In review": { tone: "wait", icon: "clock" },
   Failed: { tone: "stop", icon: "cross" }, Reversed: { tone: "stop", icon: "cross" }, Blocked: { tone: "stop", icon: "cross" },
+  Declined: { tone: "stop", icon: "cross" }, Resolved: { tone: "ok", icon: "check" },
   "On hold": { tone: "info", icon: "pause" }, "Needs approval": { tone: "info", icon: "pause" },
 };
 
@@ -273,6 +276,17 @@ export default function Chat() {
         const seen = new Set(r.map((x) => x.id));
         return [...r, ...json.rows.filter((x) => !seen.has(x.id))];
       });
+      // A decision by the support team closes the loop in the conversation too.
+      const updates = json.rows.filter((x) => x.approver && (x.result as { message?: string } | null)?.message);
+      if (updates.length) {
+        setMessages((ms) => {
+          const have = new Set(ms.map((m) => m.id));
+          const add = updates
+            .filter((u) => !have.has(`update-${u.id}`))
+            .map((u) => ({ id: `update-${u.id}`, role: "alexis" as const, text: `Update from the team: ${(u.result as { message: string }).message}`, update: true, showLabel: true }));
+          return add.length ? [...ms, ...add] : ms;
+        });
+      }
     } catch {
     } finally {
       polling.current = false;
@@ -298,11 +312,16 @@ export default function Chat() {
       return copy;
     });
 
-  async function send(body: { message?: string; identity?: { full_name: string; date_of_birth: string; registration_number: string } }, shown: string) {
+  async function send(body: { message?: string; confirm?: boolean; identity?: { full_name: string; date_of_birth: string; registration_number: string } }, shown: string) {
     if (busy) return;
     setBusy(true);
     setMessages((ms) => [
-      ...ms.map((m) => (m.identity === "open" ? { ...m, identity: "sent" as const } : m)),
+      ...ms.map((m) => {
+        let x = m;
+        if (x.identity === "open") x = { ...x, identity: "sent" as const };
+        if (x.confirm?.state === "open") x = { ...x, confirm: { ...x.confirm, state: "answered" as const } };
+        return x;
+      }),
       { id: newId(), role: "customer", text: shown },
       { id: newId(), role: "alexis", text: "", thinking: true, showLabel: true },
     ]);
@@ -353,6 +372,7 @@ export default function Chat() {
                 return copy;
               });
               break;
+            case "confirm": patchLast((m) => ({ ...m, confirm: { action: e.action, consequence: e.consequence, state: "open" } })); break;
             case "proof": patchLast((m) => ({ ...m, proof: e.proof, cards: undefined })); break; // one card per reply
             case "handoff": patchLast((m) => ({ ...m, handoff: { reference: e.reference, urgency: e.urgency, respond: e.respond } })); break;
             case "error": patchLast((m) => ({ ...m, thinking: false, text: (m.text ? m.text + "\n\n" : "") + e.message })); break;
@@ -420,7 +440,7 @@ export default function Chat() {
         <div className="messages" ref={messagesRef} aria-live="polite">
           {setupProblem && <div className="msg msg-alexis" role="alert">{setupProblem}</div>}
           {messages.map((m) => (
-            <div key={m.id} className={`msg msg-${m.role}`}>
+            <div key={m.id} className={`msg msg-${m.role}${m.update ? " update" : ""}`}>
               {m.role === "alexis" && m.showLabel && <div className="msg-meta">Alexis · AI</div>}
               {m.thinking && !m.text ? (
                 <span className="dots" aria-label="Alexis is thinking"><span /><span /><span /></span>
@@ -428,6 +448,16 @@ export default function Chat() {
                 m.text
               )}
               {m.cards?.map((c) => <PaymentCard key={c.reference} card={c} />)}
+              {m.confirm && (
+                <div className="confirm">
+                  <div className="confirm-action">{m.confirm.action}</div>
+                  <div className="card-line">{m.confirm.consequence}</div>
+                  <div className="confirm-buttons">
+                    <button className="btn btn-primary" disabled={m.confirm.state !== "open" || busy} onClick={() => send({ message: "Yes, go ahead", confirm: true }, "Yes, go ahead")}>Yes, go ahead</button>
+                    <button className="btn" disabled={m.confirm.state !== "open" || busy} onClick={() => send({ message: "Cancel", confirm: false }, "Cancel")}>Cancel</button>
+                  </div>
+                </div>
+              )}
               {m.proof && <ProofCard proof={m.proof} conversationId={conversationId} />}
               {m.identity && (
                 <IdentityForm

@@ -16,6 +16,7 @@ export async function POST(req: Request) {
     typingUserId?: string;
     message?: string;
     identity?: { full_name: string; date_of_birth: string; registration_number: string };
+    confirm?: boolean;
   } | null;
   if (!body?.conversationId || !UUID.test(body.conversationId)) {
     return Response.json({ error: "bad_request" }, { status: 400 });
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
             typingUserId: body.typingUserId ?? null,
             message: typeof body.message === "string" ? body.message.slice(0, 4000) : undefined,
             identity: body.identity,
+            confirm: typeof body.confirm === "boolean" ? body.confirm : undefined,
           },
           emit,
         );
