@@ -40,6 +40,7 @@ export type StreamEvent =
   | { type: "card"; cards: PayoutCard[] }
   | { type: "identity_form" }
   | { type: "handoff"; reference: string; urgency: string; respond: string }
+  | { type: "proof"; proof: ProofDoc }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -51,6 +52,19 @@ export interface PayoutCard {
   status: string;
   date: string;
   stages: { label: string; state: "done" | "current" | "failed" | "todo" }[];
+}
+
+/** A payment confirmation: the fields the Knowledge Base lists ("Proof of payment: what it shows"). */
+export interface ProofDoc {
+  reference: string;
+  payout: string;
+  amount: string;
+  currency: string;
+  date: string;
+  recipient: string;
+  account: string;
+  route: string;
+  issued: string;
 }
 
 export interface ToolCtx {
@@ -472,10 +486,166 @@ const getTransferStatus = {
   },
 };
 
+
+// ---------------------------------------------------------------- generate_proof_of_payment
+
+const proofSchema = z.object({
+  reference: z.string().describe("The payout reference, e.g. PO-88021. Look the payout up with get_transfer_status first."),
+});
+
+const generateProofOfPayment = {
+  name: "generate_proof_of_payment",
+  tier: 2 as Tier,
+  description:
+    "Create a payment confirmation the customer can forward, for one completed (Successful) payout sent from their business account. It shows the amount, currency, date, recipient, masked account number, reference and route, and the customer can download it as a PDF. Only for a Successful payout: for a payout still pending or processing, offer a status note instead (initiated on its date, current stage); for a failed or reversed payout, no confirmation. The customer's own request for proof is their confirmation; you don't need to ask again. Returns the same confirmation if one already exists.",
+  schema: proofSchema,
+  async run(input: z.infer<typeof proofSchema>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
+    const user = ctx.user!;
+    const { sql } = ctx;
+    const ref = input.reference.trim().toUpperCase();
+    // Check 1: switched on.
+    if (!rules.on("action_generate_proof_of_payment")) {
+      return refuse(ctx, "generate_proof_of_payment", input, "Proof of payment is switched off for this institution. Explain and offer a handoff.", "switched off");
+    }
+    // Check 3: the payout belongs to the verified user's business.
+    const rows = await sql<TransferRow[]>`
+      select t.*, exists (select 1 from restrictions r where r.transfer_id = t.id and r.kind = 'review_hold') as review_hold
+      from transfers t where upper(t.id) = ${ref} and t.business_id = ${user.business_id}`;
+    const t = rows[0];
+    if (!t) return refuse(ctx, "generate_proof_of_payment", input, "No payout with that reference on this account.", "payout not found");
+    // Check 4: nothing on a review hold.
+    if (t.review_hold) {
+      return refuse(ctx, "generate_proof_of_payment", input, "review hold. No confirmation can be issued. Follow the review-hold instructions.", "review hold");
+    }
+    // Only a Successful payout gets a confirmation.
+    if (t.status !== "successful") {
+      const status = statusLabel(t.status);
+      const reason =
+        t.status === "failed" || t.status === "reversed"
+          ? `This payout is ${status}, so no confirmation is issued.`
+          : `This payout is ${status} (${t.stage ?? "in progress"}), not completed, so no confirmation of payment can be issued yet. Offer a status note instead: initiated on ${dayMonthYear(new Date(t.sent_at))}, current stage ${t.stage ?? status}.`;
+      return refuse(ctx, "generate_proof_of_payment", input, reason, `payout ${status.toLowerCase()}`);
+    }
+    // Check 7: one confirmation per payout; a second request returns the first.
+    const existing = await sql<{ reference: string; details: ProofDoc }[]>`select reference, details from proofs where transfer_id = ${t.id}`;
+    if (existing[0]) {
+      ctx.emit({ type: "proof", proof: existing[0].details });
+      await audit(ctx, { kind: "action", tool: "generate_proof_of_payment", summary: `generate_proof_of_payment · ${t.id} · already issued ${existing[0].reference}`, input });
+      return { ok: true, reference: existing[0].reference, data: { already_issued: true, confirmation: existing[0].details, note: "The confirmation card is shown under your reply." } };
+    }
+    const [{ n }] = await sql<{ n: string }[]>`select nextval('proof_seq')::text as n`;
+    const reference = `PP-${n}`;
+    const delivered = new Date(t.completed_at ?? t.sent_at);
+    const proof: ProofDoc = {
+      reference,
+      payout: t.id,
+      amount: money(t.amount, t.currency),
+      currency: t.currency,
+      date: dayMonthYear(delivered),
+      recipient: t.recipient_name,
+      account: maskAccount(t.recipient_account),
+      route: t.route,
+      issued: dateTime(ctx.now),
+    };
+    await sql`insert into proofs (reference, transfer_id, conversation_id, business_id, details)
+      values (${reference}, ${t.id}, ${ctx.conv.id}, ${user.business_id}, ${sql.json(proof as never)})`;
+    await audit(ctx, { kind: "action", tool: "generate_proof_of_payment", summary: `generate_proof_of_payment · ${t.id} · created`, input, result: proof });
+    ctx.emit({ type: "proof", proof });
+    return { ok: true, reference, data: { confirmation: proof, note: "The confirmation card, with a PDF download, is shown under your reply; don't repeat every field." } };
+  },
+};
+
+// ---------------------------------------------------------------- find_incoming_payment
+
+const incomingSchema = z.object({
+  amount: z.number().optional().describe("The amount the payer says they sent, as a number"),
+  currency: z.enum(["USD", "GBP", "NGN"]).optional(),
+  payer: z.string().optional().describe("The payer's name, or part of it"),
+  reference: z.string().optional().describe("The payment reference the payer used"),
+  sent_on: z.string().optional().describe("When the payer says they sent it, as YYYY-MM-DD"),
+});
+
+interface IncomingRow {
+  id: string;
+  business_id: string | null;
+  payer_name: string;
+  payer_bank: string | null;
+  amount: string;
+  currency: string;
+  reference: string | null;
+  status: "credited" | "unallocated";
+  received_at: Date;
+  credited_at: Date | null;
+}
+
+const findIncomingPayment = {
+  name: "find_incoming_payment",
+  tier: 1 as Tier,
+  description:
+    "Search for a payment someone sent to the verified user's business: payments already credited to the account, and unallocated payments that arrived with a wrong or missing reference and are waiting to be matched. Ask the customer for the amount, currency, date sent, payer's name and the reference used, then search. A credited match gives the date it was credited. An unallocated match must be confirmed with the customer and then handed to staff to credit (escalate_to_human, trigger unallocated_payment_matched); you cannot credit funds yourself. No match: say nothing has been received and ask for the payer's proof of payment (amount, date, sending bank, reference) so the team can trace it.",
+  schema: incomingSchema,
+  async run(input: z.infer<typeof incomingSchema>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
+    const user = ctx.user!;
+    const { sql } = ctx;
+    if (input.amount == null && !input.payer && !input.reference) {
+      return refuse(ctx, "find_incoming_payment", input, "Need at least the amount, the payer's name or the reference to search. Ask the customer.", "not enough detail");
+    }
+    const rows = await sql<IncomingRow[]>`
+      select id, business_id, payer_name, payer_bank, amount, currency, reference, status, received_at, credited_at
+      from incoming_payments
+      where (business_id = ${user.business_id} or status = 'unallocated')
+        ${input.amount != null ? sql`and amount = ${input.amount}` : sql``}
+        ${input.currency ? sql`and currency = ${input.currency}` : sql``}
+      order by received_at desc limit 50`;
+    const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const target = input.sent_on ? new Date(`${input.sent_on}T12:00:00Z`).getTime() : null;
+    const matches = rows.filter((r) => {
+      const payerOk = !input.payer || norm(r.payer_name).includes(norm(input.payer)) || norm(input.payer).includes(norm(r.payer_name));
+      const refOk = !input.reference || norm(r.reference ?? "").includes(norm(input.reference)) || norm(input.reference).includes(norm(r.reference ?? ""));
+      const dateOk = target == null || Math.abs(new Date(r.received_at).getTime() - target) < 4 * 86_400_000;
+      if (r.status === "credited") return payerOk && refOk && dateOk;
+      // Someone else's unallocated money stays private: it only matches on the exact amount
+      // plus the payer or the date, never on a loose search.
+      return input.amount != null && (payerOk || refOk) && dateOk && (Boolean(input.payer) || target != null);
+    }).slice(0, 3);
+
+    if (!matches.length) {
+      await audit(ctx, { kind: "lookup", tool: "find_incoming_payment", summary: "find_incoming_payment · no match", input, result: { found: 0 } });
+      return { ok: true, data: { found: 0, note: "Nothing matching has been received. Say so plainly and ask for the payer's proof of payment (amount, date, sending bank, reference) so the team can trace it from the sending bank's side." } };
+    }
+    const results = matches.map((r) =>
+      r.status === "credited"
+        ? { id: r.id, status: "Credited", payer: r.payer_name, amount: money(r.amount, r.currency), received: dateTime(new Date(r.received_at)), credited: dateTime(new Date(r.credited_at ?? r.received_at)), reference_used: r.reference, credited_to: `${user.business_name}, ${r.currency} account` }
+        : { id: r.id, status: "Unallocated", payer: r.payer_name, amount: money(r.amount, r.currency), received: dateTime(new Date(r.received_at)), reference_used: r.reference, sending_bank: r.payer_bank, note: "Arrived with a reference that doesn't match an account, so it is waiting to be matched. Confirm with the customer that this is their payment; then hand it to staff to credit. Do not say it has been credited." },
+    );
+    ctx.emit({
+      type: "card",
+      cards: matches.map((r) => ({
+        reference: r.id,
+        amount: money(r.amount, r.currency),
+        counterparty: `From ${r.payer_name}`,
+        route: r.reference ? `Ref ${r.reference}` : "No reference",
+        status: r.status === "credited" ? "Credited" : "Unallocated",
+        date: `Received ${dayMonthYear(new Date(r.received_at))}`,
+        stages: [],
+      })),
+    });
+    const one = results.length === 1 ? results[0] : null;
+    await audit(ctx, {
+      kind: "lookup",
+      tool: "find_incoming_payment",
+      summary: one ? `find_incoming_payment · ${one.amount} from ${one.payer} · ${one.status.toLowerCase()}` : `find_incoming_payment · ${results.length} matches`,
+      input,
+      result: results,
+    });
+    return { ok: true, data: { found: results.length, payments: results } };
+  },
+};
+
 // ---------------------------------------------------------------- registry
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus];
+const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

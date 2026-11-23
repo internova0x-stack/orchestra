@@ -195,6 +195,19 @@ a { color: var(--brand-accent); }
 .chip-info { color: var(--info); background: var(--info-bg); }
 .chip-grey { color: var(--text-2); background: var(--surface-sunk); }
 
+/* Proof of payment: a document-style card under a watermark */
+.proof { position: relative; overflow: hidden; background: var(--surface-panel); }
+.proof-mark {
+  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
+  font-size: 34px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-2); opacity: 0.12; transform: rotate(-18deg);
+}
+.proof-fields { display: grid; gap: 2px; margin: var(--space-3) 0; font-size: var(--size-sm); }
+.proof-fields div { display: grid; grid-template-columns: 140px 1fr; gap: var(--space-3); padding: 4px 0; border-bottom: 1px solid var(--border); }
+.proof-fields dt { color: var(--text-2); }
+.proof-fields dd { margin: 0; font-weight: 600; }
+.proof .btn { display: inline-flex; align-items: center; text-decoration: none; }
+
 /* Identity and handoff */
 .form { display: grid; gap: var(--space-2); margin-top: var(--space-3); white-space: normal; }
 .form label { display: grid; gap: 2px; font-size: var(--size-sm); color: var(--text-2); }

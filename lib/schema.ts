@@ -141,7 +141,18 @@ create table if not exists escalations (
   created_at timestamptz not null default now()
 );
 
+create table if not exists proofs (
+  reference text primary key,
+  transfer_id text not null references transfers(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete cascade,
+  business_id text not null references businesses(id) on delete cascade,
+  details jsonb not null,
+  created_at timestamptz not null default now(),
+  unique (transfer_id)
+);
+
 create sequence if not exists escalation_seq start 1042;
+create sequence if not exists proof_seq start 4101;
 create sequence if not exists complaint_seq start 211;
 
 create table if not exists audit_log (
@@ -165,6 +176,7 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "proofs",
   "escalations",
   "conversations",
   "rule_changes",

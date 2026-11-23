@@ -38,7 +38,8 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   `rules` · `lib/seed.ts` the simulated bank (dates relative to now) · `lib/schema.ts` the tables,
   created by the app itself on first use and on Reset demo, so nobody pastes SQL into Supabase.
 - `app/api/chat` streams a turn as newline-delimited JSON · `app/api/activity` the audit log for the
-  activity panel · `app/api/reset` Reset demo · `app/api/users` the customer picker.
+  activity panel · `app/api/reset` Reset demo · `app/api/users` the customer picker · `app/api/proof` a payment
+  confirmation as a PDF (`lib/proofPdf.ts`, watermarked, no institution's name).
 - `npm run dev`, `npm run build`, `npm run typecheck`.
 - `npm test` with `TEST_DATABASE_URL` pointing at a throwaway Postgres runs the tools against the seeded
   bank (no model calls); without it the database tests are skipped.

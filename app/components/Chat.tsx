@@ -12,6 +12,7 @@ interface Card {
   stages: { label: string; state: "done" | "current" | "failed" | "todo" }[];
 }
 interface Handoff { reference: string; urgency: string; respond: string }
+interface Proof { reference: string; payout: string; amount: string; currency: string; date: string; recipient: string; account: string; route: string; issued: string }
 interface Msg {
   id: string;
   role: "alexis" | "customer";
@@ -19,6 +20,7 @@ interface Msg {
   cards?: Card[];
   identity?: "open" | "sent";
   handoff?: Handoff;
+  proof?: Proof;
   thinking?: boolean;
   showLabel?: boolean;
 }
@@ -33,7 +35,8 @@ const greeting = (): Msg => ({ id: newId(), role: "alexis", text: GREETING, show
 // ---------------------------------------------------------------- status chip
 
 const CHIP: Record<string, { tone: string; icon: "check" | "clock" | "cross" | "pause" }> = {
-  Successful: { tone: "ok", icon: "check" }, Approved: { tone: "ok", icon: "check" },
+  Successful: { tone: "ok", icon: "check" }, Approved: { tone: "ok", icon: "check" }, Credited: { tone: "ok", icon: "check" },
+  Unallocated: { tone: "wait", icon: "clock" },
   Pending: { tone: "wait", icon: "clock" }, Processing: { tone: "wait", icon: "clock" }, "In review": { tone: "wait", icon: "clock" },
   Failed: { tone: "stop", icon: "cross" }, Reversed: { tone: "stop", icon: "cross" }, Blocked: { tone: "stop", icon: "cross" },
   "On hold": { tone: "info", icon: "pause" }, "Needs approval": { tone: "info", icon: "pause" },
@@ -111,6 +114,32 @@ function PaymentCard({ card }: { card: Card }) {
           ))}
         </ol>
       )}
+    </div>
+  );
+}
+
+function ProofCard({ proof, conversationId }: { proof: Proof; conversationId: string }) {
+  const rows: [string, string][] = [
+    ["Recipient", proof.recipient],
+    ["Account", proof.account],
+    ["Date delivered", proof.date],
+    ["Payout reference", proof.payout],
+    ["Route", proof.route],
+  ];
+  return (
+    <div className="card proof">
+      <div className="proof-mark" aria-hidden="true">Simulated document</div>
+      <div className="label">Payment confirmation · <span className="ref">{proof.reference}</span></div>
+      <div className="card-amount">{proof.amount}</div>
+      <dl className="proof-fields">
+        {rows.map(([k, v]) => (
+          <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
+        ))}
+      </dl>
+      <span className="sr-only">Simulated document.</span>
+      <a className="btn btn-primary" href={`/api/proof?ref=${proof.reference}&conversation=${conversationId}`} download>
+        Download PDF
+      </a>
     </div>
   );
 }
@@ -312,8 +341,9 @@ export default function Chat() {
             case "break": patchLast((m) => ({ ...m, text: m.text ? m.text + "\n\n" : m.text })); break;
             case "tool_start": setRunning((r) => [...r, { id: e.id, name: e.name }]); break;
             case "tool_end": pollActivity(); break;
-            case "card": patchLast((m) => ({ ...m, cards: e.cards })); break;
+            case "card": patchLast((m) => (m.proof ? m : { ...m, cards: e.cards })); break;
             case "identity_form": patchLast((m) => ({ ...m, identity: "open" })); break;
+            case "proof": patchLast((m) => ({ ...m, proof: e.proof, cards: undefined })); break; // one card per reply
             case "handoff": patchLast((m) => ({ ...m, handoff: { reference: e.reference, urgency: e.urgency, respond: e.respond } })); break;
             case "error": patchLast((m) => ({ ...m, thinking: false, text: (m.text ? m.text + "\n\n" : "") + e.message })); break;
           }
@@ -388,6 +418,7 @@ export default function Chat() {
                 m.text
               )}
               {m.cards?.map((c) => <PaymentCard key={c.reference} card={c} />)}
+              {m.proof && <ProofCard proof={m.proof} conversationId={conversationId} />}
               {m.identity && (
                 <IdentityForm
                   disabled={m.identity === "sent" || busy}

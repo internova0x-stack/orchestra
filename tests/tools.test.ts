@@ -189,3 +189,98 @@ test("seed: the named test users and records exist", { skip }, async () => {
   const fx = await sql!`select from_amount, to_amount, rate, amount from fees where id = 'FX-20418'`;
   assert.equal(Number(fx[0].amount), 25);
 });
+
+// ---------------------------------------------------------------- step 2: proof of payment
+
+test("test 8: a confirmation for PO-88021, once, with a masked account", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("ada", MONDAY);
+  const out = await call(s, "generate_proof_of_payment", { reference: "PO-88021" });
+  assert.equal(out.ok, true);
+  assert.equal(out.reference, "PP-4101");
+  const proof = (out.data as { confirmation: Record<string, string> }).confirmation;
+  assert.equal(proof.amount, "£980.00");
+  assert.equal(proof.recipient, "Fenwick Design");
+  assert.match(proof.account, /^•••• \d{4}$/);
+  assert.ok(s.events.some((e) => e.type === "proof"));
+  const again = await call(s, "generate_proof_of_payment", { reference: "PO-88021" });
+  assert.equal(again.reference, "PP-4101", "a second request returns the first confirmation");
+  const n = await sql!`select count(*)::int as n from proofs`;
+  assert.equal(n[0].n, 1);
+  const rows = await sql!`select kind, summary from audit_log where conversation_id = ${s.conv.id} order by id`;
+  assert.equal(rows[0].summary, "generate_proof_of_payment · PO-88021 · created");
+});
+
+test("test 9: no confirmation for PO-88190, still processing; the reason offers a status note", { skip }, async () => {
+  const s = await session("ada", MONDAY);
+  const out = await call(s, "generate_proof_of_payment", { reference: "PO-88190" });
+  assert.equal(out.ok, false);
+  assert.match(out.reason!, /status note/);
+  const rows = await sql!`select kind, summary from audit_log where conversation_id = ${s.conv.id}`;
+  assert.equal(rows[0].kind, "refusal");
+  assert.equal(rows[0].summary, "generate_proof_of_payment · refused: payout processing");
+});
+
+test("proof: never for a failed payout, another business's payout, or a held one", { skip }, async () => {
+  const maya = await session("maya", MONDAY);
+  assert.equal((await call(maya, "generate_proof_of_payment", { reference: "PO-77310" })).ok, false);
+  assert.equal((await call(maya, "generate_proof_of_payment", { reference: "PO-88021" })).ok, false);
+  const lena = await session("lena", MONDAY);
+  const held = await call(lena, "generate_proof_of_payment", { reference: "PO-88177" });
+  assert.equal(held.ok, false);
+  assert.doesNotMatch(JSON.stringify(held), /sanction/i);
+});
+
+test("proof: switched off on the Rules screen means no confirmation", { skip }, async () => {
+  await sql!`update rules set value = 'off' where id = 'action_generate_proof_of_payment'`;
+  const s = await session("ada", MONDAY);
+  const out = await call(s, "generate_proof_of_payment", { reference: "PO-88021" });
+  assert.equal(out.ok, false);
+  assert.match(out.reason!, /switched off/);
+  await sql!`update rules set value = 'on' where id = 'action_generate_proof_of_payment'`;
+});
+
+test("proof PDF: one page, watermarked, masked, no institution name", { skip }, async () => {
+  const { proofPdf } = await import("../lib/proofPdf.ts");
+  const bytes = await proofPdf({ reference: "PP-4101", payout: "PO-88021", amount: "₦1,200,000.00", currency: "NGN", date: "18 November 2026", recipient: "Fenwick Design", account: "•••• 3170", route: "Faster Payments", issued: "23 November 2026, 11:00" });
+  const text = Buffer.from(bytes).toString("latin1");
+  assert.ok(text.startsWith("%PDF"));
+  assert.ok(bytes.length > 1000);
+  assert.doesNotMatch(text, /nuvion/i);
+});
+
+// ---------------------------------------------------------------- step 3: incoming payments
+
+test("test 6: the unallocated £2,750 from last Friday is found, and not credited", { skip }, async () => {
+  const s = await session("maya", MONDAY);
+  const out = await call(s, "find_incoming_payment", { amount: 2750, currency: "GBP", payer: "Ashby Retail" });
+  const p = (out.data as { payments: Record<string, string>[] }).payments[0];
+  assert.equal(p.status, "Unallocated");
+  assert.equal(p.reference_used, "KSTRL INV 2O45");
+  assert.match(p.received, /^20 November 2026/, "last Friday before Monday 23 November");
+  const row = await sql!`select status from incoming_payments where id = 'IN-50311'`;
+  assert.equal(row[0].status, "unallocated");
+});
+
+test("test 6: the unallocated payment is found by amount and date, without the payer's name", { skip }, async () => {
+  const s = await session("maya", MONDAY);
+  const out = await call(s, "find_incoming_payment", { amount: 2750, currency: "GBP", sent_on: "2026-11-20" });
+  assert.equal((out.data as { found: number }).found, 1);
+});
+
+test("test 7: nothing from Adeyemi Stores", { skip }, async () => {
+  const s = await session("maya", MONDAY);
+  const out = await call(s, "find_incoming_payment", { amount: 1200000, currency: "NGN", payer: "Adeyemi Stores" });
+  assert.equal((out.data as { found: number }).found, 0);
+  assert.match((out.data as { note: string }).note, /proof of payment/);
+  const rows = await sql!`select summary from audit_log where conversation_id = ${s.conv.id}`;
+  assert.equal(rows[0].summary, "find_incoming_payment · no match");
+});
+
+test("incoming: other businesses' credited payments stay private; loose searches skip the unallocated pool", { skip }, async () => {
+  const s = await session("maya", MONDAY);
+  const out = await call(s, "find_incoming_payment", { payer: "Glasshouse" }); // Brightline's credited payment
+  assert.equal((out.data as { found: number }).found, 0);
+  const loose = await call(s, "find_incoming_payment", { amount: 420000 }); // Ember's unallocated, amount only
+  assert.equal((loose.data as { found: number }).found, 0);
+});
