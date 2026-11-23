@@ -147,6 +147,8 @@ export interface CaseRow {
   channel: "app" | "whatsapp" | "email"; subject: string | null;
   language: string; awaitingTeam: string | null; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
+  /** Set when Alexis started the conversation with a proactive failure message (lib/proactive.ts). */
+  startedBy: "alexis" | null;
 }
 
 interface ConvRow {
@@ -155,12 +157,13 @@ interface ConvRow {
   channel: "app" | "whatsapp" | "email"; email_subject: string | null;
   language: string; awaiting_team: string | null; review_rating: "good" | "needs_work" | null; review_note: string | null; reviewed_by: string | null;
   verified: boolean; customer: string | null; business: string | null; tools: string[] | null;
+  origin: string | null; proactive: { text: string; delivered?: boolean } | null;
 }
 
 /** Every customer conversation, newest activity first. */
 export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> {
   const convs = await sql<ConvRow[]>`
-    select c.id, c.created_at, c.last_activity, c.messages, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by, c.channel, c.email_subject, c.language, c.awaiting_team,
+    select c.id, c.created_at, c.last_activity, c.messages, c.origin, c.proactive, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by, c.channel, c.email_subject, c.language, c.awaiting_team,
       rv.rating as review_rating, rv.note as review_note, rv.reviewed_by,
       c.verified_user_id is not null as verified,
       coalesce(v.full_name, t.full_name) as customer, coalesce(vb.name, tb.name) as business,
@@ -169,7 +172,7 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
       left join business_users v on v.id = c.verified_user_id left join businesses vb on vb.id = v.business_id
       left join business_users t on t.id = c.typing_user_id left join businesses tb on tb.id = t.business_id
       left join conversation_reviews rv on rv.conversation_id = c.id
-    where c.mode = 'customer' and jsonb_array_length(c.messages) > 0
+    where c.mode = 'customer' and (jsonb_array_length(c.messages) > 0 or (c.origin = 'alexis' and (c.proactive->>'delivered')::boolean))
     order by c.last_activity desc
     limit 300`;
   const handoffs = await sql<(Handoff & { conversation_id: string; trigger: string })[]>`
@@ -188,7 +191,8 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
       business: c.business,
       verified: c.verified,
       category: categoryOf(c.tools ?? [], hs.map((h) => h.trigger), [c.email_subject, ...transcript.filter((m) => m.who === "Customer").map((m) => m.text)].filter(Boolean).join("\n")),
-      status: statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team }, now),
+      // A proactive message nobody has replied to yet is waiting on the customer, never resolved (or billed).
+      status: c.origin === "alexis" && transcript.length === 0 ? "Waiting on customer" : statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team }, now),
       language: c.language ?? "en",
       awaitingTeam: c.awaiting_team,
       review: c.review_rating ? { rating: c.review_rating, note: c.review_note, by: c.reviewed_by! } : null,
@@ -200,7 +204,8 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
       started: new Date(c.created_at).toISOString(),
       lastActivity: new Date(c.last_activity).toISOString(),
       messages: transcript.length,
-      firstMessage: transcript.find((m) => m.who === "Customer")?.text.slice(0, 140) ?? null,
+      firstMessage: transcript.find((m) => m.who === "Customer")?.text.slice(0, 140) ?? (c.proactive ? `Alexis: ${c.proactive.text.slice(0, 130)}` : null),
+      startedBy: c.origin === "alexis" ? "alexis" : null,
     };
   });
 }

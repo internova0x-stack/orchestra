@@ -621,3 +621,6 @@ a { color: var(--brand-accent); }
 .staff-outcome.ok { border-color: var(--ok-line); color: var(--ok); }
 .staff-outcome.stop { border-color: var(--stop-line); color: var(--stop); }
 .staff-outcome.wait { border-color: var(--wait-line); }
+.orchestra-view > summary { cursor: pointer; list-style: none; }
+.alert-banner { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-3); padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-raised, var(--surface-sunk)); border: 1px solid var(--edge-strong); font-size: var(--size-sm); }
+.outbox-msg .btn { align-self: flex-start; margin-top: var(--space-2); }

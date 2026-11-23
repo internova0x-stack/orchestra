@@ -13,6 +13,9 @@ export interface Conversation {
   pending_results: unknown[];
   pending_action: PendingAction | null;
   stronger_verified_at: Date | null;
+  /** Set when Alexis started the conversation (a proactive failure message, lib/proactive.ts). */
+  origin?: string | null;
+  proactive?: { type: string; ref: string; text: string; send_at: string; delivered: boolean } | null;
   pending_code: { tool_use_id: string; code: string; sent_at: string; attempts: number; staff?: string; sent_to?: string } | null;
   last_activity: Date;
   /** The member of the team who took the conversation over in the console; Alexis is paused meanwhile. */

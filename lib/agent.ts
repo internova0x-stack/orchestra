@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Sql } from "./db.ts";
+import { recordUsage } from "./usage.ts";
 import { EFFORT, MAX_STEPS, MAX_TOKENS, MODEL } from "./config.ts";
 import { GREETING } from "./greeting.ts";
 import { checkIdentity, type IdentityAnswers } from "./identity.ts";
@@ -41,7 +42,9 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
   const lines = [
     "Session context (from the app, not from the customer):",
     `- It is ${longDate(now)}, ${dateTime(now).split(", ")[1]} Lagos time.`,
-    `- The chat opened with your greeting, already shown to the customer: "${GREETING}" Do not introduce yourself again.`,
+    conv.proactive
+      ? `- You started this conversation: the bank's failure alert sent the customer this message (to the phone on file and their app), and they are replying to it: "${conv.proactive.text}" Do not introduce yourself again. It named the payment but they are not verified by receiving it: check identity before sharing anything else or acting, and if they say it wasn't them, treat it as possible fraud (freeze the card after their yes, then hand off urgently).`
+      : `- The chat opened with your greeting, already shown to the customer: "${GREETING}" Do not introduce yourself again.`,
   ];
   if (user) {
     lines.push(`- Identity verified: ${user.first_name} (${user.full_name}), ${user.role === "payment_rights" ? "payment rights" : "view-only"}, ${user.business_name}.`);
@@ -442,6 +445,7 @@ async function runTurnInner(sql: Sql, input: TurnInput, emit: (e: StreamEvent) =
         }
       }
       const message = await stream.finalMessage();
+      await recordUsage(sql, { conversationId: conv.id, purpose: "alexis", model: message.model, usage: message.usage });
       if (message.content.some((b) => b.type === "text" && b.text.trim())) wroteText = true;
 
       if (message.stop_reason === "refusal") {

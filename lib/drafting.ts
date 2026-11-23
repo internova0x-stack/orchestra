@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Sql } from "./db.ts";
+import { recordUsage, type Usage } from "./usage.ts";
 import { MODEL } from "./config.ts";
 import { transcriptOf } from "./cases.ts";
 import { bank } from "./bank/index.ts";
@@ -69,6 +70,7 @@ export async function draftReply(
     system: `You draft a reply from a bank's support team to a customer, for the team member to edit before sending.\n${[...RULES, ...(held ? [HOLD_RULE] : [])].map((r) => `- ${r}`).join("\n")}`,
     messages: [{ role: "user", content: materials }],
   });
+  await recordUsage(sql, { conversationId, purpose: "draft_reply", model: MODEL, usage: (res as { usage?: Usage }).usage });
   const draft = res.content.map((b) => (b.type === "text" ? b.text ?? "" : "")).join("").trim();
   await sql`insert into audit_log (conversation_id, tool_use_id, kind, tool, summary, staff)
     values (${conversationId}, ${`draft-${Date.now()}`}, 'action', 'draft_reply', ${`reply drafted for ${staff.name} to edit · not sent`}, ${staff.name})`;

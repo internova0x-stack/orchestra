@@ -6,12 +6,13 @@ const ORCHESTRA_ENDPOINTS: [string, string, string][] = [
   ["POST", "/conversations", "Open a conversation for a customer, on a channel; pass the bank's user id for a customer already signed in to its app"],
   ["POST", "/conversations/{id}/messages", "Send the customer's message (or their identity answers, a Yes/Cancel, a code); returns Alexis's reply and any form the channel should show"],
   ["GET", "/conversations/{id}", "The conversation so far, who is handling it, and whether it's waiting for the team"],
+  ["POST", "/conversations/{id}/team-replies", "A reply from a team member working in your CRM or helpdesk, delivered to the customer; hand_back returns the chat to Alexis"],
   ["POST", "/events", "Report a status change (recall, reversal, dispute, verification); Alexis's proactive updates follow. The same event id twice applies once"],
 ];
 
 const WEBHOOK_DOCS: [string, string][] = [
-  ["case.created", "Alexis handed a conversation to the team, with the handoff summary, urgency and response target"],
-  ["case.updated", "a supervisor approved or declined, or the team resolved a case"],
+  ["case.created", "Alexis handed a conversation to the team, with the handoff summary, urgency, response target and the team it's routed to"],
+  ["case.updated", "a supervisor approved or declined, the team resolved a case, someone picked it up or moved it, or it went overdue"],
   ["conversation.taken_over / handed_back", "a member of the team took a conversation over, or handed it back to Alexis"],
   ["conversation.reviewed", "the team reviewed a conversation (good or needs work)"],
   ["message.created", "a reply to the customer from Alexis or the team"],
@@ -123,7 +124,7 @@ export default function DevelopersPage() {
           <p>
             For systems that call Orchestra, and the webhooks Orchestra sends them. A bank&apos;s app, WhatsApp provider or mailbox
             brings customers&apos; messages to Alexis; the bank reports status changes so Alexis&apos;s proactive updates go out; and a
-            CRM or helpdesk receives each handoff, decision and reply as a webhook, so the team can keep working where they already work.
+            CRM or helpdesk receives each handoff, decision and reply as a webhook, and its agents' replies come back through team-replies, so the team can keep working where they already work.
           </p>
           <div className="dev-row">
             <a className="btn btn-primary" href="/openapi/orchestra-api-v1.yaml" download>Download the OpenAPI file</a>

@@ -16,13 +16,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   if (!UUID.test(id)) return Response.json({ error: "not_found" }, { status: 404 });
   const sql = db();
-  const [c] = await sql`select c.id, c.messages, c.taken_over_by, c.awaiting_team, c.language, r.rating, r.note, r.reviewed_by
+  const [c] = await sql`select c.id, c.messages, c.proactive, c.taken_over_by, c.awaiting_team, c.language, r.rating, r.note, r.reviewed_by
     from conversations c left join conversation_reviews r on r.conversation_id = c.id where c.id = ${id} and c.mode = 'customer'`;
   if (!c) return Response.json({ error: "not_found" }, { status: 404 });
   const activity = await sql`select id, kind, summary, staff, created_at from audit_log where conversation_id = ${id} order by id`;
   const handoffs = await sql`select reference, urgency, status, trigger, created_at from escalations where conversation_id = ${id} order by created_at`;
   return Response.json({
-    transcript: transcriptOf(c.messages), activity, handoffs, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team, language: c.language,
+    // A conversation Alexis started opens with her failure message.
+    transcript: [...(c.proactive ? [{ who: "Alexis", text: `${c.proactive.text}`, proactive: true }] : []), ...transcriptOf(c.messages)], activity, handoffs, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team, language: c.language,
     review: c.rating ? { rating: c.rating, note: c.note, by: c.reviewed_by } : null,
   }, { headers: { "Cache-Control": "no-store" } });
 }

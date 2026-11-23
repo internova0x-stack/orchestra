@@ -117,6 +117,30 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## Proactive failure messages, CRM team replies, plan and usage (Nov 23, Tomi: "build #2, the crm team-reply api and the platform fee plus usage")
+
+Proactive failure messages (`lib/proactive.ts`): the bank reports `card.declined` (with a reason code),
+`transfer.returned` or `payment.failed_debited` through the Events API (with the customer's `user_id`), and Alexis
+sends the customer the reason and the fix (to the phone on file and as an app notification), which opens a
+conversation she started; replying carries on with her, still verifying identity before anything else. Rules screen,
+"Proactive messages": on or off overall and per failure type, quiet hours (21:00 to 08:00 by default: held messages go
+out when they end), a daily cap per customer (2) and the wording of each message. Fixed: never on a review hold, never
+for suspected fraud or while a "not mine" dispute is open, once per failure. The Inbox marks these "Started by Alexis";
+until the customer replies they're "Waiting on customer" (never resolved or billed). Customer app: the tester panel's
+"Play the bank: a payment fails" buttons (Grace, Emeka, Chioma, Maya), the phone's notification with Reply.
+
+CRM team replies (`lib/api/teamReply.ts`, `POST /api/v1/conversations/{id}/team-replies`): an agent working in a CRM
+replies there and it reaches the customer through Orchestra, as if typed in the console (the conversation is taken
+over in their name, masked, logged, `message.created`); `hand_back: true` returns it to Alexis; refused while someone
+else handles it in the console.
+
+Plan and usage (`lib/billing.ts`, `/billing`): platform fee plus usage. A monthly fee with resolved conversations
+included, then a price per conversation Alexis resolves and a lower one per handoff (Rules screen, "Billing", sample
+values: $1,500, 500 included, $0.80, $0.20). AI usage is recorded on every model call (`ai_usage`: Alexis, staff
+mode, drafts, translations, policy uploads) and priced with sample per-token prices; the page shows the bill, the
+staff cost saved against it, AI usage and cost per conversation, and (folded) Orchestra's margin. "The institution
+pays its AI provider directly" moves the AI cost off Orchestra's side. Three new tests.
+
 ## Staff actions (Nov 23, Tomi: "build it now")
 
 A member of the team who has taken a conversation over can take the same account actions as Alexis from the

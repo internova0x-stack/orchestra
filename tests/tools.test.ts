@@ -1670,3 +1670,90 @@ test("staff actions: an agent's limit, a second supervisor above the higher one,
   assert.equal(r.status, "requested", "submitted directly: the person was the review the cap asks for");
   await sql!`update rules set value = '10000' where id = 'staff_dual_limit_usd'`;
 });
+
+test("Orchestra API: a reply typed in a CRM reaches the customer and can hand the chat back to Alexis", { skip }, async () => {
+  const { teamReply } = await import("../lib/api/teamReply.ts");
+  const s = await session("ada", new Date());
+  const id = s.conv.id;
+  await sql!`update conversations set mode = 'customer' where id = ${id}`;
+  assert.deepEqual(await teamReply(sql!, id, { text: "Hi" }, "Helpdesk"), { error: "bad_request", message: "Send the team member's name." });
+  const out = await teamReply(sql!, id, { name: "Tolu Ade", text: "Hi Ada, I've chased the receiving bank. My card is 4111 1111 1111 1111 – ignore." }, "Helpdesk");
+  assert.deepEqual(out, { ok: true, handled_by: "Tolu Ade" }, "the conversation is now with the CRM agent");
+  const view = await customerView(sql!, id);
+  assert.ok(view.staff.some((m) => m.name === "Tolu Ade" && /chased the receiving bank/.test(m.text) && !/4111 1111/.test(m.text)), "delivered, secrets masked");
+  const ife = (await staffUser(sql!, "ife"))!;
+  assert.equal(await takeOver(sql!, id, ife), "taken_over_by_someone_else", "one person at a time");
+  assert.deepEqual(await teamReply(sql!, id, { name: "Tolu Ade", hand_back: true }, "Helpdesk"), { ok: true, handled_by: null });
+  assert.deepEqual(await teamReply(sql!, id, { name: "Tolu Ade", text: "Back again" }, "Helpdesk"), { ok: true, handled_by: "Tolu Ade" });
+  await takeOver(sql!, id, { id: "x", name: "Someone else", role: "support_agent" }).catch(() => null);
+  await handBack(sql!, id, { id: "crm:tolu-ade", name: "Tolu Ade", role: "support_agent" });
+  assert.equal(await takeOver(sql!, id, ife), null);
+  assert.equal((await teamReply(sql!, id, { name: "Tolu Ade", text: "Me again" }, "Helpdesk") as { error?: string }).error, "taken_over_by_someone_else");
+});
+
+// ---------------------------------------------------------------- proactive failure messages and billing (Nov 23)
+
+test("proactive messages: the customer is told why a payment failed, once, within the institution's rules", { skip }, async () => {
+  const { notifyFailure, quietUntil } = await import("../lib/proactive.ts");
+  const { receiveEvent } = await import("../lib/api/events.ts");
+  await seed(sql!, MONDAY);
+  await sql!`update rules set value = '00:00' where id in ('proactive_quiet_start', 'proactive_quiet_end')`;
+  const now = new Date();
+  const r = await notifyFailure(sql!, "card.declined", { user_id: "grace", transaction_id: "TX-90035", reason: "online_payments_off" }, now);
+  assert.equal(r.sent, true);
+  const text = (r as { text: string }).text;
+  assert.match(text, /^Hi Grace, this is Alexis/);
+  assert.match(text, /£64\.00 payment to Riverside Florist on your card ending 3307 was declined because online payments are switched off/);
+  const [o] = await sql!`select body, sent_to, conversation_id from outbox where user_id = 'grace' order by id desc limit 1`;
+  assert.equal(o.conversation_id, (r as { conversationId: string }).conversationId);
+  assert.match(o.sent_to, /^•••• \d{4}$/);
+  assert.equal((await notifyFailure(sql!, "card.declined", { user_id: "grace", transaction_id: "TX-90035", reason: "online_payments_off" }, now) as { why: string }).why, "duplicate");
+  // Through the Events API, idempotent by the bank's event id.
+  const ev = { id: "bank-fail-1", type: "transfer.returned", data: { user_id: "maya", reference: "PO-77310" } };
+  assert.deepEqual(await receiveEvent(sql!, ev), { ok: true, applied: true, notified: true });
+  assert.deepEqual(await receiveEvent(sql!, ev), { ok: true, applied: false, duplicate: true });
+  const [m] = await sql!`select proactive->>'text' as text from conversations where typing_user_id = 'maya' and origin = 'alexis'`;
+  assert.match(m.text, /payout PO-77310 to Ridgeway Haulage didn't go through/);
+  // Never for suspected fraud; never on a review hold; nothing when switched off; the daily cap.
+  assert.equal((await notifyFailure(sql!, "card.declined", { user_id: "emeka", transaction_id: "TX-90022", reason: "suspected_fraud" }, now) as { why: string }).why, "fraud");
+  assert.equal((await notifyFailure(sql!, "transfer.returned", { user_id: "lena", reference: "PO-88177" }, now) as { why: string }).why, "review_hold");
+  await sql!`update rules set value = 'off' where id = 'proactive_failed_debited'`;
+  assert.equal((await notifyFailure(sql!, "payment.failed_debited", { user_id: "chioma", payment_id: "PAY-61001" }, now) as { why: string }).why, "switched_off");
+  await sql!`update rules set value = 'on' where id = 'proactive_failed_debited'`;
+  await sql!`update rules set value = '0' where id = 'proactive_daily_cap'`;
+  assert.equal((await notifyFailure(sql!, "card.declined", { user_id: "emeka", transaction_id: "TX-90022", reason: "daily_limit" }, now) as { why: string }).why, "daily_cap");
+  await sql!`update rules set value = '2' where id = 'proactive_daily_cap'`;
+  // Quiet hours: 21:00 to 08:00 Lagos time; at 22:30 Lagos the message waits until 08:00.
+  await sql!`update rules set value = '21:00' where id = 'proactive_quiet_start'`;
+  await sql!`update rules set value = '08:00' where id = 'proactive_quiet_end'`;
+  const { Rules } = await import("../lib/rules.ts");
+  const rules = await Rules.load(sql!);
+  const late = new Date(Date.UTC(2026, 10, 23, 21, 30)); // 22:30 in Lagos
+  assert.equal(quietUntil(late, rules)?.toISOString(), new Date(Date.UTC(2026, 10, 24, 7, 0)).toISOString());
+  assert.equal(quietUntil(new Date(Date.UTC(2026, 10, 23, 11, 0)), rules), null);
+  // The Inbox shows it as started by Alexis and waiting on the customer, not resolved.
+  const { listCases } = await import("../lib/cases.ts");
+  const row = (await listCases(sql!)).find((c) => c.id === (r as { conversationId: string }).conversationId)!;
+  assert.equal(row.startedBy, "alexis");
+  assert.equal(row.status, "Waiting on customer");
+});
+
+test("billing: platform fee plus usage, from the month's conversations and the plan on the Rules screen", { skip }, async () => {
+  const { billing } = await import("../lib/billing.ts");
+  const now = new Date();
+  await sql!`insert into ai_usage (purpose, model, input_tokens, output_tokens, created_at) values ('alexis', 'test', 1000000, 100000, ${now})`;
+  const b = await billing(sql!, null, now);
+  const { usage, plan, invoice } = b;
+  assert.equal(plan.platformFee, 1500);
+  assert.equal(usage.billableResolved, Math.max(0, usage.resolvedByAlexis - plan.included));
+  assert.equal(invoice.total, Math.round((1500 + usage.billableResolved * 0.8 + usage.handedOff * 0.2) * 100) / 100);
+  assert.ok(b.ai.inputTokens >= 1_000_000 && b.ai.cost >= 4.5, "1M input at $3 and 100k output at $15 is $4.50");
+  assert.equal(b.orchestra.aiCost, b.ai.cost, "Orchestra's AI account by default");
+  await sql!`update rules set value = 'on' where id = 'billing_bank_pays_ai'`;
+  assert.equal((await billing(sql!, null, now)).orchestra.aiCost, 0, "the institution pays its AI provider");
+  await sql!`update rules set value = 'off' where id = 'billing_bank_pays_ai'`;
+  await sql!`update rules set value = '0' where id = 'billing_included'`;
+  const b2 = await billing(sql!, null, now);
+  assert.equal(b2.usage.billableResolved, b2.usage.resolvedByAlexis, "nothing included: every resolved conversation is charged");
+  await sql!`update rules set value = '500' where id = 'billing_included'`;
+});

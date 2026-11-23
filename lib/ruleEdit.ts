@@ -19,7 +19,7 @@ export function validateRule(r: RuleRow, raw: string): { ok: true; value: string
     if (v !== "on" && v !== "off") return { ok: false, error: "Use on or off." };
     return { ok: true, value: v };
   }
-  if (r.id === "business_open" || r.id === "business_close") {
+  if (r.id === "business_open" || r.id === "business_close" || /^\d{1,2}:\d{2}$/.test(r.value.trim())) {
     if (!/^\d{1,2}[:.]\d{2}$/.test(value) || parseClock(value, -1) < 0 || parseClock(value, -1) > 24 * 60) return { ok: false, error: "Use a time like 09:00." };
     return { ok: true, value: value.replace(".", ":").padStart(5, "0") };
   }

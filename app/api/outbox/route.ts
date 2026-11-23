@@ -1,5 +1,6 @@
 import { db } from "@/lib/db.ts";
 import { runUpdates } from "@/lib/updates.ts";
+import { deliverDue } from "@/lib/proactive.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +14,9 @@ export async function GET(req: Request) {
   if (!process.env.DATABASE_URL || !/^[a-z0-9-]{1,40}$/.test(user)) return Response.json({ messages: [] });
   const sql = db();
   await runUpdates(sql).catch((err) => console.error("updates", err));
+  await deliverDue(sql).catch((err) => console.error("proactive", err));
   const messages = await sql`
-    select o.id, o.channel, o.sent_to, o.body, o.sent_at from outbox o
+    select o.id, o.channel, o.sent_to, o.body, o.sent_at, o.conversation_id from outbox o
     where o.user_id = ${user} order by o.sent_at desc limit 20`;
   return Response.json({ messages }, { headers: { "Cache-Control": "no-store" } });
 }

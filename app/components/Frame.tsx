@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 // 16px outline icons, 1.5px stroke, round joins (design system: Icons).
 const ICONS: Record<string, React.ReactNode> = {
   inbox: <><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>,
+  receipt: <><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z" /><path d="M9 7h6" /><path d="M9 11h6" /><path d="M9 15h4" /></>,
   chart: <><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></>,
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
   sliders: <><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></>,
@@ -21,6 +22,7 @@ const TABS = [
   { href: "/dashboard", label: "Dashboard", icon: "chart" },
   { href: "/staff", label: "Staff queue", icon: "people" },
   { href: "/rules", label: "Rules", icon: "sliders" },
+  { href: "/billing", label: "Plan and usage", icon: "receipt" },
 ];
 
 import { announceReset } from "./events";

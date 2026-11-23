@@ -14,7 +14,7 @@ interface CaseRow {
   category: string; status: string; urgency: string | null; references: string[]; takenOverBy: string | null;
   channel: "app" | "whatsapp" | "email"; subject: string | null;
   language: string; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
-  started: string; lastActivity: string; messages: number; firstMessage: string | null;
+  started: string; lastActivity: string; messages: number; firstMessage: string | null; startedBy?: "alexis" | null;
 }
 interface Counts { total: number; open: number; resolvedByAlexis: number; handedOff: number; urgentOpen: number; withoutPerson: number | null }
 interface Detail {
@@ -216,6 +216,7 @@ export default function InboxPage() {
                   <StatusChip status={k.status} />
                   {k.urgency && <UrgencyChip urgency={k.urgency} />}
                   <ChannelChip channel={k.channel} />
+                  {k.startedBy === "alexis" && <span className="chip chip-info" title="Alexis messaged the customer about a failed payment">Started by Alexis</span>}
                   <span className="label" style={{ marginLeft: "auto" }}>{ago(k.lastActivity)}</span>
                 </span>
                 <span className="case-business">{k.business ?? "Customer not identified"}{k.customer ? ` · ${k.customer}` : ""}</span>

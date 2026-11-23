@@ -12,11 +12,6 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   customer to read back a code the bank didn't just send for this purpose. Left out of the first demo
   (owner, Nov 23); the demo runs `initiate_recall` on the standard check plus payment rights.
 
-- **Proactive failure messages** (explained Nov 23, not yet requested): message the customer when a payment
-  fails, with the reason and the fix; new Events API types (card declined, transfer returned); per-institution
-  failure types, channels, quiet hours, daily cap and approved wording; never for review holds or fraud.
-- **CRM team replies**: an API for a reply typed in the CRM to reach the customer through Orchestra.
-- **AI cost per conversation** on the dashboard, from the model's usage figures.
 
 ## Built on Nov 23 (after the demo)
 

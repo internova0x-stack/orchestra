@@ -3,6 +3,7 @@ import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { appendTurn } from "./takeover.ts";
 import type { Sql } from "./db.ts";
+import { recordUsage } from "./usage.ts";
 import { EFFORT, MAX_STEPS, MAX_TOKENS, MODEL } from "./config.ts";
 import { staffUser } from "./staff.ts";
 import { loadConversation, verifiedUser, type Conversation } from "./session.ts";
@@ -88,6 +89,7 @@ export async function runStaffTurn(
         }
       }
       const msg = await stream.finalMessage();
+      await recordUsage(sql, { purpose: "staff_mode", model: msg.model, usage: msg.usage });
       if (msg.content.some((b) => b.type === "text" && b.text.trim())) wroteText = true;
       if (msg.stop_reason === "refusal") break;
       const uses = msg.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");

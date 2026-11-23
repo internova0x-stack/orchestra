@@ -265,6 +265,30 @@ export const RULE_SET: RuleSeed[] = [
   l("staff_dual_limit_gbp", "Staff actions", "Above this, a second supervisor must approve (GBP)", "8000", "£"),
   l("staff_dual_limit_ngn", "Staff actions", "Above this, a second supervisor must approve (NGN)", "5000000", "₦"),
 
+  // Proactive failure messages (Nov 23, Tomi: "build #2"; lib/proactive.ts). Never on a review hold or for fraud (fixed).
+  l("proactive_enabled", "Proactive messages", "Message customers when a payment fails", "on"),
+  l("proactive_card_declined", "Proactive messages", "Declined card payments (a setting, the limit, a frozen card, funds)", "on"),
+  l("proactive_transfer_returned", "Proactive messages", "Payouts that didn't go through and came back", "on"),
+  l("proactive_failed_debited", "Proactive messages", "Card, POS or ATM payments that failed but debited the account", "on"),
+  l("proactive_daily_cap", "Proactive messages", "Most failure messages to one customer in 24 hours", "2", "messages"),
+  l("proactive_quiet_start", "Proactive messages", "Quiet hours start (messages wait until they end)", "21:00"),
+  l("proactive_quiet_end", "Proactive messages", "Quiet hours end", "08:00"),
+  a("proactive_text_card_declined", "Proactive messages", "Wording: declined card payment", "Your {amount} payment to {merchant} on your card ending {card} was declined because {reason}. {fix} If this wasn't you, reply \"not me\" and we'll freeze the card.", "sample"),
+  a("proactive_text_transfer_returned", "Proactive messages", "Wording: payout returned", "Your {amount} payout {reference} to {recipient} didn't go through: {reason}. The money is back in your account. Reply here and I can help you send it again with the right details.", "sample"),
+  a("proactive_text_failed_debited", "Proactive messages", "Wording: failed but debited", "Your {amount} {channel} payment at {merchant} didn't go through, but your account was debited. The money should come back within {window}; reply here if it hasn't and I'll chase it.", "sample"),
+
+  // Billing (Nov 23, Tomi: "platform fee plus usage"; lib/billing.ts). Sample plan values to agree with each
+  // institution. AI prices are samples too: set them from the model provider's price list.
+  l("billing_platform_fee", "Billing", "Monthly platform fee", "1500", "$"),
+  l("billing_included", "Billing", "Conversations resolved by Alexis included each month", "500", "conversations"),
+  l("billing_price_resolved", "Billing", "Price per conversation resolved by Alexis, beyond those included", "0.80", "$"),
+  l("billing_price_handoff", "Billing", "Price per conversation handed to the team (summary and routing)", "0.20", "$"),
+  l("billing_bank_pays_ai", "Billing", "The institution pays its AI provider directly (off: Orchestra's AI account)", "off"),
+  l("ai_price_input", "Billing", "AI price per million input tokens (sample)", "3", "$"),
+  l("ai_price_output", "Billing", "AI price per million output tokens (sample)", "15", "$"),
+  l("ai_price_cache_read", "Billing", "AI price per million cached input tokens read (sample)", "0.30", "$"),
+  l("ai_price_cache_write", "Billing", "AI price per million input tokens written to the cache (sample)", "3.75", "$"),
+
   // Operations (Nov 23): the switch for Alexis herself, and outage mode with the notice customers see.
   l("alexis_enabled", "Operations", "Alexis answers customers (off: every message goes to the team)", "on"),
   l("outage_mode", "Operations", "Outage mode (Alexis and the customer app show the notice below)", "off"),

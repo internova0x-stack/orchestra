@@ -13,6 +13,9 @@ info:
     verification approved) and Alexis's proactive updates to the customer follow. Each event carries your own id:
     the same id twice is applied once.
 
+    **Team replies**: an agent working in your CRM or helpdesk answers the customer there; send the reply to
+    `/conversations/{id}/team-replies` and it reaches the customer through Orchestra on their channel.
+
     **Webhooks**: Orchestra posts what happened to your systems (a CRM or helpdesk opens a ticket for each handoff,
     updates it when the team decides, receives every reply for delivery). Add endpoints and choose events on the
     console's API page. Each delivery has the header `Orchestra-Signature: t=<unix seconds>,v1=<hex>` where `v1` is
@@ -116,6 +119,45 @@ paths:
               schema: { $ref: "#/components/schemas/Reply" }
         "400": { description: None of text, identity, confirm or code }
         "404": { description: Open the conversation first }
+
+  /conversations/{conversationId}/team-replies:
+    post:
+      tags: [Channel]
+      summary: Reply to the customer from your CRM or helpdesk
+      description: |
+        A member of the team answers in your CRM and the reply reaches the customer through Orchestra, on their
+        channel, as if it were typed in the console: the conversation is taken over in that person's name (Alexis
+        pauses), the reply is checked for secrets, logged and sent as a `message.created` webhook. Send
+        `hand_back: true` (with or without text) to return the conversation to Alexis. If someone else on the team is
+        handling the conversation in the console, the reply is refused (409).
+      operationId: teamReply
+      parameters: [{ $ref: "#/components/parameters/conversationId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, description: "The team member's name, as the customer will see it" }
+                text: { type: string, maxLength: 4000 }
+                hand_back: { type: boolean, default: false }
+            example: { name: "Ife Adeyemi", text: "Hi Ada, I've chased the receiving bank and will update you by 3pm.", hand_back: false }
+      responses:
+        "200":
+          description: Delivered
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, handled_by]
+                properties:
+                  ok: { type: boolean }
+                  handled_by: { type: [string, "null"] }
+        "400": { description: No name, or neither text nor hand_back }
+        "404": { description: No such conversation }
+        "409": { description: Another member of the team is handling it in the console }
 
   /events:
     post:

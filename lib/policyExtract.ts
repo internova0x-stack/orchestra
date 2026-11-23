@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { Sql } from "./db.ts";
+import { recordUsage } from "./usage.ts";
 import { MODEL } from "./config.ts";
 import { MARKETS, type Market } from "./rules.ts";
 import { proposeChange } from "./ruleChanges.ts";
@@ -46,6 +47,7 @@ export async function extractFromPolicy(sql: Sql, file: Upload, staff: StaffUser
     messages: [{ role: "user", content: [doc, { type: "text", text: `The current rules (id | category | name | kind | current value):\n${list}` }] }],
     output_config: { format: zodOutputFormat(Proposals) },
   });
+  await recordUsage(sql, { purpose: "policy_upload", model: res.model, usage: res.usage });
   const out = res.parsed_output;
   if (!out) throw new Error("The document couldn't be read into proposals.");
 

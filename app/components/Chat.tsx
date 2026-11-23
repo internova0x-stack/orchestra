@@ -203,10 +203,10 @@ function IdentityForm({ disabled, onSubmit }: { disabled: boolean; onSubmit: (a:
   );
 }
 
-interface OutboxMsg { id: number; channel: string; sent_to: string; body: string; sent_at: string }
+interface OutboxMsg { id: number; channel: string; sent_to: string; body: string; sent_at: string; conversation_id?: string | null }
 
 /** Use case 17: the messages sent to this customer's phone on file (simulated). */
-function Outbox({ messages }: { messages: OutboxMsg[] }) {
+function Outbox({ messages, onOpen }: { messages: OutboxMsg[]; onOpen: (m: OutboxMsg) => void }) {
   return (
     <div className="activity-list" aria-live="polite">
       {messages.length === 0 && (
@@ -216,6 +216,7 @@ function Outbox({ messages }: { messages: OutboxMsg[] }) {
         <div key={m.id} className="sms outbox-msg">
           <span className="label">{m.channel} to {m.sent_to} · {new Date(m.sent_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
           <span>{m.body}</span>
+          {m.conversation_id && <button className="btn" onClick={() => onOpen(m)}>Reply in the app</button>}
         </div>
       ))}
     </div>
@@ -290,6 +291,40 @@ export default function Chat() {
   useEffect(() => {
     fetch("/api/samples", { cache: "no-store" }).then((r) => r.json()).then((j) => setSamples(j.samples ?? [])).catch(() => {});
   }, []);
+
+  // Proactive failure messages (lib/proactive.ts): open the conversation Alexis started, to reply to it.
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const openAlert = useCallback((m: OutboxMsg) => {
+    if (!m.conversation_id) return;
+    setChannel("app");
+    setConversationId(m.conversation_id);
+    setMessages([{ id: `alert-${m.id}`, role: "alexis", text: m.body, showLabel: true }]);
+    setTakenOverBy(null);
+    setDismissed((d) => [...d, m.conversation_id!]);
+  }, []);
+  const [failures, setFailures] = useState<{ id: string; user: string; label: string }[]>([]);
+  const [failureNote, setFailureNote] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/demo/failure", { cache: "no-store" }).then((r) => r.json()).then((j) => setFailures(j.scenarios ?? [])).catch(() => {});
+  }, []);
+  async function simulateFailure(id: string) {
+    setFailureNote(null);
+    try {
+      const r = await fetch("/api/demo/failure", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario: id }) }).then((x) => x.json());
+      const why: Record<string, string> = {
+        switched_off: "No message: proactive messages for this are switched off on the Rules screen.",
+        review_hold: "No message: the customer is on a review hold.", fraud: "No message: possible fraud is never messaged automatically.",
+        duplicate: "No message: the customer was already told about this payment (Reset demo to try again).",
+        daily_cap: "No message: the customer has had today's maximum.", no_phone: "No message: no phone on file.",
+        not_found: "That record isn't on this customer's account.", not_messaged: "No message for this kind of failure.",
+      };
+      setFailureNote(r.sent ? (r.heldUntil ? `Held for quiet hours: it goes out at ${new Date(r.heldUntil).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} (change quiet hours on the Rules screen).` : "Sent: it's on the customer's phone now.") : why[r.why] ?? "No message.");
+      const j = await fetch(`/api/outbox?user=${typingUserId}`, { cache: "no-store" }).then((x) => x.json());
+      setOutbox(j.messages ?? []);
+    } catch {
+      setFailureNote("Couldn't reach the app's server.");
+    }
+  }
 
   const startOver = useCallback((ch?: Channel) => {
     setConversationId(newId());
@@ -547,7 +582,16 @@ export default function Chat() {
             <button className="btn" onClick={() => setShowTexts((v) => !v)} aria-expanded={showTexts}>
               Text messages to this customer ({outbox.length})
             </button>
-            {showTexts && <Outbox messages={outbox} />}
+            {showTexts && <Outbox messages={outbox} onOpen={openAlert} />}
+            {failures.some((f) => f.user === typingUserId) && (
+              <div className="tester-field">
+                <span className="label">Play the bank: a payment fails</span>
+                {failures.filter((f) => f.user === typingUserId).map((f) => (
+                  <button key={f.id} className="btn" onClick={() => simulateFailure(f.id)} disabled={busy}>{f.label}</button>
+                ))}
+                {failureNote && <span className="label" role="status">{failureNote}</span>}
+              </div>
+            )}
           </div>
         </aside>
 
@@ -566,6 +610,20 @@ export default function Chat() {
           </div>
 
         {status.outage && <div className="service-notice" role="status"><b>Service notice</b> {status.outage}</div>}
+        {(() => {
+          // A new failure alert from the bank: the phone's notification, until it's opened or dismissed.
+          const alert = outbox.find((m) => m.conversation_id && m.conversation_id !== conversationId && !dismissed.includes(m.conversation_id) && Date.now() - new Date(m.sent_at).getTime() < 30 * 60_000);
+          return alert ? (
+            <div className="alert-banner" role="status">
+              <span className="label">Notification from your bank</span>
+              <span>{alert.body}</span>
+              <span className="dev-row">
+                <button className="btn btn-primary" onClick={() => openAlert(alert)}>Reply</button>
+                <button className="btn" onClick={() => setDismissed((d) => [...d, alert.conversation_id!])}>Dismiss</button>
+              </span>
+            </div>
+          ) : null;
+        })()}
         <div className="messages" ref={messagesRef} aria-live="polite">
           {setupProblem && <div className="msg msg-alexis" role="alert">{setupProblem}</div>}
           {messages.map((m) => (

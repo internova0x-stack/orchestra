@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Sql } from "./db.ts";
+import { recordUsage } from "./usage.ts";
 import { MODEL } from "./config.ts";
 import { emitEvent } from "./api/webhooks.ts";
 import { transcriptOf } from "./cases.ts";
@@ -35,6 +36,7 @@ export async function translateConversation(sql: Sql, conversationId: string): P
     system: `Translate a support conversation${LANGUAGES[c.language] ? ` (mostly ${LANGUAGES[c.language]})` : ""} into plain English for the bank's support team. Keep references, amounts, dates and names exactly as written. Return only the translation, one message per block, each starting with the speaker's label and a colon, blocks separated by a blank line.`,
     messages: [{ role: "user", content: lines.map((l) => `${l.who}: ${l.text}`).join("\n\n") }],
   });
+  await recordUsage(sql, { conversationId, purpose: "translate", model: res.model, usage: res.usage });
   const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   return text.split(/\n\s*\n/).map((b) => {
     const m = b.match(/^([^:\n]{1,60}):\s*([\s\S]*)$/);

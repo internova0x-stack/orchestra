@@ -1,5 +1,6 @@
 import type { Sql } from "../db.ts";
 import { runUpdates } from "../updates.ts";
+import { FAILURE_TYPES, notifyFailure, type FailureType } from "../proactive.ts";
 
 // The Events API (the Orchestra API, Nov 23): the bank tells Orchestra a status changed, so Alexis's
 // proactive updates go out without anyone asking. Each event has the sender's own id: the same id twice
@@ -14,12 +15,24 @@ export const EVENT_TYPES = {
 } as const;
 export type EventType = keyof typeof EVENT_TYPES;
 
-export type EventResult = { ok: true; applied: boolean; duplicate?: boolean } | { ok: false; error: string; message: string };
+export type EventResult = { ok: true; applied: boolean; duplicate?: boolean; notified?: boolean; why?: string } | { ok: false; error: string; message: string };
 
 export async function receiveEvent(sql: Sql, ev: { id?: unknown; type?: unknown; data?: Record<string, unknown> }): Promise<EventResult> {
   if (typeof ev.id !== "string" || !ev.id.trim() || ev.id.length > 200) return { ok: false, error: "bad_request", message: "Give the event an id (yours, unique per event)." };
+  // A payment failed: Alexis may tell the customer at once (lib/proactive.ts), if the institution's rules allow it.
+  if (FAILURE_TYPES.includes(ev.type as FailureType)) {
+    const d = ev.data ?? {};
+    if (typeof d.user_id !== "string") return { ok: false, error: "bad_request", message: "data.user_id (the customer to tell) is needed." };
+    const [seen] = await sql<{ id: string }[]>`select id from api_events_received where id = ${ev.id}`;
+    if (seen) return { ok: true, applied: false, duplicate: true };
+    const r = await notifyFailure(sql, ev.type as FailureType, d);
+    if (!r.sent && r.why === "not_found") return { ok: false, error: "not_found", message: "No such customer, or no such record on their account." };
+    await sql`insert into api_events_received (id, type, result) values (${ev.id}, ${String(ev.type)}, ${sql.json(r as never)}) on conflict do nothing`;
+    await sql`insert into audit_log (kind, tool, summary, input) values ('rule', 'events_api', ${`event received · ${String(ev.type)} · ${r.sent ? "customer messaged" : `no message (${r.why.replace(/_/g, " ")})`}`}, ${sql.json({ id: ev.id, data: d } as never)})`;
+    return r.sent ? { ok: true, applied: true, notified: true } : { ok: true, applied: true, notified: false, why: r.why };
+  }
   const def = EVENT_TYPES[ev.type as EventType];
-  if (!def) return { ok: false, error: "unknown_type", message: `Unknown event type. Use one of: ${Object.keys(EVENT_TYPES).join(", ")}.` };
+  if (!def) return { ok: false, error: "unknown_type", message: `Unknown event type. Use one of: ${[...Object.keys(EVENT_TYPES), ...FAILURE_TYPES].join(", ")}.` };
   const d = ev.data ?? {};
   const status = String(d.status ?? "");
   if (!(def.statuses as readonly string[]).includes(status)) return { ok: false, error: "bad_status", message: `status must be one of: ${def.statuses.join(", ")}.` };

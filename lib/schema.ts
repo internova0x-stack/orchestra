@@ -237,6 +237,22 @@ alter table cards add column if not exists contactless boolean not null default 
 alter table cards add column if not exists frozen_by text;
 create sequence if not exists card_change_seq start 4401;
 
+-- AI usage per model call (Nov 23, billing) and conversations Alexis starts herself (proactive failure messages).
+create table if not exists ai_usage (
+  id bigserial primary key,
+  conversation_id uuid references conversations(id) on delete set null,
+  purpose text not null,
+  model text not null,
+  input_tokens int not null default 0,
+  output_tokens int not null default 0,
+  cache_read_tokens int not null default 0,
+  cache_write_tokens int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists ai_usage_created on ai_usage (created_at);
+alter table conversations add column if not exists origin text;
+alter table conversations add column if not exists proactive jsonb;
+
 -- Smart routing (Nov 23): the team a handoff is routed to, who picked it up, and when it went overdue unattended.
 alter table escalations add column if not exists team text;
 alter table escalations add column if not exists assigned_to text;
@@ -378,6 +394,7 @@ create table if not exists outbox (
   body text not null,
   sent_at timestamptz not null default now()
 );
+alter table outbox add column if not exists conversation_id uuid references conversations(id) on delete set null;
 
 -- Use case 18: claim and evidence packs for another bank, a processor or a card scheme.
 create table if not exists claim_drafts (
