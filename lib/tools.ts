@@ -114,7 +114,8 @@ async function ruleRead(ctx: ToolCtx, rules: Rules, id: string, label?: string) 
   const r = rules.get(id);
   if (!r) return;
   const sym = { $: "USD", "£": "GBP", "₦": "NGN" }[r.unit ?? ""];
-  const value = sym ? money(Number(r.value), sym).replace(/\.00$/, "") : r.unit ? `${r.value} ${r.unit}` : r.value;
+  const unit = r.unit && r.value.trim() === "1" ? r.unit.replace(/(day|hour)s\b/, "$1") : r.unit;
+  const value = sym ? money(Number(r.value), sym).replace(/\.00$/, "") : unit ? `${r.value} ${unit}` : r.value;
   await audit(ctx, { kind: "rule", summary: `rule · ${label ?? r.name} · ${value}` });
 }
 

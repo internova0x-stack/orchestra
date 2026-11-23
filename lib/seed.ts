@@ -1,5 +1,5 @@
 import type { Sql } from "./db.ts";
-import { ensureSchema, TABLES_TO_WIPE } from "./schema.ts";
+import { ensureSchema, SCHEMA, TABLES_TO_WIPE } from "./schema.ts";
 import { RULE_SET } from "./ruleSet.ts";
 import { fromLocal, lastWeekday, local, subtractBusinessDays } from "./time.ts";
 
@@ -188,7 +188,12 @@ function feesAndConversions(now: Date, transfers: Transfer[]) {
 /** Wipe everything and load the starting data. Used by Reset demo and on first run. */
 export async function seed(sql: Sql, now = new Date()) {
   await ensureSchema(sql);
-  await sql.begin(async (tx) => {
+  await sql.begin((tx) => seedInto(tx, now));
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedInto(tx: any, now: Date) {
+  {
     await tx.unsafe(`truncate ${TABLES_TO_WIPE.join(", ")} restart identity cascade`);
     await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001;`);
 
@@ -240,12 +245,34 @@ export async function seed(sql: Sql, now = new Date()) {
       await tx`insert into rules (id, category, name, kind, origin, value, unit, source_url, sort, updated_by, updated_at)
         values (${r.id}, ${r.category}, ${r.name}, ${r.kind}, ${r.origin}, ${r.value}, ${r.unit ?? null}, ${r.source_url ?? null}, ${sort++}, 'Seed', ${now})`;
     }
-  });
+  }
 }
 
-/** Seed once if the database has never been set up. */
-export async function ensureSeeded(sql: Sql) {
-  await ensureSchema(sql);
-  const [{ count }] = await sql<{ count: number }[]>`select count(*)::int as count from rules`;
-  if (count === 0) await seed(sql);
+const ready = globalThis as unknown as { __orchestraReady?: Promise<void> };
+
+/**
+ * Create and seed the database the first time it is used. Runs once per server process; a
+ * Postgres advisory lock stops two first visitors from seeding at the same time.
+ */
+export function ensureSeeded(sql: Sql): Promise<void> {
+  if (!ready.__orchestraReady) {
+    ready.__orchestraReady = (async () => {
+      await sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(4207)`;
+        await tx.unsafe(SCHEMA);
+      });
+      const [{ count }] = await sql<{ count: number }[]>`select count(*)::int as count from rules`;
+      if (count === 0) {
+        await sql.begin(async (tx) => {
+          await tx`select pg_advisory_xact_lock(4208)`;
+          const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from rules`;
+          if (n === 0) await seedInto(tx, new Date());
+        });
+      }
+    })().catch((err) => {
+      ready.__orchestraReady = undefined; // try again on the next request
+      throw err;
+    });
+  }
+  return ready.__orchestraReady;
 }

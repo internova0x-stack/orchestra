@@ -131,6 +131,25 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
         input: { answers: "withheld" },
         refusal_reason: ended ? "Identity check failed twice" : undefined,
       });
+      if (ended) {
+        // Guardrails: after two failures take no action and flag the account for staff. Done in code;
+        // if Alexis escalates too, the same trigger returns this case.
+        const name = (input.identity.full_name ?? "").replace(/[^\p{L} .'-]/gu, "").slice(0, 80) || "not given";
+        await runTool(
+          "escalate_to_human",
+          {
+            trigger: "identity_failed_twice",
+            urgency: "normal",
+            request: "The customer could not complete the identity check.",
+            checked: `Two failed identity checks in this conversation. Name given: ${name}. The answers themselves are not recorded.`,
+            did: "None. No account details were shared and no action was taken.",
+            needed: "Review the account flag. No customer contact needed.",
+            told: "They couldn't be verified in chat and can sign in to the dashboard and contact support from there.",
+            flags: ["Failed identity checks"],
+          },
+          { sql, conv, user: null, now, toolUseId: `${toolUseId}-flag`, emit: () => {} },
+        ).catch((err) => console.error("identity flag failed", err));
+      }
     }
     content.push(...pending, { type: "tool_result", tool_use_id: toolUseId, content: JSON.stringify(result), is_error: !result.ok });
   } else {

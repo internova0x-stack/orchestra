@@ -14,9 +14,17 @@ Where the 2-day demo stands against `docs/BUILD-PLAN.md`. Update this file when 
 | 8 | Full test run and polish | Polish done; **the full run with the real model is still to do** |
 | - | Putting it online (Vercel) | Waiting on Tomi's Vercel and Anthropic setup |
 
+## After step 8 (Nov 23)
+
+- Supabase connections are encrypted (`ssl: "require"` unless the database is local).
+- First-time setup runs once per server process, under a database lock, so two first visitors can't seed
+  twice.
+- Several matching payments show as compact cards the customer clicks to choose (Design System).
+- Two failed identity checks flag the case for staff in code (Guardrails), not only by Alexis's choice.
+
 ## What has been checked, and how
 
-- `npm test` (42 tests) runs every tool against a real Postgres with the seeded bank: each scripted test's
+- `npm test` (43 tests) runs every tool against a real Postgres with the seeded bank: each scripted test's
   data and expected tool behaviour, every check (identity, ownership, review hold, role, cap, limit,
   duplicates, confirmation), secret masking, rule edits, the Staff queue's approve/decline, and
   business-day arithmetic on every day of the week. No model calls.

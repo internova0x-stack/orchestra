@@ -80,6 +80,21 @@ export function UrgencyChip({ urgency }: { urgency: string }) {
 
 // ---------------------------------------------------------------- pieces
 
+/** Several possible matches: compact cards the customer clicks to choose (Design System). */
+function ChoiceCard({ card, disabled, onChoose }: { card: Card; disabled: boolean; onChoose: () => void }) {
+  return (
+    <button className="card card-choice" disabled={disabled} onClick={onChoose} aria-label={`Choose ${card.amount} ${card.counterparty}, ${card.reference}`}>
+      <span className="card-amount">{card.amount}</span>
+      <span className="card-line">{card.counterparty} · {card.route}</span>
+      <span className="card-row">
+        <StatusChip status={card.status} />
+        <span className="card-line">{card.date}</span>
+        <span className="ref">{card.reference}</span>
+      </span>
+    </button>
+  );
+}
+
 function PaymentCard({ card }: { card: Card }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -447,7 +462,19 @@ export default function Chat() {
               ) : (
                 m.text
               )}
-              {m.cards?.map((c) => <PaymentCard key={c.reference} card={c} />)}
+              {m.cards && m.cards.length > 1
+                ? m.cards.map((c) => (
+                    <ChoiceCard
+                      key={c.reference}
+                      card={c}
+                      disabled={busy || m.id !== messages[messages.length - 1]?.id}
+                      onChoose={() => {
+                        const text = `This one: ${c.amount}, ${c.counterparty.replace(/^From /, "from ")}, ${c.reference}`;
+                        send({ message: text }, text);
+                      }}
+                    />
+                  ))
+                : m.cards?.map((c) => <PaymentCard key={c.reference} card={c} />)}
               {m.confirm && (
                 <div className="confirm">
                   <div className="confirm-action">{m.confirm.action}</div>

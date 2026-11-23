@@ -464,3 +464,23 @@ test("S2: no tool can add or change a beneficiary, contact details, or approve v
   ].sort());
   assert.ok(!names.some((n) => /beneficiar|recipient|contact|approve|update|credit/.test(n)));
 });
+
+// ---------------------------------------------------------------- deployment
+
+test("first run: two visitors at once on an empty database seed it exactly once", { skip }, async () => {
+  const { ensureSeeded } = await import("../lib/seed.ts");
+  await sql!.unsafe(`drop table if exists audit_log, recalls, proofs, escalations, conversations, rule_changes, rules, restrictions, fees, incoming_payments, transfers, balances, business_users, businesses cascade`);
+  (globalThis as { __orchestraReady?: unknown }).__orchestraReady = undefined;
+  const other = postgres(url!, { prepare: false, onnotice: () => {} });
+  try {
+    // Two server processes: separate connections, separate caches.
+    const first = ensureSeeded(sql!);
+    (globalThis as { __orchestraReady?: unknown }).__orchestraReady = undefined;
+    await Promise.all([first, ensureSeeded(other)]);
+  } finally {
+    await other.end();
+  }
+  assert.equal((await sql!`select count(*)::int as n from rules where id = 'late_swift'`)[0].n, 1);
+  assert.equal((await sql!`select count(*)::int as n from businesses`)[0].n, 8);
+  await seed(sql!, MONDAY);
+});

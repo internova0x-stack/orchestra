@@ -10,10 +10,14 @@ export function db(): Sql {
   if (!g.__orchestraSql) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
+    // Supabase needs an encrypted connection; a local test database doesn't have one.
+    const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url) || /[?&]sslmode=disable/.test(url);
     g.__orchestraSql = postgres(url, {
       prepare: false,
       max: 5,
       idle_timeout: 20,
+      connect_timeout: 15,
+      ssl: local ? false : "require",
       onnotice: () => {},
     });
   }

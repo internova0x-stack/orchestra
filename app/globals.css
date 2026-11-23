@@ -182,6 +182,10 @@ a { color: var(--brand-accent); }
   background: var(--surface-page); padding: var(--space-3) var(--space-4); white-space: normal;
 }
 .card + .card { margin-top: var(--space-2); }
+.card-choice { display: grid; gap: 2px; width: 100%; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.card-choice:hover:not(:disabled) { border-color: var(--brand-600); }
+.card-choice:disabled { cursor: default; opacity: 0.7; }
+.card-choice .card-amount { font-size: var(--size-md); }
 .card-amount { font-size: var(--size-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .card-line { color: var(--text-2); font-size: var(--size-sm); }
 .card-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-2); font-size: var(--size-sm); }
