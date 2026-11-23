@@ -72,7 +72,21 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
   return lines.join("\n");
 }
 
-const client = () => new Anthropic(); // reads ANTHROPIC_API_KEY
+// Reads ANTHROPIC_API_KEY. Busy (529) and rate-limit (429) answers are retried with the service's back-off.
+const client = () => new Anthropic({ maxRetries: 4 });
+
+/** Why the AI service failed, in a line for the console's activity log. Never includes the key. */
+export function describeError(err: unknown): { short: string; transient: boolean } {
+  if (err instanceof Anthropic.APIError) {
+    const status = err.status ?? 0;
+    const detail = String((err.error as { error?: { message?: string } } | undefined)?.error?.message ?? err.message ?? "").replace(/sk-ant-[A-Za-z0-9_-]+/g, "[key]").slice(0, 160);
+    if (status === 429) return { short: `AI service rate limit (429): ${detail}`, transient: true };
+    if (status === 529 || status >= 500) return { short: `AI service busy or down (${status}): ${detail}`, transient: true };
+    return { short: `AI service refused the request (${status || "no status"}): ${detail}`, transient: false };
+  }
+  if (err instanceof Anthropic.APIConnectionError) return { short: "Couldn't reach the AI service (connection failed or timed out)", transient: true };
+  return { short: `App error: ${String((err as Error)?.message ?? err).slice(0, 160)}`, transient: false };
+}
 
 export interface TurnInput {
   conversationId: string;
@@ -401,9 +415,13 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
     console.error("turn failed", err);
     await save().catch(() => {});
     const base = { sql, conv, user, now: new Date(), toolUseId: `error-${Date.now()}`, emit };
-    await audit(base, { kind: "error", summary: "Alexis · something went wrong" }).catch(() => {});
+    const why = describeError(err);
+    await audit(base, { kind: "error", summary: `Alexis · something went wrong · ${why.short}`, result: { error: why.short } }).catch(() => {});
     if (err instanceof Anthropic.AuthenticationError) {
       emit({ type: "error", message: "The AI service rejected the API key. Check ANTHROPIC_API_KEY in Vercel's settings." });
+    } else if (why.transient) {
+      // A busy or rate-limited AI service isn't a case for the team: the customer just tries again.
+      emit({ type: "error", message: "Sorry, I'm a little overloaded right now and couldn't finish that. Please send your message again in a minute." });
     } else {
       // Pass it to the team for real, so the message below is true.
       const handed = await runTool(

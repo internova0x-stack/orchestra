@@ -55,7 +55,7 @@ export async function runStaffTurn(
   ].join("\n");
 
   const messages = [...(conv.messages as MessageParam[]), { role: "user" as const, content: [{ type: "text" as const, text: input.message.slice(0, 4000) }] }];
-  const client = new Anthropic();
+  const client = new Anthropic({ maxRetries: 4 });
   let saved = [...messages];
   let wroteText = false;
   try {
