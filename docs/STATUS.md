@@ -12,7 +12,7 @@ Where the 2-day demo stands against `docs/BUILD-PLAN.md`. Update this file when 
 | 6 | The Rules screen (S6) | Built |
 | 7 | Verification, fees and the bank-details refusal (tests 10, 12, S2) | Built |
 | 8 | Full test run and polish | Polish done; **the full run with the real model is still to do** |
-| - | Putting it online (Vercel) | Waiting on Tomi's Vercel and Anthropic setup |
+| - | Putting it online (Vercel) | Live at https://orchestra-plum.vercel.app (Nov 23); database connected. Vercel holds `DATABASE_URL`, `DATABASE_PASSWORD` (the password alone, which overrides the one inside the string) and `ANTHROPIC_API_KEY`, each for Production and Preview |
 
 ## After step 8 (Nov 23)
 

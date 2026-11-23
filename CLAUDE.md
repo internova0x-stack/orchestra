@@ -28,7 +28,7 @@ and watches Alexis change behaviour.
 
 ## Stack
 Next.js 16 (App Router, TypeScript) on Vercel; Supabase Postgres for the simulated bank and the audit
-log, reached with one `DATABASE_URL` (the transaction pooler string) through `postgres`; Anthropic's own
+log, reached with one `DATABASE_URL` (the transaction pooler string; an optional `DATABASE_PASSWORD` replaces the password inside it) through `postgres`; Anthropic's own
 TypeScript SDK (`@anthropic-ai/sdk`) for the agent loop and streaming, not the Vercel AI SDK the Build
 Plan named (decided Nov 23: the loop pauses for the identity form and checks confirmations itself, which
 the official SDK's manual streaming loop fits). Model `claude-sonnet-5-5` with server-side refusal
