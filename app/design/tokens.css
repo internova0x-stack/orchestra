@@ -1,0 +1,85 @@
+/* Dashboard Design System: design tokens. Generated from tokens.json. */
+:root {
+  /* Colour */
+  --brand-600: #4f3bf3; /* Primary action fill, links, active nav and tab text, selected outlines, unread dots. White text on it passes 4.5:1. */
+  --brand-500: #655df6; /* Active-state icons (sidebar, settings tiles, top-bar gear) and the focus border on inputs. */
+  --brand-300: #a79df9; /* Disabled primary button fill. Decorative only; white label on it is below 4.5:1 (allowed for disabled). */
+  --brand-100: #dfd9f8; /* Border of brand-tinted cards (recommendation card). */
+  --brand-075: #eeecfb; /* Fill of small brand pills such as the 1% reward tag; text is brand-600. */
+  --brand-050: #f7f5fc; /* Active sidebar row background and brand-tinted card background. Text on it: brand-600 or ink-900. */
+  --on-brand: #ffffff; /* Text and icons on brand-600. */
+  --ink-900: #1e2c42; /* Headings, body text, table cell text, selected chip outline and selected neutral tab underline. */
+  --ink-800: #2b394f; /* Labels on secondary (outlined) buttons and select triggers. */
+  --ink-700: #404e67; /* Secondary text: table headers, inactive tabs, sidebar section labels, banner text, hero subtitle, timestamps. */
+  --ink-600: #536078; /* Default icon colour (sidebar, top bar, menus) and text in neutral tags. */
+  --ink-500: #69768f; /* Placeholder text, chart axis labels, disclaimers. Lowest text colour that still passes 4.5:1 on white. */
+  --ink-400: #959ca7; /* Disabled text and disabled pager arrows. About 2.9:1 on white: use only for disabled states. */
+  --ink-300: #98a4b8; /* Dashed chart baselines and quiet glyphs inside neutral icon buttons. Not for text. */
+  --border-strong: #bdc8d8; /* Dashed empty-state outlines and the outline of a selected/hovered chart card. */
+  --border: #d6dee8; /* Default 1px border on buttons, selects, pills, panels, popovers and tab baselines. */
+  --border-subtle: #edf1f5; /* Table row dividers, borders of quiet inputs and chips, segmented-control track, off toggle track. */
+  --surface-0: #ffffff; /* Page, sidebar, table, popover and outlined-button background. */
+  --surface-50: #fafbfc; /* Disabled action chip background. */
+  --surface-100: #f5f7fa; /* Search field, info banners, grey cards, icon tiles, hover rows, kbd hints, empty states, hero panel. */
+  --danger-700: #b02a40; /* Text in Failed / Blocked badges on danger-050 (passes 4.5:1). */
+  --danger-200: #f5d4dc; /* Border of danger badges. */
+  --danger-050: #fcf4f6; /* Fill of danger badges. */
+  --negative-700: #a33f1a; /* Negative delta text beside metrics (-100.0%). */
+  --chart-1: #9268f6; /* First data series and the default single chart line. */
+  --chart-2: #2254b5; /* Second data series. */
+  --chart-3: #479fbe; /* Third data series. */
+  --chart-4: #dd702c; /* Fourth data series. */
+  --chart-5: #a4233f; /* Fifth data series. */
+  /* Spacing */
+  --space-0\.5: 2px; /* Hairline gaps: badge vertical padding. */
+  --space-1: 4px; /* Icon-to-label gap in small buttons; gap between stacked chips. */
+  --space-2: 8px; /* Button horizontal padding, gap between adjacent buttons and chips. */
+  --space-3: 12px; /* Icon-to-label gap in sidebar rows; input horizontal padding. */
+  --space-4: 16px; /* Sidebar inset, card inner padding (compact), table cell horizontal padding. */
+  --space-5: 20px; /* Gap between page title row and tabs. */
+  --space-6: 24px; /* Gap between tabs, card padding (default), gap between sidebar groups. */
+  --space-8: 32px; /* Gap between page sections. */
+  --space-10: 40px; /* Page gutter left and right of the content column. */
+  --space-12: 48px; /* Gap between major page blocks (e.g. settings groups). */
+  --space-16: 64px; /* Hero panel inner padding. */
+  /* Radius */
+  --radius-sm: 4px; /* Badges, checkboxes, kbd hints, legend swatches. */
+  --radius-md: 6px; /* Buttons, selects, sidebar rows, icon tiles. */
+  --radius-lg: 8px; /* Search field, chips, banners, cards, popovers, inputs. */
+  --radius-xl: 12px; /* Hero panels and large feature cards. */
+  --radius-full: 999px; /* Filter pills, round icon buttons, toggle, suggestion chips. */
+  /* Shadow */
+  --shadow-popover: 0 0 0 1px #d6dee8, 0 8px 24px rgba(30, 44, 66, 0.12); /* Menus, popovers, coachmarks and the notifications panel. Estimated from the screenshots. */
+  --shadow-sticky: 0 4px 12px rgba(30, 44, 66, 0.08); /* Soft shadow under the sticky sidebar header once the list scrolls. Estimated. */
+  /* Sizes */
+  --sidebar-width: 240px; /* Fixed left navigation column. */
+  --topbar-height: 60px; /* Top bar holding search and global actions. */
+  --search-width: 360px; /* Global search field width. */
+  --control-sm: 24px; /* Small buttons (card actions), filter pills. */
+  --control-md: 28px; /* Default buttons, selects, sidebar rows. */
+  --control-lg: 36px; /* View chips, toolbar inputs, filter button, global search. */
+  --control-xl: 40px; /* Large hero buttons. */
+  --table-header-height: 36px; /* Table header row. */
+  --table-row-height: 44px; /* Table body row. */
+  --icon-size: 16px; /* Default icon box. */
+  --icon-tile: 32px; /* Square icon tile on settings links. */
+  --panel-width: 448px; /* Right-hand notifications panel. */
+  --menu-width: 288px; /* Account dropdown menu. */
+  /* Fonts */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Type styles */
+.display { font: 700 48px/56px var(--font-sans); } /* Hero headline inside feature panels. One per page at most. */
+.lead { font: 400 20px/28px var(--font-sans); } /* Hero supporting sentence, in ink-700. */
+.h1 { font: 700 28px/36px var(--font-sans); } /* Page title. */
+.h2 { font: 700 20px/28px var(--font-sans); } /* Section heading inside a page. */
+.h3 { font: 700 16px/24px var(--font-sans); } /* Group heading, card title, settings link title (link titles use brand-600). */
+.metric-lg { font: 700 24px/32px var(--font-sans); } /* Headline figure inside a chart card. */
+.metric { font: 400 20px/28px var(--font-sans); } /* Summary figure on overview rows. */
+.body { font: 400 14px/20px var(--font-sans); } /* Default text: paragraphs, table cells, sidebar rows, menu items. */
+.body-strong { font: 600 14px/20px var(--font-sans); } /* Button, chip and tab labels; bold table cell (customer name); card labels. */
+.small { font: 400 12px/16px var(--font-sans); } /* Pagination text, axis labels, timestamps, section labels in the sidebar. */
+.small-strong { font: 600 12px/16px var(--font-sans); } /* Table column headers; badge text uses weight 500 at this size. */
+.mono { font: 400 13px/20px var(--font-mono); } /* IDs, keys and copyable links. */

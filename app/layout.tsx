@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+// The design system (docs/design-system): its tokens and components first, then the app's styles.
+import "./design/tokens.css";
+import "./design/components.css";
 import "./globals.css";
 import Frame from "./components/Frame";
 

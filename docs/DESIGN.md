@@ -1,5 +1,25 @@
 # Design system
 
+> **Design system (Tomi, Nov 23).** The app now uses the design system in `docs/design-system/`
+> (`DESIGN-SYSTEM.md`, `tokens.css`, `components.css`; the app loads copies from `app/design/`). Its tokens,
+> type, spacing, radius and components win over the tokens and component styles further down this file.
+> Decisions made when adopting it:
+> - **Black stays the default.** The delivered system is light; the dark theme re-values the same tokens for
+>   a black page (`:root:not([data-theme='light'])` in `app/globals.css`, our addition). Light is the system
+>   exactly as delivered.
+> - **Sidebar layout.** The console has the 240px sidebar (Inbox, Dashboard, Staff queue, Rules; Customer
+>   app under "Testing") and a 60px top bar with the screen's title and Open customer app, the theme switch
+>   and Reset demo. Below 900px the sidebar becomes a scrolling row across the top.
+> - **Primary buttons are indigo** (brand-600), one per view, as the system says; everything else is outlined.
+> - **Our additions, flagged:** success, warning and info badge colours (`--success-*`, `--warning-*`,
+>   `--info-*`) in the danger badge's quiet style, to be replaced from screenshots that show them;
+>   `--brand-text` (brand-600 on white, a lighter indigo on black for contrast); `--surface-page`.
+> - The app's own class names stay; `app/globals.css` maps them onto the system's tokens and specs
+>   (buttons = ds-btn, status chips = ds-badge, panels = ds-card, nav rows = ds-nav-item, panel tabs =
+>   ds-tabs, inputs = ds-input, selects = ds-select, tables = ds-table, tags = ds-tag). Never a raw colour:
+>   a missing value becomes a token.
+
+
 Transcribed from `docs/source/8-Conversation-Design-System.pdf` (Nov 23, 2026). The 2-day demo only.
 The look is Orchestra AI's own: never Nuvion's logo, colours or brand.
 
