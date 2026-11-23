@@ -142,15 +142,19 @@ question: rate applied, time, amounts in both currencies; no predictions or advi
 ## Response targets (sample)
 
 How soon a person on the support team picks up a case after Alexis hands it off: what the handoff
-card's "when to expect a response" shows. Not Alexis's own reply time (that's seconds). Set by the
-owner on Nov 23; clock time, not business hours. Alexis states them as the team's target, never a
+card's "when to expect a response" shows. Not Alexis's own reply time (that's seconds). Decided by the
+owner on Nov 23. All are rules a business edits on the Rules screen, each value with its own unit
+(minutes, hours, business hours, business days). Alexis states them as the team's target, never a
 promise.
 
 | Urgency | Target |
 |---|---|
-| Urgent | 30 minutes |
-| High | 1 hour |
-| Normal | 4 hours |
+| Urgent | 1 hour |
+| High | 4 business hours |
+| Normal | 1 business day |
+
+Business hours (sample, also a rule; the same calendar counts business days everywhere, including the
+SWIFT late window): Monday to Friday, 09:00 to 17:00, Lagos time (WAT).
 
 ## Not editable
 
