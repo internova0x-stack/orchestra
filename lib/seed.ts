@@ -227,6 +227,10 @@ export async function seed(sql: Sql, now = new Date()) {
       await tx`insert into fees ${tx(f as Record<string, string | number | Date | null>)}`;
     }
 
+    // Harbour and Vine can't move money until verification is complete: a restriction it can fix.
+    await tx`insert into restrictions (id, business_id, transfer_id, kind, customer_reason, internal_reason, created_at)
+      values ('RS-2990', 'harbour', null, 'customer_fixable', 'Payouts and incoming payments are paused until business verification is complete. Upload the missing ownership document in the dashboard under Verification.', null, ${new Date(now.getTime() - 4 * DAY)})`;
+
     // Test 11: a review hold on Lena's payout. The internal reason never leaves the database.
     await tx`insert into restrictions (id, business_id, transfer_id, kind, customer_reason, internal_reason, created_at)
       values ('RS-3001', 'northfield', 'PO-88177', 'review_hold', null, 'Sanctions screening: possible name match on recipient', ${new Date(now.getTime() - 2 * DAY + HOUR)})`;

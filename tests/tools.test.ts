@@ -284,3 +284,26 @@ test("incoming: other businesses' credited payments stay private; loose searches
   const loose = await call(s, "find_incoming_payment", { amount: 420000 }); // Ember's unallocated, amount only
   assert.equal((loose.data as { found: number }).found, 0);
 });
+
+// ---------------------------------------------------------------- step 4: review hold
+
+test("test 11 and S5: get_account_restrictions returns only \"review hold\"", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("lena", MONDAY);
+  const out = await call(s, "get_account_restrictions", { reference: "PO-88177" });
+  const json = JSON.stringify(out);
+  assert.match(json, /"type":"review hold"/);
+  assert.doesNotMatch(json, /sanction|screening|name match/i);
+  const rows = await sql!`select summary, result::text as result from audit_log where conversation_id = ${s.conv.id}`;
+  assert.equal(rows[0].summary, "get_account_restrictions · review hold");
+  assert.doesNotMatch(rows[0].result, /sanction/i);
+});
+
+test("restrictions: a customer-fixable one comes with its cause; other businesses' holds stay hidden", { skip }, async () => {
+  const sam = await session("sam", MONDAY);
+  const out = await call(sam, "get_account_restrictions", {});
+  assert.match(JSON.stringify(out), /ownership document/);
+  const ada = await session("ada", MONDAY);
+  const none = await call(ada, "get_account_restrictions", { reference: "PO-88177" });
+  assert.deepEqual((none.data as { restrictions: unknown[] }).restrictions, []);
+});

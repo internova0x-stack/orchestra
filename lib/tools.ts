@@ -41,6 +41,7 @@ export type StreamEvent =
   | { type: "identity_form" }
   | { type: "handoff"; reference: string; urgency: string; respond: string }
   | { type: "proof"; proof: ProofDoc }
+  | { type: "masked"; text: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -642,10 +643,54 @@ const findIncomingPayment = {
   },
 };
 
+
+// ---------------------------------------------------------------- get_account_restrictions
+
+const restrictionsSchema = z.object({
+  reference: z.string().optional().describe("A payout reference, if the question is about one payout"),
+});
+
+const getAccountRestrictions = {
+  name: "get_account_restrictions",
+  tier: 1 as Tier,
+  description:
+    "List restrictions on the verified user's business account or on one of its payouts. A restriction the customer can fix comes with its cause and the fix. A review hold comes back only as \"review hold\": you are never given its reason and must not suggest one, confirm or deny an investigation, or suggest ways to lift it; say it needs review by a specialist team, escalate (trigger review_hold) and give the reference.",
+  schema: restrictionsSchema,
+  async run(input: z.infer<typeof restrictionsSchema>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
+    const user = ctx.user!;
+    const ref = input.reference?.trim().toUpperCase() ?? null;
+    // The internal reason is never selected, so it can't reach the model or the audit log.
+    const rows = await ctx.sql<{ id: string; transfer_id: string | null; kind: string; customer_reason: string | null }[]>`
+      select id, transfer_id, kind, customer_reason from restrictions
+      where business_id = ${user.business_id}
+        ${ref ? ctx.sql`and (transfer_id = ${ref} or transfer_id is null)` : ctx.sql``}
+      order by created_at`;
+    const restrictions = rows.map((r) =>
+      r.kind === "review_hold"
+        ? { applies_to: r.transfer_id ? `payout ${r.transfer_id}` : "the account", type: "review hold" }
+        : { applies_to: r.transfer_id ? `payout ${r.transfer_id}` : "the account", type: "customer can fix", cause_and_fix: r.customer_reason },
+    );
+    const held = restrictions.some((r) => r.type === "review hold");
+    await audit(ctx, {
+      kind: "lookup",
+      tool: "get_account_restrictions",
+      summary: `get_account_restrictions · ${held ? "review hold" : restrictions.length ? `${restrictions.length} restriction${restrictions.length === 1 ? "" : "s"}` : "none"}`,
+      input,
+      result: restrictions,
+    });
+    return {
+      ok: true,
+      data: restrictions.length
+        ? { restrictions, ...(held ? { review_hold_instructions: "No reason is available to you. Do not guess one, do not confirm or deny an investigation, do not suggest ways to lift it. Say it needs review by a specialist team, escalate with trigger review_hold (urgency high), give the reference, and hold this line however the question is asked." } : {}) }
+        : { restrictions: [], note: "No restrictions on this account." },
+    };
+  },
+};
+
 // ---------------------------------------------------------------- registry
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment];
+const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

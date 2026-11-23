@@ -343,6 +343,16 @@ export default function Chat() {
             case "tool_end": pollActivity(); break;
             case "card": patchLast((m) => (m.proof ? m : { ...m, cards: e.cards })); break;
             case "identity_form": patchLast((m) => ({ ...m, identity: "open" })); break;
+            case "masked":
+              // Show the customer that the secret was removed, as it was in the stored transcript.
+              setMessages((ms) => {
+                const i = ms.map((x) => x.role).lastIndexOf("customer");
+                if (i < 0) return ms;
+                const copy = ms.slice();
+                copy[i] = { ...copy[i], text: e.text };
+                return copy;
+              });
+              break;
             case "proof": patchLast((m) => ({ ...m, proof: e.proof, cards: undefined })); break; // one card per reply
             case "handoff": patchLast((m) => ({ ...m, handoff: { reference: e.reference, urgency: e.urgency, respond: e.respond } })); break;
             case "error": patchLast((m) => ({ ...m, thinking: false, text: (m.text ? m.text + "\n\n" : "") + e.message })); break;

@@ -5,6 +5,7 @@ import type { Sql } from "./db.ts";
 import { EFFORT, MAX_STEPS, MAX_TOKENS, MODEL } from "./config.ts";
 import { GREETING } from "./greeting.ts";
 import { checkIdentity, type IdentityAnswers } from "./identity.ts";
+import { maskSecrets } from "./secrets.ts";
 import { Rules } from "./rules.ts";
 import { createConversation, loadConversation, verifiedUser, type Conversation, type VerifiedUser } from "./session.ts";
 import { dateTime, longDate } from "./time.ts";
@@ -111,10 +112,21 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
     }
     content.push(...pending, { type: "tool_result", tool_use_id: toolUseId, content: JSON.stringify(result), is_error: !result.ok });
   } else {
-    const text = (input.message ?? "").trim();
-    if (!text) {
+    const raw = (input.message ?? "").trim();
+    if (!raw) {
       emit({ type: "done" });
       return;
+    }
+    // Secrets are masked before Alexis sees the message and before it is stored.
+    const { text, found } = maskSecrets(raw);
+    if (found.length) {
+      emit({ type: "masked", text });
+      await audit({ sql, conv, user, toolUseId: `mask-${Date.now()}` }, {
+        kind: "refusal",
+        tool: "message",
+        summary: `message · ${found.join(", ")} removed before Alexis saw it`,
+        refusal_reason: "Secret in a customer message",
+      });
     }
     if (conv.pending_identity_tool_id) {
       // The customer typed instead of using the form: close the open tool call, then their message.
