@@ -8,11 +8,14 @@ the chat showing every lookup and action as it happens, and a Rules screen where
 and watches Alexis change behaviour.
 
 ## Read first
-- `docs/DEMO-SPEC.md`: what the 2-day demo builds (six use cases, eleven tools, thirteen planted cases,
+- `docs/DEMO-SPEC.md`: what the 2-day demo builds (six use cases, eleven tools, the tests in TESTS.md,
   the Rules screen) and the decisions taken on Nov 23. **Build only what is in it.**
 - `docs/DESIGN.md`: the three screens, the CSS tokens (dark by default, indigo), components, reply
   patterns and states. Use the tokens, never raw colours; never Nuvion's logo, colours or brand.
 - `docs/KNOWLEDGE-BASE.md`: the dummy rule set the seed loads into `rules` (sourced and sample entries).
+- `docs/TESTS.md`: the 12 scripted conversations and 6 safety tests, the named sample users and
+  payments the seed must contain, and the pass bar. A change that touches Alexis's behaviour is checked
+  against it.
 - `docs/BACKLOG.md`: everything after the demo, in phase order.
 - `docs/source/`: the source documents, numbered as in the PRD's document set. The Guardrails policy
   wins over the Playbook; DEMO-SPEC wins over all of them.
