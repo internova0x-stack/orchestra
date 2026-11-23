@@ -448,6 +448,11 @@ create table if not exists audit_log (
 
 create index if not exists audit_log_conversation on audit_log (conversation_id, id);
 alter table audit_log add column if not exists staff text;
+
+-- The console: a member of the team can take over a conversation and reply in person. While
+-- taken_over_by is set, Alexis doesn't answer; her next turn starts after the hand back.
+alter table conversations add column if not exists taken_over_by text;
+alter table conversations add column if not exists taken_over_at timestamptz;
 `;
 
 /** Tables in dependency order, children first, for wiping on Reset demo. */

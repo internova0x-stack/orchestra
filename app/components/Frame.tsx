@@ -3,18 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import Chat from "./Chat";
 
+// The bank's support console. The customer side is a separate app at /customer, without this frame.
 const TABS = [
-  { href: "/", label: "Chat" },
-  { href: "/cases", label: "Cases" },
-  { href: "/rules", label: "Rules" },
+  { href: "/", label: "Inbox" },
   { href: "/staff", label: "Staff queue" },
+  { href: "/rules", label: "Rules" },
 ];
 
-import { RESET_EVENT } from "./events";
+import { announceReset } from "./events";
 
-/** The app frame on every screen: prototype banner, top bar with tabs, theme switch and Reset demo. */
+/** The console's frame on every screen: prototype banner, top bar with tabs, theme switch and Reset demo. */
 export default function Frame({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -46,7 +45,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
     try {
       const res = await fetch("/api/reset", { method: "POST" });
       if (!res.ok) throw new Error(String(res.status));
-      window.dispatchEvent(new Event(RESET_EVENT));
+      announceReset();
       setToast("Demo reset. The sample data is back to its starting state.");
     } catch {
       setToast("The reset didn't work. Check that the database is connected, then try again.");
@@ -55,11 +54,14 @@ export default function Frame({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // The customer app has its own look: no console tabs or buttons.
+  if (path.startsWith("/customer")) return <>{children}</>;
+
   return (
     <div className="app">
       <div className="banner" role="note">Prototype - simulated data</div>
       <header className="topbar">
-        <div className="wordmark">Orchestra <span>AI</span></div>
+        <div className="wordmark">Orchestra <span>AI</span><span className="wordmark-sub">Support console</span></div>
         <nav className="tabs" aria-label="Screens">
           {TABS.map((t) => (
             <Link key={t.href} href={t.href} className="tab" aria-current={path === t.href ? "page" : undefined}>
@@ -68,6 +70,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="topbar-right">
+          <a className="btn btn-link" href="/customer" target="_blank" rel="noopener">Open customer app ↗</a>
           <button className="btn" onClick={switchTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
             {theme === "dark" ? "Light" : "Dark"}
           </button>
@@ -76,14 +79,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </header>
-      <main className="page">
-        {/* The chat stays mounted on every tab, so a conversation survives a visit to the Staff
-            queue and the team's decision appears in it. */}
-        <div className="page-fill" hidden={path !== "/"}>
-          <Chat />
-        </div>
-        {path !== "/" && children}
-      </main>
+      <main className="page">{children}</main>
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );

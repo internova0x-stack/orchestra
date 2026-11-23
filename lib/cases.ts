@@ -5,9 +5,9 @@ import { SESSION_IDLE_MINUTES } from "./config.ts";
 // status and urgency are worked out from what is already recorded (the audit log, the handoffs and
 // the conversation's own state), so nothing new is stored and nothing can drift out of step.
 
-export type CaseStatus = "In progress" | "Waiting on customer" | "Resolved by Alexis" | "Handed off" | "Needs approval" | "Resolved by staff";
-export const STATUSES: CaseStatus[] = ["In progress", "Waiting on customer", "Resolved by Alexis", "Handed off", "Needs approval", "Resolved by staff"];
-const OPEN: CaseStatus[] = ["In progress", "Waiting on customer", "Handed off", "Needs approval"];
+export type CaseStatus = "In progress" | "Taken over" | "Waiting on customer" | "Resolved by Alexis" | "Handed off" | "Needs approval" | "Resolved by staff";
+export const STATUSES: CaseStatus[] = ["In progress", "Taken over", "Waiting on customer", "Resolved by Alexis", "Handed off", "Needs approval", "Resolved by staff"];
+const OPEN: CaseStatus[] = ["In progress", "Taken over", "Waiting on customer", "Handed off", "Needs approval"];
 
 /** Each tool's area of the business, for the case's category. Tools used in every kind of case are left out. */
 const CATEGORY_BY_TOOL: Record<string, string> = {
@@ -58,8 +58,9 @@ export function categoryOf(tools: string[], triggers: string[]): string {
 
 export interface Handoff { reference: string; urgency: string; status: string; action: { type?: string } | null; created_at: Date }
 
-/** Where the case stands. A handoff wins; then anything waiting on the customer; then idle means done. */
-export function statusOf(c: { handoffs: Handoff[]; waiting: boolean; lastActivity: Date }, now: Date): CaseStatus {
+/** Where the case stands. A person handling it now wins; then a handoff; then anything waiting on the customer; then idle means done. */
+export function statusOf(c: { handoffs: Handoff[]; waiting: boolean; lastActivity: Date; takenOverBy?: string | null }, now: Date): CaseStatus {
+  if (c.takenOverBy) return "Taken over";
   const latest = [...c.handoffs].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0];
   if (latest) {
     if (latest.status !== "open") return "Resolved by staff";
@@ -78,35 +79,52 @@ export function urgencyOf(handoffs: Handoff[]): string | null {
   return best;
 }
 
-type Block = { type: string; text?: string };
+type Block = { type: string; text?: string; staff?: string };
 type Message = { role: string; content: string | Block[] };
 
-/** The chat as people saw it: text only (tool calls and results left out), secrets already masked. */
-export function transcriptOf(messages: Message[] | null): { who: string; text: string }[] {
-  return (messages ?? [])
-    .map((m) => ({
-      who: m.role === "assistant" ? "Alexis" : "Customer",
-      text: typeof m.content === "string" ? m.content : m.content.map((b) => (b.type === "text" && b.text?.trim() ? b.text : b.type === "image" ? "[Screenshot attached]" : "")).filter(Boolean).join("\n"),
-    }))
-    .filter((m) => m.text);
+/**
+ * The chat as people saw it: text only (tool calls and results left out), secrets already masked.
+ * `staff` names the member of the team who wrote a reply after taking the conversation over.
+ */
+export function transcriptOf(messages: Message[] | null): { who: string; text: string; staff?: string }[] {
+  const out: { who: string; text: string; staff?: string }[] = [];
+  for (const m of messages ?? []) {
+    if (typeof m.content === "string") {
+      if (m.content.trim()) out.push({ who: m.role === "assistant" ? "Alexis" : "Customer", text: m.content });
+      continue;
+    }
+    // One entry per speaker in a row: Alexis's text, then a person's reply, are shown apart.
+    let cur: { who: string; text: string; staff?: string } | null = null;
+    for (const b of m.content) {
+      const piece = b.type === "text" && b.text?.trim() ? b.text : b.type === "image" ? "[Screenshot attached]" : "";
+      if (!piece) continue;
+      const who = m.role === "user" ? "Customer" : b.staff ? b.staff : "Alexis";
+      if (cur && cur.who === who) cur.text += `\n${piece}`;
+      else {
+        cur = { who, text: piece, ...(b.staff ? { staff: b.staff } : {}) };
+        out.push(cur);
+      }
+    }
+  }
+  return out;
 }
 
 export interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
-  category: string; status: CaseStatus; urgency: string | null; references: string[];
+  category: string; status: CaseStatus; urgency: string | null; references: string[]; takenOverBy: string | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
 }
 
 interface ConvRow {
   id: string; created_at: Date; last_activity: Date; messages: Message[];
-  pending_action: { confirmed?: boolean } | null; pending_identity_tool_id: string | null; pending_code: unknown;
+  pending_action: { confirmed?: boolean } | null; pending_identity_tool_id: string | null; pending_code: unknown; taken_over_by: string | null;
   verified: boolean; customer: string | null; business: string | null; tools: string[] | null;
 }
 
 /** Every customer conversation, newest activity first. */
 export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> {
   const convs = await sql<ConvRow[]>`
-    select c.id, c.created_at, c.last_activity, c.messages, c.pending_action, c.pending_identity_tool_id, c.pending_code,
+    select c.id, c.created_at, c.last_activity, c.messages, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by,
       c.verified_user_id is not null as verified,
       coalesce(v.full_name, t.full_name) as customer, coalesce(vb.name, tb.name) as business,
       (select array_agg(a.tool order by a.id) from audit_log a where a.conversation_id = c.id and a.tool is not null) as tools
@@ -132,7 +150,8 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
       business: c.business,
       verified: c.verified,
       category: categoryOf(c.tools ?? [], hs.map((h) => h.trigger)),
-      status: statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity }, now),
+      status: statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by }, now),
+      takenOverBy: c.taken_over_by,
       urgency: urgencyOf(hs),
       references: hs.map((h) => h.reference),
       started: new Date(c.created_at).toISOString(),

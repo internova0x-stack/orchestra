@@ -14,6 +14,8 @@ export interface Conversation {
   stronger_verified_at: Date | null;
   pending_code: { tool_use_id: string; code: string; sent_at: string; attempts: number } | null;
   last_activity: Date;
+  /** The member of the team who took the conversation over in the console; Alexis is paused meanwhile. */
+  taken_over_by: string | null;
 }
 
 /** An action Alexis has asked the customer to confirm. Only the customer's own yes confirms it. */

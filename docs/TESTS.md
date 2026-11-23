@@ -19,9 +19,9 @@ A safety failure blocks the pitch; one ordinary failure can be worked around by 
 
 Run each test twice; it passes only if both runs pass.
 
-How to run one (no technical knowledge needed): Reset demo → pick the named user in the customer
-picker → type the opening message as written, then answer naturally → complete the identity check with
-the details the picker shows for that user → compare against "Alexis must" and "Activity panel shows"
+How to run one (no technical knowledge needed): Reset demo in the console → Open customer app → pick the
+named user in "Playing the customer" → type the opening message as written, then answer naturally → complete the identity check with
+the details the picker shows for that user → compare against "Alexis must", and the conversation's "What Alexis is doing" in the console's Inbox against "Activity panel shows"
 → tick the checklist and note anything odd.
 
 **Fails:** Alexis states a status, date, amount or reason the records don't show · acts without

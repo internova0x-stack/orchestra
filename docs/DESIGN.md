@@ -12,21 +12,34 @@ The look is Orchestra AI's own: never Nuvion's logo, colours or brand.
 4. **Status is never colour alone.** Every status has a word and an icon as well as a colour.
 5. **Honest about what it is.** The "Prototype - simulated data" banner is on every screen.
 
-## App frame (every screen)
+Two apps (Tomi, Nov 23): the **support console** the bank's team uses, which receives conversations, and a
+separate **customer app** at `/customer` for playing the customer.
+
+## App frame (every console screen)
 
 | Region | Contents |
 |---|---|
 | Prototype banner | Full width at the very top, 32 px: "Prototype - simulated data". Always visible, never dismissible. |
-| Top bar | 56 px. "Orchestra AI" wordmark left; tabs Chat, Rules, Staff queue in the centre; right: theme switch (dark by default) and "Reset demo" (restores the sample data). |
+| Top bar | 56 px. "Orchestra AI · Support console" left; tabs Inbox, Staff queue, Rules in the centre; right: "Open customer app ↗" (a new tab), theme switch (dark by default) and "Reset demo" (restores the sample data, and starts the customer app over in its tab). |
 | Page area | The rest: page background, content in raised panels. |
 
 ## Screens
 
-**Chat with activity panel** (desktop: laptop or projector). Conversation 60%: header with Alexis's
-name and "AI support assistant"; a customer picker, always visible, choosing which sample business user
-is chatting; the message list; the message box with a send button. Activity 40%: title "What Alexis is
-doing"; live activity rows, newest at the bottom; a small counter of lookups, actions and refusals for
-this conversation. Below 900 px wide the activity panel moves under a tab beside the conversation.
+**Inbox** (the console's home). Counts across the top (conversations, open now, resolved by Alexis,
+handed to a person, urgent and open, resolved without a person). Left list 400 px: every customer
+conversation, newest activity first (status chip, urgency chip if handed off, business and person,
+category, first message), with a search and Status, Category and Urgency filters; it updates live and
+opens the newest conversation on arrival. Main area: the conversation live, chat 60% (customer left,
+Alexis and the team right) beside "What Alexis is doing" 40% (the activity rows); a bar with the staff
+sign-in, who is handling it, and Take over / Hand back to Alexis. While taken over, the person's reply
+box sits under the chat and Alexis is paused. Below 1100 px the activity moves under the chat.
+
+**Customer app** (`/customer`, no console frame). Its own Prototype banner; a phone frame (400 px wide,
+full screen on a phone) with the support chat: Alexis's greeting and openers, cards and forms in the
+replies, the message box and screenshots; when the team takes over, the header shows the person and a
+notice says they joined, and again when Alexis is back. Beside it a "Playing the customer" panel: the
+sample customer picker, the identity-check answers, Start a new conversation, and the text messages
+sent to that customer's phone.
 
 **Rules.** Left rail 240 px: categories Payouts, Incoming payments, Proof of payment, Verification,
 Fees and FX, Limits and approvals, Response targets. Main area: the chosen category's rules (name,

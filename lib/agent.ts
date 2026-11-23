@@ -10,6 +10,7 @@ import { Rules } from "./rules.ts";
 import { createConversation, loadConversation, verifiedUser, type Conversation, type VerifiedUser } from "./session.ts";
 import { dateTime, longDate } from "./time.ts";
 import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
+import { appendTurn, forModel, hadStaff } from "./takeover.ts";
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
@@ -64,6 +65,9 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
     else if (c.status === "resolved") lines.push(`- Update on ${c.reference}: the team marked the case resolved${c.resolution ? ` (${c.resolution})` : ""}.`);
     else lines.push(`- ${c.reference} is open with the team. If the customer asks again, give its status and reference; don't open a second case for the same issue.`);
   }
+  if (hadStaff(conv.messages as never)) {
+    lines.push("- A member of the support team took this conversation over earlier and replied in person; their replies are marked [Reply from …]. They have handed it back to you. Build on what they said, check the records before repeating any fact, and don't introduce yourself again.");
+  }
   lines.push("- The customer sees each payment card you look up under your reply, the identity form when you call verify_identity, and Yes/Cancel buttons when an action needs their confirmation.");
   return lines.join("\n");
 }
@@ -95,6 +99,31 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
     // The verified session expired after inactivity: back to unverified.
     await sql`update conversations set verified_user_id = null, verified_at = null, stronger_verified_at = null where id = ${conv.id}`;
     conv = { ...conv, verified_user_id: null, verified_at: null, stronger_verified_at: null };
+  }
+
+  // A member of the team has taken this conversation over: store what the customer sent, for the
+  // person in the console to answer, and don't run Alexis.
+  if (conv.taken_over_by) {
+    const raw = (input.message ?? "").trim() || (input.image ? "(screenshot attached)" : "");
+    if (raw && input.identity === undefined && input.code === undefined) {
+      const { text, found } = maskSecrets(raw);
+      if (found.length) {
+        emit({ type: "masked", text });
+        await audit({ sql, conv, user, toolUseId: `mask-${Date.now()}` }, {
+          kind: "refusal", tool: "message",
+          summary: `message · ${found.join(", ")} removed before the team saw it`,
+          refusal_reason: "Secret in a customer message",
+        });
+      }
+      const blocks: ContentBlockParam[] = [];
+      if (input.image) blocks.push({ type: "image", source: { type: "base64", media_type: input.image.media_type, data: input.image.data } });
+      blocks.push({ type: "text", text });
+      const next = appendTurn(conv.messages as never, "user", blocks as never);
+      await sql`update conversations set messages = ${sql.json(next as never)}, last_activity = ${now} where id = ${conv.id}`;
+    }
+    emit({ type: "taken_over", by: conv.taken_over_by });
+    emit({ type: "done" });
+    return;
   }
 
   const messages = [...(conv.messages as MessageParam[])];
@@ -255,7 +284,10 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
   }
   await sql`update conversations set pending_identity_tool_id = null, pending_results = '[]', last_activity = ${now} where id = ${conv.id}`;
   conv = { ...conv, pending_identity_tool_id: null, pending_results: [] };
-  messages.push({ role: "user", content });
+  // After a hand back the history can end with the customer's messages to the team: join them into one turn.
+  const joined = appendTurn(messages as never, "user", content as never) as unknown as MessageParam[];
+  messages.length = 0;
+  messages.push(...joined);
 
   // A consistent history to save: only after a full assistant turn and its tool results.
   let saved = [...messages];
@@ -283,7 +315,7 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
           { type: "text", text: await sessionContext(sql, new Date(), user, conv) },
         ],
         tools,
-        messages,
+        messages: forModel(messages as never) as unknown as MessageParam[],
       });
 
       let brokeLine = false;

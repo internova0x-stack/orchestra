@@ -10,7 +10,10 @@ import { createConversation, verifiedUser, type Conversation } from "../lib/sess
 import { checkIdentity } from "../lib/identity.ts";
 import { Rules } from "../lib/rules.ts";
 import { fromLocal } from "../lib/time.ts";
-import { categoryOf, statusOf, urgencyOf, listCases, caseCounts } from "../lib/cases.ts";
+import { categoryOf, statusOf, urgencyOf, listCases, caseCounts, transcriptOf } from "../lib/cases.ts";
+import { appendTurn, forModel, takeOver, handBack, staffReply, customerView } from "../lib/takeover.ts";
+import { runTurn } from "../lib/agent.ts";
+import { staffUser } from "../lib/staff.ts";
 
 const url = process.env.TEST_DATABASE_URL;
 const sql = url ? postgres(url, { prepare: false, onnotice: () => {} }) : null;
@@ -952,4 +955,59 @@ test("cases: every conversation is listed, resolved by Alexis or handed off, wit
   assert.equal(maya.urgency, "high");
   assert.match(maya.references[0], /^ESC-/);
   assert.deepEqual(caseCounts(rows), { total: 2, open: 1, resolvedByAlexis: 1, handedOff: 1, urgentOpen: 0, withoutPerson: 50 });
+});
+
+
+// ---------------------------------------------------------------- the console: taking a conversation over
+
+test("take over: turns stay alternating and staff replies reach the model as labelled text", () => {
+  type M = Parameters<typeof appendTurn>[0];
+  let m: M = [{ role: "user", content: "Hello" }];
+  m = appendTurn(m, "user", [{ type: "text", text: "Anyone there?" }]);
+  assert.equal(m.length, 1, "two customer messages in a row join one turn");
+  m = appendTurn(m, "assistant", [{ type: "text", text: "Hi, I'm Ife.", staff: "Ife Adeyemi" }]);
+  assert.deepEqual(m.map((x) => x.role), ["user", "assistant"]);
+  const model = forModel(m);
+  const block = (model[1].content as { text: string; staff?: string }[])[0];
+  assert.equal(block.staff, undefined, "nothing extra reaches the model");
+  assert.match(block.text, /^\[Reply from Ife Adeyemi, a member of the support team/);
+  assert.deepEqual(transcriptOf(m as never).map((x) => x.who), ["Customer", "Ife Adeyemi"]);
+});
+
+test("take over: Alexis pauses, the customer's messages wait for the team, and hand back returns it", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const ife = (await staffUser(sql!, "ife"))!;
+  const bayo = (await staffUser(sql!, "bayo"))!;
+  const s = await session(null, MONDAY);
+  // Alexis asked for the identity form; it's still open when the team takes over.
+  const history = [{ role: "user", content: "Where is my payout?" }, { role: "assistant", content: [{ type: "text", text: "Let me check who you are." }, { type: "tool_use", id: "tu_1", name: "verify_identity", input: {} }] }];
+  await sql!`update conversations set messages = ${sql!.json(history as never)}, pending_identity_tool_id = 'tu_1', last_activity = now() where id = ${s.conv.id}`;
+  assert.equal(await takeOver(sql!, s.conv.id, ife), null);
+  assert.equal(await takeOver(sql!, s.conv.id, bayo), "taken_over_by_someone_else");
+  const [c] = await sql!`select taken_over_by, pending_identity_tool_id, messages from conversations where id = ${s.conv.id}`;
+  assert.equal(c.taken_over_by, "Ife Adeyemi");
+  assert.equal(c.pending_identity_tool_id, null, "the open form is closed");
+  assert.equal(c.messages[2].content[0].tool_use_id, "tu_1", "and its tool call answered, so the history stays valid");
+
+  // The customer writes: stored for the team, no model call (no API key is set in tests).
+  const events: { type: string }[] = [];
+  await runTurn(sql!, { conversationId: s.conv.id, typingUserId: null, message: "Hello? My card is 4111 1111 1111 1111" }, (e) => events.push(e));
+  assert.deepEqual(events.map((e) => e.type), ["masked", "taken_over", "done"]);
+  assert.equal(await staffReply(sql!, s.conv.id, bayo, "Hi"), "taken_over_by_someone_else", "only the person who took over replies");
+  assert.equal(await staffReply(sql!, s.conv.id, ife, "Hi, I'm Ife from the support team. I'll check this for you."), null);
+  const view = await customerView(sql!, s.conv.id);
+  assert.equal(view.takenOverBy, "Ife Adeyemi");
+  assert.deepEqual(view.staff.map((x) => x.text), ["Hi, I'm Ife from the support team. I'll check this for you."]);
+  const [after] = await sql!`select messages from conversations where id = ${s.conv.id}`;
+  const t = transcriptOf(after.messages);
+  assert.deepEqual(t.slice(-2).map((x) => x.who), ["Customer", "Ife Adeyemi"]);
+  assert.ok(!JSON.stringify(after.messages).includes("4111 1111 1111 1111"), "the card number was masked before it was stored");
+  const rows = await listCases(sql!);
+  assert.equal(rows.find((r) => r.id === s.conv.id)!.status, "Taken over");
+
+  assert.equal(await handBack(sql!, s.conv.id, bayo), "taken_over_by_someone_else");
+  assert.equal(await handBack(sql!, s.conv.id, ife), null);
+  assert.equal((await customerView(sql!, s.conv.id)).takenOverBy, null);
+  const log = await sql!`select summary, staff from audit_log where conversation_id = ${s.conv.id} and staff is not null order by id`;
+  assert.deepEqual(log.map((r) => r.summary), ["Ife Adeyemi (support agent) took over the conversation · Alexis paused", "Ife Adeyemi replied to the customer", "Ife Adeyemi handed the conversation back to Alexis"]);
 });

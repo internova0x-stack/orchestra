@@ -333,6 +333,60 @@ a { color: var(--brand-accent); }
   .filter-row { grid-template-columns: 1fr; }
 }
 
+/* ---------- Customer app: a banking app's support chat in a phone frame ---------- */
+.customer-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--surface-page); }
+.customer-stage { flex: 1; display: flex; justify-content: center; align-items: flex-start; gap: var(--space-6); padding: var(--space-6) var(--space-4); }
+.tester { width: 300px; flex: none; min-width: 0; overflow: hidden; }
+.tester-body { padding: var(--space-4); display: grid; gap: var(--space-3); }
+.tester-body p { margin: 0; }
+.tester-body > .btn { width: 100%; white-space: normal; text-align: center; min-height: 40px; height: auto; padding: var(--space-2) var(--space-3); }
+.tester-field { display: grid; gap: var(--space-1); }
+.tester-field select { width: 100%; min-width: 0; min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--border-strong); color: var(--text-1); }
+.tester-id { display: grid; gap: 2px; font-family: var(--font-mono); font-size: var(--size-xs); padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); }
+.tester .activity-list { padding: 0; }
+.phone {
+  width: 400px; max-width: 100%; height: min(820px, calc(100dvh - 96px)); display: flex; flex-direction: column;
+  background: var(--surface-panel); border: 1px solid var(--border-strong); border-radius: 36px; overflow: hidden; box-shadow: var(--shadow-panel);
+}
+.phone-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-3); border-bottom: 1px solid var(--border); }
+.phone-title { margin-left: auto; }
+.phone .messages { padding: var(--space-4); }
+.phone .msg { max-width: 88%; }
+.phone .composer { padding: var(--space-3) var(--space-4); }
+.phone .attach-bar { padding: 0 var(--space-4) var(--space-4); }
+.chat-notice { align-self: center; text-align: center; font-size: var(--size-xs); color: var(--text-2); padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); }
+@media (max-width: 799px) {
+  .customer-stage { flex-direction: column; align-items: stretch; padding: 0; gap: 0; }
+  .tester { width: auto; border-radius: 0; order: 2; }
+  .phone { width: 100%; height: calc(100dvh - 32px); border-radius: 0; border: 0; }
+}
+
+/* ---------- Inbox: watching a conversation live, taking it over ---------- */
+.wordmark-sub { color: var(--text-2); font-weight: 500; font-size: var(--size-sm); margin-left: var(--space-3); letter-spacing: 0; }
+.btn-link { display: inline-flex; align-items: center; text-decoration: none; color: var(--text-1); }
+.inbox-head { justify-content: space-between; flex-wrap: wrap; }
+.inbox-chips { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.takeover-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--border); background: var(--surface-sunk); }
+.takeover-state { flex: 1; min-width: 200px; font-size: var(--size-sm); color: var(--text-2); }
+.takeover-state b { color: var(--text-1); }
+.takeover-error { padding: var(--space-2) var(--space-6); }
+.watch-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.watch-chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+.watch-chat .history { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-6); }
+.watch-note { padding: var(--space-3) var(--space-6); border-top: 1px solid var(--border); }
+.watch-activity { display: flex; flex-direction: column; min-height: 0; }
+.watch-title { padding: var(--space-3) var(--space-4) 0; font-size: var(--size-sm); font-weight: 600; }
+.msg-in { align-self: flex-start; background: var(--surface-sunk); }
+.msg-out { align-self: flex-end; background: var(--surface-panel); border: 1px solid var(--border); }
+.msg-in .msg-meta { color: var(--text-2); }
+.msg-staff { border-color: var(--brand-600); }
+@media (max-width: 1099px) {
+  .watch-grid { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 1fr) auto; }
+  .watch-chat { border-right: 0; border-bottom: 1px solid var(--border); }
+  .watch-activity .activity-list { max-height: 260px; }
+}
+@media (max-width: 599px) { .wordmark-sub { display: none; } }
+
 /* Confirmation prompt and team updates */
 .confirm { margin-top: var(--space-3); display: grid; gap: var(--space-2); white-space: normal; }
 .confirm-action { font-weight: 600; }

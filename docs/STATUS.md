@@ -33,6 +33,17 @@ root-cause tracing, 10 complaints with screenshots, 7 loans, 8 merchant payouts,
 banking (`get_ussd_session`; cash at an agent always goes to a person). `npm test` runs 77 tests.
 Not built because they aren't use cases: the hours-saved dashboard and the Operations phase (backlog).
 
+## Console and customer app (Nov 23, Tomi: the platform is what banks use, receiving messages)
+
+The main app is now the bank's **support console**: Inbox (every conversation, live: chat and Alexis's
+activity side by side, counts and filters; the Cases screen became it), Staff queue and Rules. The chat is
+a separate **customer app** at `/customer` in a phone frame, with a "Playing the customer" panel for
+testers. **Take over** (Tomi: "Watch and take over"): a signed-in member of the team takes a conversation
+over (`lib/takeover.ts`): anything waiting on the customer (identity form, code, Yes/Cancel) is closed,
+Alexis is paused, the customer's messages wait for the person, their replies reach the customer app, and
+Hand back returns it to Alexis, who reads the team's replies as labelled text. Each step is in the audit
+log under the person's name. Checked by tests and a browser run against a stand-in AI service.
+
 ## The Cases screen (Nov 23, Tomi: "Every conversation")
 
 A Cases tab lists every customer conversation, not only handoffs (`lib/cases.ts`, `app/cases`,

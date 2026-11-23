@@ -30,6 +30,7 @@ export type StreamEvent =
   | { type: "confirm"; action: string; consequence: string }
   | { type: "code_form"; sentTo: string; code: string }
   | { type: "code_retry" }
+  | { type: "taken_over"; by: string }
   | { type: "error"; message: string }
   | { type: "done" };
 

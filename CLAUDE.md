@@ -44,9 +44,15 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   queue (`lib/staff.ts`: Approve, Decline, Mark resolved; the screen acts as "Supervisor", no login).
 - Confirmation is enforced in code: a tier 2/3 tool's first call stores `conversations.pending_action` and
   shows Yes/Cancel; only the customer's button or typed yes sets it confirmed (`runTurn`), never the model.
-- The Chat screen lives in `app/components/Frame.tsx` and stays mounted on every tab.
-- Cases screen (`app/cases`, `app/api/cases`, `lib/cases.ts`): every customer conversation with category, status
-  and urgency worked out from the audit log, handoffs and conversation state; full chat history and activity.
+- Two apps (Tomi, Nov 23): the bank's **support console** (`app/components/Frame.tsx`: Inbox at `/`, Staff
+  queue, Rules) receives conversations; the **customer app** (`/customer`, `app/components/Chat.tsx`, no console
+  frame) is how a tester plays the customer. The customer app never reads the activity log
+  (`app/api/conversation/[id]` gives it team replies, who is handling it and decisions).
+- Inbox (`app/page.tsx`, `app/api/cases`, `lib/cases.ts`): every customer conversation live, with category,
+  status and urgency worked out from the audit log, handoffs and conversation state; chat beside the activity.
+- Take over (`lib/takeover.ts`, POST `app/api/cases/[id]`): `conversations.taken_over_by` pauses Alexis; staff
+  replies are assistant text blocks carrying `staff`, turned into labelled text by `forModel` before the model
+  sees them; same-side messages join one turn (`appendTurn`) so the history always alternates.
 - Rules screen: `app/api/rules` (no source links), `lib/ruleEdit.ts` checks a value (limits are numbers,
   switches on/off, times HH:MM) and logs it to `rule_changes` and `audit_log`.
 - `npm run dev`, `npm run build`, `npm run typecheck`.

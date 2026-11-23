@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GREETING, OPENERS } from "@/lib/greeting";
-import { RESET_EVENT } from "./events";
+import { RESET_CHANNEL } from "./events";
 import { drawSample, readImage, type Attachment, type Sample } from "./screenshots";
 
 // ---------------------------------------------------------------- types
@@ -16,7 +16,9 @@ interface Handoff { reference: string; urgency: string; respond: string }
 interface Proof { reference: string; payout: string; amount: string; currency: string; date: string; recipient: string; account: string; route: string; issued: string }
 interface Msg {
   id: string;
-  role: "alexis" | "customer";
+  role: "alexis" | "customer" | "notice";
+  /** A reply typed by a member of the team who took the chat over. */
+  staff?: string;
   text: string;
   cards?: Card[];
   identity?: "open" | "sent";
@@ -29,11 +31,6 @@ interface Msg {
   thinking?: boolean;
   showLabel?: boolean;
 }
-interface ActivityRow {
-  id: number; tool_use_id: string | null; kind: string; tool: string | null; summary: string;
-  input: unknown; result: unknown; refusal_reason: string | null; approver: string | null; created_at: string;
-}
-
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const greeting = (): Msg => ({ id: newId(), role: "alexis", text: GREETING, showLabel: true });
 
@@ -46,7 +43,7 @@ const CHIP: Record<string, { tone: string; icon: "check" | "clock" | "cross" | "
   Failed: { tone: "stop", icon: "cross" }, Reversed: { tone: "stop", icon: "cross" }, Blocked: { tone: "stop", icon: "cross" },
   Declined: { tone: "stop", icon: "cross" }, Resolved: { tone: "ok", icon: "check" },
   "On hold": { tone: "info", icon: "pause" }, "Needs approval": { tone: "info", icon: "pause" },
-  "In progress": { tone: "wait", icon: "clock" }, "Waiting on customer": { tone: "wait", icon: "clock" },
+  "In progress": { tone: "wait", icon: "clock" }, "Taken over": { tone: "info", icon: "pause" }, "Waiting on customer": { tone: "wait", icon: "clock" },
   "Handed off": { tone: "info", icon: "pause" }, "Resolved by Alexis": { tone: "ok", icon: "check" }, "Resolved by staff": { tone: "ok", icon: "check" },
 };
 
@@ -221,57 +218,9 @@ function Outbox({ messages }: { messages: OutboxMsg[] }) {
   );
 }
 
-function Activity({ rows, running, onClose, outbox }: { rows: ActivityRow[]; running: { id: string; name: string }[]; onClose?: () => void; outbox: OutboxMsg[] }) {
-  const [tab, setTab] = useState<"activity" | "outbox">("activity");
-  const listRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-  }, [rows.length, running.length]);
-  const lookups = rows.filter((r) => r.kind === "lookup" || r.kind === "rule" || r.kind === "identity").length;
-  const actions = rows.filter((r) => r.kind === "action" || r.kind === "handoff" || r.kind === "approval").length;
-  const refusals = rows.filter((r) => r.kind === "refusal").length;
-  const doneIds = new Set(rows.map((r) => r.tool_use_id));
-  return (
-    <section className="panel activity" aria-label="What Alexis is doing">
-      <div className="panel-head" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-        <span className="case-tabs" style={{ padding: 0 }}>
-          <button className="tab" aria-current={tab === "activity" ? "page" : undefined} onClick={() => setTab("activity")}>What Alexis is doing</button>
-          <button className="tab" aria-current={tab === "outbox" ? "page" : undefined} onClick={() => setTab("outbox")}>
-            Messages to the customer{outbox.length ? ` (${outbox.length})` : ""}
-          </button>
-        </span>
-        <span className="counter">
-          <span><b>{lookups}</b> lookups</span><span><b>{actions}</b> actions</span><span><b>{refusals}</b> refusals</span>
-        </span>
-        {onClose && <button className="btn" onClick={onClose}>Back to chat</button>}
-      </div>
-      {tab === "outbox" ? <Outbox messages={outbox} /> : <div className="activity-list" ref={listRef} aria-live="polite">
-        {rows.length === 0 && running.length === 0 && <div className="empty">Each lookup, refusal and action appears here as Alexis works.</div>}
-        {rows.map((r) => {
-          const time = new Date(r.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-          const detail = r.input || r.result || r.refusal_reason ? JSON.stringify({ asked: r.input ?? undefined, returned: r.result ?? undefined, refusal: r.refusal_reason ?? undefined }, null, 2) : null;
-          return (
-            <details key={r.id} className={`row k-${r.kind}`}>
-              <summary>
-                <span className="row-time">{time}</span>
-                <span className="row-text">{r.summary}</span>
-              </summary>
-              {detail ? <pre>{detail}</pre> : <pre>No further detail.</pre>}
-            </details>
-          );
-        })}
-        {running.filter((t) => !doneIds.has(t.id)).map((t) => (
-          <div key={t.id} className="row k-lookup">
-            <div className="row-line"><span className="spinner" aria-hidden="true" /><span className="row-text">{t.name} · running</span></div>
-          </div>
-        ))}
-      </div>}
-    </section>
-  );
-}
-
 // ---------------------------------------------------------------- the screen
 
+/** The customer app: a banking app's support chat, in a phone frame. The bank's side is the console. */
 export default function Chat() {
   const [users, setUsers] = useState<PickerUser[]>([]);
   const [setupProblem, setSetupProblem] = useState<string | null>(null);
@@ -285,10 +234,8 @@ export default function Chat() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [rows, setRows] = useState<ActivityRow[]>([]);
-  const [running, setRunning] = useState<{ id: string; name: string }[]>([]);
-  const [view, setView] = useState<"chat" | "activity">("chat");
-  const lastRowId = useRef(0);
+  const [takenOverBy, setTakenOverBy] = useState<string | null>(null);
+  const [showTexts, setShowTexts] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const convRef = useRef(conversationId);
   convRef.current = conversationId;
@@ -328,43 +275,45 @@ export default function Chat() {
   const startOver = useCallback(() => {
     setConversationId(newId());
     setMessages([greeting()]);
-    setRows([]);
-    setRunning([]);
-    lastRowId.current = 0;
+    setTakenOverBy(null);
   }, []);
 
+  // Reset demo in the console (another tab or window) starts this chat over too.
   useEffect(() => {
-    const onReset = () => { startOver(); loadUsers(); };
-    window.addEventListener(RESET_EVENT, onReset);
-    return () => window.removeEventListener(RESET_EVENT, onReset);
+    let ch: BroadcastChannel | null = null;
+    try {
+      ch = new BroadcastChannel(RESET_CHANNEL);
+      ch.onmessage = () => { startOver(); loadUsers(); };
+    } catch {}
+    return () => ch?.close();
   }, [startOver, loadUsers]);
 
-  // The activity panel: poll the audit log, quickly while Alexis is working.
+  // While the chat is open: whether a member of the team has joined, their replies, and the team's
+  // decisions on this customer's cases. The customer never sees the bank's activity log.
   const polling = useRef(false);
-  const pollActivity = useCallback(async () => {
-    if (polling.current) return; // one request at a time, so rows never arrive twice
+  const pollConversation = useCallback(async () => {
+    if (polling.current) return;
     polling.current = true;
     const id = convRef.current;
     try {
-      const res = await fetch(`/api/activity?conversation=${id}&after=${lastRowId.current}`, { cache: "no-store" });
-      const json = (await res.json()) as { rows: ActivityRow[] };
-      if (id !== convRef.current || !json.rows?.length) return;
-      lastRowId.current = Math.max(lastRowId.current, json.rows[json.rows.length - 1].id);
-      setRows((r) => {
-        const seen = new Set(r.map((x) => x.id));
-        return [...r, ...json.rows.filter((x) => !seen.has(x.id))];
+      const res = await fetch(`/api/conversation/${id}`, { cache: "no-store" });
+      const j = (await res.json()) as { takenOverBy: string | null; staff: { key: string; name: string; text: string }[]; updates: { id: number; message: string }[] };
+      if (id !== convRef.current) return;
+      setTakenOverBy((was) => {
+        if (was !== j.takenOverBy) {
+          const text = j.takenOverBy ? `${j.takenOverBy} from the support team has joined the chat.` : was ? `${was} has left the chat. Alexis is back to help.` : null;
+          if (text) setMessages((ms) => [...ms, { id: newId(), role: "notice", text }]);
+        }
+        return j.takenOverBy;
       });
-      // A decision by the support team closes the loop in the conversation too.
-      const updates = json.rows.filter((x) => x.approver && (x.result as { message?: string } | null)?.message);
-      if (updates.length) {
-        setMessages((ms) => {
-          const have = new Set(ms.map((m) => m.id));
-          const add = updates
-            .filter((u) => !have.has(`update-${u.id}`))
-            .map((u) => ({ id: `update-${u.id}`, role: "alexis" as const, text: `Update from the team: ${(u.result as { message: string }).message}`, update: true, showLabel: true }));
-          return add.length ? [...ms, ...add] : ms;
-        });
-      }
+      setMessages((ms) => {
+        const have = new Set(ms.map((m) => m.id));
+        const add: Msg[] = [
+          ...j.staff.filter((x) => !have.has(`staff-${x.key}`)).map((x) => ({ id: `staff-${x.key}`, role: "alexis" as const, text: x.text, staff: x.name, showLabel: true })),
+          ...j.updates.filter((u) => !have.has(`update-${u.id}`)).map((u) => ({ id: `update-${u.id}`, role: "alexis" as const, text: `Update from the team: ${u.message}`, update: true, showLabel: true })),
+        ];
+        return add.length ? [...ms, ...add] : ms;
+      });
     } catch {
     } finally {
       polling.current = false;
@@ -372,9 +321,9 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === "visible") pollActivity(); }, busy ? 700 : 3000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") pollConversation(); }, 2500);
     return () => clearInterval(t);
-  }, [busy, pollActivity]);
+  }, [pollConversation]);
 
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: "smooth" });
@@ -437,8 +386,11 @@ export default function Chat() {
           switch (e.type) {
             case "text": patchLast((m) => ({ ...m, thinking: false, text: m.text + e.delta })); break;
             case "break": patchLast((m) => ({ ...m, text: m.text ? m.text + "\n\n" : m.text })); break;
-            case "tool_start": setRunning((r) => [...r, { id: e.id, name: e.name }]); break;
-            case "tool_end": pollActivity(); break;
+            case "taken_over":
+              // A member of the team is handling the chat: no reply from Alexis; theirs arrives by the check above.
+              setMessages((ms) => (ms[ms.length - 1]?.role === "alexis" && ms[ms.length - 1].thinking ? ms.slice(0, -1) : ms));
+              pollConversation();
+              break;
             case "card": patchLast((m) => (m.proof ? m : { ...m, cards: e.cards })); break;
             case "identity_form": patchLast((m) => ({ ...m, identity: "open" })); break;
             case "masked":
@@ -473,8 +425,7 @@ export default function Chat() {
     } finally {
       patchLast((m) => ({ ...m, thinking: false }));
       setBusy(false);
-      setRunning([]);
-      pollActivity();
+      pollConversation();
     }
   }
 
@@ -502,29 +453,16 @@ export default function Chat() {
   const empty = messages.length === 1;
 
   return (
-    <div className="chat-grid" data-view={view}>
-      <div className="mobile-tabs" role="tablist">
-        <button className="btn" aria-pressed={view === "chat"} onClick={() => setView("chat")}>Conversation</button>
-        <button className="btn" aria-pressed={view === "activity"} onClick={() => setView("activity")}>What Alexis is doing</button>
-      </div>
-
-      <section className="panel conversation" aria-label="Conversation">
-        <div className="panel-head conv-head">
-          <div className="alexis-id">
-            <div className="avatar" aria-hidden="true">A</div>
-            <div>
-              <div className="panel-title">Alexis</div>
-              <div className="label">AI support assistant</div>
-            </div>
-          </div>
-          <div>
-            <label className="picker">
-              <span className="label">Chatting as</span>
-              <select
-                value={typingUserId}
-                onChange={(e) => { setTypingUserId(e.target.value); startOver(); }}
-                disabled={busy}
-              >
+    <div className="customer-page">
+      <div className="banner" role="note">Prototype - simulated data · the customer's side</div>
+      <div className="customer-stage">
+        <aside className="tester panel" aria-label="Tester controls">
+          <div className="panel-head"><span className="panel-title">Playing the customer</span></div>
+          <div className="tester-body">
+            <p className="label">This is what a bank's customer sees in their app. Messages arrive in the bank's support console, where the team can watch Alexis and take over.</p>
+            <label className="tester-field">
+              <span className="label">Customer</span>
+              <select value={typingUserId} onChange={(e) => { setTypingUserId(e.target.value); startOver(); }} disabled={busy}>
                 {users.length === 0 && <option value="ada">Ada Okafor</option>}
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>{u.name} · {u.role === "Personal" ? "Personal account" : `${u.business} · ${u.role}`}</option>
@@ -532,18 +470,37 @@ export default function Chat() {
               </select>
             </label>
             {selected && (
-              <div className="picker-hint" title="The details this sample user gives at the identity check">
-                Identity check: {selected.name} · born {selected.dob} · {selected.registration}
+              <div className="tester-id">
+                <span className="label">Answers for the identity check</span>
+                <span>{selected.name}</span>
+                <span>Born {selected.dob}</span>
+                <span>{selected.registration}</span>
               </div>
             )}
+            <button className="btn" onClick={startOver} disabled={busy}>Start a new conversation</button>
+            <button className="btn" onClick={() => setShowTexts((v) => !v)} aria-expanded={showTexts}>
+              Text messages to this customer ({outbox.length})
+            </button>
+            {showTexts && <Outbox messages={outbox} />}
           </div>
-        </div>
+        </aside>
+
+        <section className="phone" aria-label="Customer app">
+          <div className="phone-head">
+            <div className="avatar" aria-hidden="true">{takenOverBy ? takenOverBy.charAt(0) : "A"}</div>
+            <div>
+              <div className="panel-title">{takenOverBy ?? "Alexis"}</div>
+              <div className="label">{takenOverBy ? "Support team" : "AI support assistant"}</div>
+            </div>
+            <span className="phone-title label">Help &amp; support</span>
+          </div>
 
         <div className="messages" ref={messagesRef} aria-live="polite">
           {setupProblem && <div className="msg msg-alexis" role="alert">{setupProblem}</div>}
           {messages.map((m) => (
-            <div key={m.id} className={`msg msg-${m.role}${m.update ? " update" : ""}`}>
-              {m.role === "alexis" && m.showLabel && <div className="msg-meta">Alexis · AI</div>}
+            m.role === "notice" ? <div key={m.id} className="chat-notice" role="status">{m.text}</div> :
+            <div key={m.id} className={`msg msg-${m.role}${m.update ? " update" : ""}${m.staff ? " msg-staff" : ""}`}>
+              {m.role === "alexis" && m.showLabel && <div className="msg-meta">{m.staff ? `${m.staff} · Support team` : "Alexis · AI"}</div>}
               {m.image && <img className="msg-image" src={m.image} alt="Screenshot sent by the customer" />}
               {m.thinking && !m.text ? (
                 <span className="dots" aria-label="Alexis is thinking"><span /><span /><span /></span>
@@ -645,9 +602,8 @@ export default function Chat() {
           )}
           {attachError && <span className="rule-error" role="alert">{attachError}</span>}
         </div>
-      </section>
-
-      <Activity rows={rows} running={running} outbox={outbox} />
+        </section>
+      </div>
     </div>
   );
 }
