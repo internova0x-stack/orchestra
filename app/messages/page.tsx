@@ -226,6 +226,7 @@ export default function InboxPage() {
               <input id="case-search" className="filter-input" placeholder="Search name or reference" value={search} onChange={(e) => setSearch(e.target.value)} />
               <button className={`btn filters-toggle${activeFilters ? " on" : ""}`} aria-expanded={showFilters} onClick={() => setShowFilters((v) => !v)}>
                 Filters{activeFilters ? ` · ${activeFilters}` : ""}
+                <svg className={`chevron${showFilters ? " up" : ""}`} viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
             </div>
             {showFilters && <div className="filter-row">
