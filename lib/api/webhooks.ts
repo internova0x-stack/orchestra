@@ -87,6 +87,11 @@ export async function later(work: () => Promise<void>) {
  * the caller: a webhook problem must not break a conversation.
  */
 export async function emitEvent(sql: Sql, event: WebhookEvent, data: Record<string, unknown>): Promise<void> {
+  // A team member's reply in an email conversation goes out by email from the bank's support address.
+  if (event === "message.created" && data.from === "team" && typeof data.conversation_id === "string" && typeof data.text === "string") {
+    const [c] = await sql<{ origin: string | null }[]>`select origin from conversations where id = ${data.conversation_id}`.catch(() => []);
+    if (c?.origin === "email") await later(async () => { const { sendEmail } = await import("../email/channel.ts"); await sendEmail(sql, data.conversation_id as string, data.text as string); });
+  }
   // Data entry into the bank's CRM follows the same events (lib/crm/dataEntry.ts), after the response.
   if (event === "case.created" || event === "case.updated") {
     await later(async () => { const { dataEntryOnEvent } = await import("../crm/dataEntry.ts"); await dataEntryOnEvent(sql, event, data); });

@@ -22,6 +22,8 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/login" || pathname === "/api/login") return NextResponse.next();
   // The integration APIs check their own API keys (banks and systems have no browser cookie).
   if (pathname.startsWith("/api/bank/v1/") || pathname.startsWith("/api/v1/")) return NextResponse.next();
+  // The private form page a customer opens from an email (it checks its own link token).
+  if (pathname.startsWith("/e/") || pathname.startsWith("/api/e/")) return NextResponse.next();
   const cookie = request.cookies.get(PASS_COOKIE)?.value;
   if (cookie && cookie === (await passToken(password))) return needsSignIn(request) ?? NextResponse.next();
   if (pathname.startsWith("/api/")) return NextResponse.json({ error: "password_required" }, { status: 401 });

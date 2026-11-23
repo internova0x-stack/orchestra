@@ -19,7 +19,11 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   reviews and approves a global OAuth client; HubSpot app via its developer platform), a Connect button
   that opens the product's sign-in window, store the refresh token encrypted like today's details, renew
   access tokens, and where the API allows it create the webhook automatically so step 2 disappears.
-  Today's typed-token connect stays for the pilot.
+  Today's typed-token connect stays for the pilot. Connect as a dedicated staff account (Tomi, Nov 23: a
+  friend's fintech agent works this way): the bank creates an "Alexis (AI)" agent user with its own role,
+  Orchestra signs in as that user through the API (never by driving the CRM's screens), tickets reach
+  her through the CRM's own routing, her replies and notes appear under her name, and handing off is
+  reassigning the ticket to a person or queue with her summary as an internal note. Costs the bank a seat.
 - **WhatsApp, connected directly** (owner, Nov 23): today a bank's own system relays WhatsApp messages
   through the Channel API. Directly: connect a WhatsApp Business number on the API page (Meta's Cloud
   API, or a provider such as Twilio or Infobip), receive messages on Orchestra's own webhook, send

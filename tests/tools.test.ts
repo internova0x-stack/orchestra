@@ -2081,3 +2081,102 @@ test("connecting a bank's own helpdesk: checked with the product, stored encrypt
   assert.ok((await sql!`select summary from audit_log where tool = 'crm_connector' and summary like 'Zendesk · connected to%'`).length === 1);
 });
 
+
+test("support email (practice mode): set up, test email, DNS, drafts first, threading, team reply by email, Alexis's link", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const em = await import("../lib/email/channel.ts");
+  const { takeOver, staffReply } = await import("../lib/takeover.ts");
+  const bayo = (await staffUser(sql!, "bayo"))!;
+  await sql!`delete from email_channel`;
+  assert.deepEqual(await em.startEmail(sql!, { address: "me@gmail.com", staff: bayo, baseUrl: "https://orc.example" }), { ok: false, error: "Use your own domain's address (like support@yourbank.com). Replies can't be sent from a personal Gmail or Outlook address." });
+  assert.ok((await em.startEmail(sql!, { address: "Support@YourBank.com", staff: bayo, baseUrl: "https://orc.example" })).ok);
+  let v = await em.emailView(sql!, true);
+  assert.ok(v.connected && v.step === 1 && v.practice && v.address === "support@yourbank.com");
+  assert.match(v.forwardAddress!, /@inbound\.practice\.example$/);
+  assert.equal((await em.emailView(sql!, false) as { forwardAddress: string | null }).forwardAddress, null, "only API managers see the forwarding address");
+  assert.equal((await em.setEmailLive(sql!, bayo, "drafts")).ok, false, "not before a test email");
+
+  // Google's forwarding confirmation is kept for the page; the first real email is the test.
+  const c0 = (await em.emailChannel(sql!))!;
+  await em.handleInbound(sql!, { From: "forwarding-noreply@google.com", MailboxHash: c0.forward_hash, Subject: "Gmail Forwarding Confirmation", TextBody: "Confirmation code: 482913\nhttps://mail-settings.google.com/mail/vf-abc" });
+  assert.equal((await em.emailChannel(sql!))!.confirm_code, "482913");
+  assert.deepEqual(await em.handleInbound(sql!, { From: "x@y.example", MailboxHash: "wrong" }), { ok: false, error: "wrong_address" });
+  assert.equal((await em.practiceIncoming(sql!, { from: "it@yourbank.com", subject: "Test", text: "testing" })).ok, true);
+  v = await em.emailView(sql!, true);
+  assert.ok(v.connected && v.step === 2);
+  assert.equal((await em.checkDns(sql!, bayo)).ok, true);
+  assert.equal((await em.emailView(sql!, true) as { step: number }).step, 3);
+  assert.ok((await em.setEmailLive(sql!, bayo, "drafts")).ok);
+
+  // Drafts first: the email waits for the team; a reply with "Re:" joins the same conversation.
+  const first = await em.practiceIncoming(sql!, { from: "Ada.Okafor@brightline.example", subject: "Where is my payout?", text: "PO-88102 hasn't arrived." });
+  assert.ok(first.ok && first.kind === "queued");
+  const id = (first as { conversation_id: string }).conversation_id;
+  const [conv] = await sql!`select origin, channel, email_from, awaiting_team, email_subject from conversations where id = ${id}`;
+  assert.deepEqual([conv.origin, conv.channel, conv.email_from, conv.awaiting_team, conv.email_subject], ["email", "email", "ada.okafor@brightline.example", "email_drafts", "Where is my payout?"]);
+  const again = await em.practiceIncoming(sql!, { from: "ada.okafor@brightline.example", subject: "RE: Where is my payout?", text: "Any news?\n\nOn Mon, someone wrote:\n> PO-88102 hasn't arrived." });
+  assert.equal((again as { conversation_id: string }).conversation_id, id, "the reply joins the thread");
+  const [m] = await sql!`select messages from conversations where id = ${id}`;
+  assert.ok(!JSON.stringify(m.messages).includes("> PO-88102"), "quoted history is left out");
+  // An automatic reply is never answered.
+  const auto = await em.handleInbound(sql!, { From: "ada.okafor@brightline.example", MailboxHash: c0.forward_hash, Subject: "Out of office", TextBody: "Away", Headers: [{ Name: "Auto-Submitted", Value: "auto-replied" }] });
+  assert.deepEqual(auto, { ok: true, kind: "skipped", reason: "automatic email" });
+
+  // The team's reply goes out by email from the support address, in the thread.
+  assert.equal(await takeOver(sql!, id, bayo), null);
+  assert.equal(await staffReply(sql!, id, bayo, "Hi Ada, PO-88102 is with our payments team; we'll update you today."), null);
+  let sent: Record<string, unknown>[] = [];
+  for (let i = 0; i < 40 && !sent.length; i++) { sent = await sql!`select * from email_practice_sent where conversation_id = ${id}`; if (!sent.length) await new Promise((r) => setTimeout(r, 50)); }
+  assert.equal(sent.length, 1);
+  assert.deepEqual([sent[0].sent_from, sent[0].sent_to, sent[0].subject], ["support@yourbank.com", "ada.okafor@brightline.example", "Re: Where is my payout?"]);
+  assert.ok((sent[0].headers as Record<string, string>)["In-Reply-To"], "threaded");
+
+  // Alexis replies: when she needs the identity check, the email carries a private one-use link.
+  assert.ok((await em.setEmailLive(sql!, bayo, "replies")).ok);
+  const fake = async (_s: unknown, cid: string) => ({ conversation_id: cid, reply: "I can help with that. I'm Alexis, an AI assistant.", handled_by: null, needs: [{ type: "identity" as const }], cards: [], handoff: null, proof: null, notices: [] });
+  const r = await em.practiceIncoming(sql!, { from: "kemi@harbourvine.example", subject: "Card blocked", text: "My card stopped working." }, { answer: fake });
+  assert.ok(r.ok && r.kind === "answered");
+  const cid = (r as { conversation_id: string }).conversation_id;
+  const [mail] = await sql!`select body from email_practice_sent where conversation_id = ${cid}`;
+  const link = /https:\/\/orc\.example\/e\/([\w-]+)/.exec(mail.body as string);
+  assert.ok(link, "the email has the secure link");
+  assert.match(mail.body as string, /AI assistant/);
+  await sql!`update conversations set pending_identity_tool_id = 'toolu_x' where id = ${cid}`;
+  assert.deepEqual((await em.conversationForLink(sql!, link![1]))?.need, { type: "identity" });
+  assert.equal(await em.conversationForLink(sql!, "not-a-real-token-at-all"), null);
+  await sql!`update conversations set email_link_expires = now() - interval '1 minute' where id = ${cid}`;
+  assert.equal(await em.conversationForLink(sql!, link![1]), null, "expired after 24 hours");
+
+  assert.equal(await em.inboundSecretOk(sql!, (await em.emailChannel(sql!))!.inbound_secret), true);
+  assert.equal(await em.inboundSecretOk(sql!, "guess"), false);
+  await em.disconnectEmail(sql!, bayo);
+  assert.equal(await em.emailChannel(sql!), null);
+});
+
+test("support email: Postmark calls follow its API (inbound hook, domain records, sending)", { skip: false }, async () => {
+  const { postmark } = await import("../lib/email/provider.ts");
+  process.env.POSTMARK_SERVER_TOKEN = "srv"; process.env.POSTMARK_ACCOUNT_TOKEN = "acc";
+  const calls: { method: string; url: string; headers: Record<string, string>; body: unknown }[] = [];
+  const fake = (async (url: string | URL | Request, init?: RequestInit) => {
+    const u = String(url), method = init?.method ?? "GET";
+    calls.push({ method, url: u, headers: init?.headers as Record<string, string>, body: init?.body ? JSON.parse(String(init.body)) : null });
+    const json = u.endsWith("/server") && method === "GET" ? { InboundAddress: "abc123@inbound.postmarkapp.com" }
+      : u.includes("/domains?") ? { Domains: [] }
+      : u.endsWith("/domains") ? { ID: 7, Name: "yourbank.com", DKIMVerified: false, ReturnPathDomainVerified: false, DKIMPendingHost: "2025pm._domainkey.yourbank.com", DKIMPendingTextValue: "k=rsa;p=XYZ", ReturnPathDomain: "pm-bounces.yourbank.com", ReturnPathDomainCNAMEValue: "pm.mtasv.net" }
+      : u.endsWith("/email") ? { MessageID: "m-1", ErrorCode: 0 } : {};
+    return new Response(JSON.stringify(json), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const pm = postmark(fake);
+    assert.equal(await pm.setUpInbound("https://orc.example/api/v1/email/inbound/s3cret"), "abc123@inbound.postmarkapp.com");
+    assert.deepEqual(calls[1], { method: "PUT", url: "https://api.postmarkapp.com/server", headers: calls[1].headers, body: { InboundHookUrl: "https://orc.example/api/v1/email/inbound/s3cret" } });
+    assert.equal(calls[1].headers["X-Postmark-Server-Token"], "srv");
+    const d = await pm.addDomain("yourbank.com");
+    assert.deepEqual(d.records.map((r) => [r.type, r.host, r.value]), [["TXT", "2025pm._domainkey.yourbank.com", "k=rsa;p=XYZ"], ["CNAME", "pm-bounces.yourbank.com", "pm.mtasv.net"]]);
+    assert.equal(calls.find((c) => c.url.endsWith("/domains"))!.headers["X-Postmark-Account-Token"], "acc");
+    await pm.send({ from: "support@yourbank.com", to: "ada@x.example", subject: "Re: Hi", text: "Hello", headers: { "In-Reply-To": "<a@b>" } });
+    assert.deepEqual(calls.at(-1)!.body, { From: "support@yourbank.com", To: "ada@x.example", Subject: "Re: Hi", TextBody: "Hello", MessageStream: "outbound", Headers: [{ Name: "In-Reply-To", Value: "<a@b>" }] });
+  } finally {
+    delete process.env.POSTMARK_SERVER_TOKEN; delete process.env.POSTMARK_ACCOUNT_TOKEN;
+  }
+});

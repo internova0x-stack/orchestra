@@ -280,6 +280,47 @@ alter table crm_connectors add column if not exists secret_last4 text;
 alter table crm_connectors add column if not exists webhook_token text;
 alter table crm_connectors add column if not exists connected_by text;
 alter table crm_connectors add column if not exists connected_at timestamptz;
+-- The email channel (Nov 23): the bank's support address forwarded to Orchestra (Postmark inbound), replies sent from
+-- that address once its domain's DNS records are in place. One row. Practice mode (no Postmark keys) records instead.
+create table if not exists email_channel (
+  id int primary key default 1 check (id = 1),
+  address text,
+  domain text,
+  forward_hash text,
+  forward_address text,
+  inbound_secret text,
+  base_url text,
+  practice boolean not null default false,
+  domain_id bigint,
+  records jsonb not null default '[]',
+  test_received_at timestamptz,
+  test_from text,
+  test_subject text,
+  confirm_code text,
+  confirm_link text,
+  dns_checked_at timestamptz,
+  dns_verified_at timestamptz,
+  mode text not null default 'drafts' check (mode in ('drafts','replies')),
+  live boolean not null default false,
+  live_at timestamptz,
+  connected_by text,
+  updated_at timestamptz
+);
+create table if not exists email_practice_sent (
+  id bigserial primary key,
+  conversation_id uuid references conversations(id) on delete cascade,
+  sent_from text not null,
+  sent_to text not null,
+  subject text not null,
+  body text not null,
+  headers jsonb not null default '{}',
+  sent_at timestamptz not null default now()
+);
+alter table conversations add column if not exists email_from text;
+alter table conversations add column if not exists email_thread jsonb not null default '[]';
+alter table conversations add column if not exists email_link_token text;
+alter table conversations add column if not exists email_link_expires timestamptz;
+create index if not exists conversations_email_from on conversations (email_from) where email_from is not null;
 create table if not exists crm_records (
   conversation_id uuid not null references conversations(id) on delete cascade,
   kind text not null,
@@ -644,6 +685,7 @@ create table if not exists rule_overrides (
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "crm_sandbox_calls",
+  "email_practice_sent",
   "conversation_reviews",
   "rule_overrides",
   "audit_log",

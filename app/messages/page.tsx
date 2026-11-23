@@ -289,7 +289,7 @@ export default function InboxPage() {
               <div className="takeover-bar">
                 <span className="takeover-state">
                   {takenBy ? <><b>{takenBy}</b> is handling this conversation. Alexis is paused.</>
-                    : waiting ? <><b>Waiting for the team.</b> {waiting === "switched_off" ? "Alexis is switched off, so the customer's messages come to you." : "The AI service was down, so this came to you. Alexis answers again on the customer's next message."} Take over to reply.</>
+                    : waiting ? <><b>Waiting for the team.</b> {waiting === "switched_off" ? "Alexis is switched off, so the customer's messages come to you." : waiting === "email_drafts" ? "Support email is set to drafts first: take over, use Draft with Alexis, edit, and send. It goes out by email from your support address." : "The AI service was down, so this came to you. Alexis answers again on the customer's next message."} Take over to reply.</>
                     : <>Alexis is handling this conversation.</>}
                 </span>
                 {!takenBy && canAct && <button className="btn btn-primary" disabled={!canAct || acting || !detail} onClick={() => act("take_over")} title={staff ? "" : "Sign in first"}>Take over</button>}

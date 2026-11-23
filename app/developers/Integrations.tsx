@@ -20,7 +20,7 @@ interface Endpoint { id: string; url: string; events: string[]; active: boolean;
 interface Delivery { id: number; endpoint_id: string; url: string; event: string; status: string; attempts: number; last_status: number | null; last_error: string | null; created_at: string }
 interface Bank { mode: "simulated" | "live"; host: string | null; urlSet: boolean; keySet: boolean; lookupsWeek: number; referenceServer: string }
 
-type Tab = "all" | "connectors" | "webhooks" | "keys";
+type Tab = "all" | "channels" | "connectors" | "webhooks" | "keys";
 type Tone = "warn" | "ok" | "info" | "muted";
 interface Item {
   id: string; tab: Exclude<Tab, "all">; name: string; sub: string; letter: string; tile: 1 | 2 | 3 | 4 | 5;
@@ -45,6 +45,7 @@ export default function Integrations() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [events, setEvents] = useState<string[]>([]);
   const [bankInfo, setBankInfo] = useState<Bank | null>(null);
+  const [email, setEmail] = useState<EmailState | null>(null);
   const [canManage, setCanManage] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
   const [q, setQ] = useState("");
@@ -63,12 +64,13 @@ export default function Integrations() {
   const load = useCallback(async () => {
     const mine = ++seq.current;
     const get = (u: string) => fetch(u, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    const [c, k, w, b, me] = await Promise.all([get("/api/admin/connectors"), get("/api/admin/keys"), get("/api/admin/webhooks"), get("/api/admin/bank"), get("/api/staff/users")]);
+    const [c, k, w, b, me, em] = await Promise.all([get("/api/admin/connectors"), get("/api/admin/keys"), get("/api/admin/webhooks"), get("/api/admin/bank"), get("/api/staff/users"), get("/api/admin/email")]);
     if (mine !== seq.current) return false;
     if (c) setConns(c.connectors ?? []);
     if (k) setKeys(k.keys ?? []);
     if (w) { setEndpoints(w.endpoints ?? []); setDeliveries(w.deliveries ?? []); setEvents(w.events ?? []); }
     if (b) setBankInfo(b.mode ? b : null);
+    if (em && typeof em.connected === "boolean") setEmail(em);
     if (me) setCanManage((me.permissions ?? []).includes("api_manage"));
     const ok = Boolean(c || b);
     setLoadFailed(!ok);
@@ -141,6 +143,20 @@ export default function Integrations() {
         menu: [{ label: "Settings", run: () => open("bank") }, { label: "Download the OpenAPI file", run: () => window.open("/openapi/bank-connector-v1.yaml") }],
       });
     }
+    if (email) {
+      const st = !email.connected ? null : email.live ? null : `Step ${email.step} of 3`;
+      out.push({
+        id: "email", tab: "channels", name: "Support email", letter: "@", tile: 5,
+        sub: !email.connected ? `Channel · Not connected${email.service === "practice" ? " · practice mode" : ""}`
+          : email.live ? `Channel · ${email.address} · ${email.mode === "drafts" ? "Drafts first" : "Alexis replies"} · ${email.today?.received ?? 0} email${email.today?.received === 1 ? "" : "s"} today${email.practice ? " · practice" : ""}`
+          : `Channel · setting up ${email.address}`,
+        state: email.live ? "active" : "off",
+        chip: email.live ? { text: email.practice ? "✓ Practice" : "✓ Connected", tone: email.practice ? "info" : "ok" } : st ? { text: st, tone: "warn" } : null,
+        primary: !canManage ? null : !email.connected ? { label: "Connect", run: () => open("email") } : !email.live ? { label: "Continue", run: () => open("email") } : null,
+        menu: [{ label: email.connected ? "Settings" : "Connect", run: () => open("email") },
+          ...(canManage && email.connected ? [{ label: "Disconnect", run: () => call("/api/admin/email", { action: "disconnect" }, "POST", () => "Support email disconnected."), danger: true }] : [])],
+      });
+    }
     for (const c of conns) {
       const h = c.health;
       const short = c.name.split(" ")[0];
@@ -193,7 +209,7 @@ export default function Integrations() {
       });
     }
     return out;
-  }, [bankInfo, conns, endpoints, deliveries, keys, canManage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bankInfo, email, conns, endpoints, deliveries, keys, canManage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shown = items.filter((i) => (tab === "all" || i.tab === tab) && (!q.trim() || `${i.name} ${i.sub}`.toLowerCase().includes(q.trim().toLowerCase())));
   const groups: [string, Item[]][] = [
@@ -210,9 +226,9 @@ export default function Integrations() {
           <label className="sr-only" htmlFor="int-q">Filter connections</label>
           <input id="int-q" className="int-search" placeholder="Filter connections" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="int-seg" role="tablist" aria-label="Show">
-            {(["all", "connectors", "webhooks", "keys"] as Tab[]).map((t) => (
+            {(["all", "channels", "connectors", "webhooks", "keys"] as Tab[]).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-                {t === "all" ? "All" : t === "connectors" ? "Connectors" : t === "webhooks" ? "Webhooks" : "API keys"}
+                {t === "all" ? "All" : t === "channels" ? "Channels" : t === "connectors" ? "Connectors" : t === "webhooks" ? "Webhooks" : "API keys"}
               </button>
             ))}
           </div>
@@ -276,6 +292,10 @@ export default function Integrations() {
           const e = endpoints.find((x) => `hook:${x.id}` === selected);
           return e ? <HookPanel e={e} deliveries={deliveries.filter((d) => d.endpoint_id === e.id)} /> : null;
         })()}
+        {!adding && selected === "email" && email && (
+          <EmailPanel e={email} canManage={canManage} busy={busy} onReload={() => load()}
+            act={(body, ok) => call("/api/admin/email", body, "POST", ok) as Promise<Record<string, unknown> | null>} />
+        )}
         {!adding && selected.startsWith("key:") && (() => {
           const k = keys.find((x) => `key:${x.id}` === selected);
           return k ? (
@@ -469,6 +489,147 @@ function CrmPanel({ c, canManage, busy, act, onReload, onConnect }: {
       {replace && <ConnectForm c={c} busy={busy} replacing onConnect={async (f) => { const e = await connect(f); if (!e) setReplace(false); return e; }} onCancel={() => setReplace(false)} />}
       {showHook && !waiting && hookBox}
       {settings}
+    </div>
+  );
+}
+
+interface EmailState {
+  connected: boolean; service: "postmark" | "practice"; step?: number; address?: string; domain?: string; practice?: boolean;
+  forwardAddress?: string | null; records?: { type: string; host: string; value: string; verified: boolean }[];
+  test?: { at: string; from: string | null; subject: string | null } | null; confirm?: { code: string | null; link: string | null } | null;
+  dnsCheckedAt?: string | null; dnsVerifiedAt?: string | null; mode?: "drafts" | "replies"; live?: boolean;
+  today?: { received: number; sent: number; drafts: number };
+}
+
+const FORWARD_STEPS: Record<string, string[]> = {
+  google: [
+    "Gmail settings for the support mailbox → See all settings → Forwarding and POP/IMAP → Add a forwarding address.",
+    "Paste the address above. Google sends a confirmation code to it: Orchestra shows the code here, enter it in Gmail.",
+    "Choose “forward a copy” and keep Gmail's copy in the inbox, so your team still sees every email.",
+  ],
+  microsoft: [
+    "Microsoft 365 admin center → Users → Active users → the support mailbox → Mail → Email forwarding.",
+    "Turn forwarding on, paste the address above and keep a copy of forwarded email.",
+    "If your organisation blocks forwarding outside it, your IT team allows it for this mailbox (Defender → outbound spam policy).",
+  ],
+  other: [
+    "In your mail service's settings for the support mailbox, add a forwarding rule to the address above.",
+    "Forward every incoming email and keep a copy in the mailbox.",
+  ],
+};
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return <button className="btn" onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 2000); }).catch(() => {})}>{done ? "Copied" : "Copy"}</button>;
+}
+
+function EmailPanel({ e, canManage, busy, act, onReload }: {
+  e: EmailState; canManage: boolean; busy: boolean; onReload: () => void;
+  act: (body: object, ok?: (j: Record<string, unknown>) => string | null) => Promise<Record<string, unknown> | null>;
+}) {
+  const [address, setAddress] = useState("");
+  const [tab, setTab] = useState<keyof typeof FORWARD_STEPS>("google");
+  const [mode, setMode] = useState<"drafts" | "replies">(e.mode ?? "drafts");
+  const [showSetup, setShowSetup] = useState(false);
+  useEffect(() => { setMode(e.mode ?? "drafts"); }, [e.mode]);
+  const practiceNote = e.service === "practice" && (
+    <div className="int-note-box"><b>Practice mode.</b> Orchestra has no email service yet (the Orchestra team adds Postmark's keys), so nothing is
+      really received or sent: you play the forwarded email here, and replies are recorded in the conversation's activity.</div>
+  );
+  const head = <PanelHead letter="@" tile={5} name={e.live ? "Support email" : "Connect your support email"} sub={e.live ? `${e.address} · forwarding ✓ · replies ✓` : "Customers keep emailing your usual address. Alexis reads each email and replies from that address."} />;
+  const stepper = (n: number) => (
+    <div className="int-stepper">
+      {["Receive", "Reply", "Go live"].map((label, i) => <span key={label} className={i + 1 < n ? "done" : i + 1 === n ? "on" : ""}>{i + 1 < n ? `✓ ${label}` : `${i + 1} · ${label}`}</span>)}
+    </div>
+  );
+  if (!canManage && !e.connected) return <div>{head}<p className="label">An operations or IT admin connects the support email.</p></div>;
+
+  if (!e.connected) return (
+    <div>
+      {head}{stepper(1)}{practiceNote}
+      <form className="int-form" onSubmit={(ev) => { ev.preventDefault(); act({ action: "start", address }, () => "Now forward your support email to the address shown."); }}>
+        <label className="int-field"><span>Your support address</span>
+          <span className="int-input"><input type="email" placeholder="support@yourbank.com" value={address} onChange={(ev) => setAddress(ev.target.value)} /></span>
+          <span className="label">The address customers email today. It stays the same: nothing changes for them.</span></label>
+        <div className="int-actions"><button className="btn btn-primary" disabled={busy || !address.trim()}>Continue</button></div>
+      </form>
+    </div>
+  );
+
+  const forwardBox = (
+    <>
+      <div className="int-addr"><span className="ref">{e.forwardAddress}</span>{e.forwardAddress && <CopyButton text={e.forwardAddress} />}</div>
+      <div className="int-seg" role="tablist" aria-label="Mail service">
+        {(["google", "microsoft", "other"] as const).map((t) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>{t === "google" ? "Gmail / Google Workspace" : t === "microsoft" ? "Outlook / Microsoft 365" : "Other"}</button>)}
+      </div>
+      <ol className="int-steps label">{FORWARD_STEPS[tab].map((s) => <li key={s}>{s}</li>)}</ol>
+      {e.confirm && <div className="int-note-box ok">Google sent a confirmation{e.confirm.code ? <>: code <b className="ref">{e.confirm.code}</b>. Enter it in Gmail's forwarding settings.</> : "."}{e.confirm.link && <> Or <a className="case-link" href={e.confirm.link} target="_blank" rel="noopener noreferrer">confirm it here</a>.</>}</div>}
+    </>
+  );
+  const recordsBox = (
+    <>
+      <table className="int-dns">
+        <thead><tr><th>Type</th><th>Name</th><th>Value</th><th></th></tr></thead>
+        <tbody>{(e.records ?? []).map((r) => (
+          <tr key={r.host}><td>{r.type}{r.verified ? " ✓" : ""}</td><td className="ref">{r.host}</td><td className="ref">{r.value}</td><td><CopyButton text={r.value} /></td></tr>
+        ))}</tbody>
+      </table>
+      <div className="int-actions"><CopyButton text={(e.records ?? []).map((r) => `${r.type}  ${r.host}  ${r.value}`).join("\n")} /><span className="label">copies all the records, to send your IT team</span></div>
+    </>
+  );
+
+  // Live.
+  if (e.live) return (
+    <div>
+      {head}{e.practice && practiceNote}
+      <h4 className="int-lbl">How Alexis works</h4>
+      <div className="int-seg wide" role="radiogroup" aria-label="Mode">
+        {(["drafts", "replies"] as const).map((m) => <button key={m} role="radio" aria-checked={e.mode === m} className={e.mode === m ? "on" : ""} disabled={!canManage || busy}
+          onClick={() => act({ action: "live", mode: m }, () => m === "drafts" ? "Drafts first: the team sends replies from Messages." : "Alexis now replies to support email.")}>{m === "drafts" ? "Drafts first" : "Alexis replies"}</button>)}
+      </div>
+      <p className="label">{e.mode === "drafts" ? "Each email waits for the team in Messages: take over, use Draft with Alexis, edit and send. It goes out from your support address." : "Alexis answers within the rules, hands off when she shouldn't act alone, and sends a secure link when she needs the identity check or a confirmation."}</p>
+      <p className="label">Today: {e.today?.received ?? 0} received · {e.today?.sent ?? 0} sent{e.mode === "drafts" ? ` · ${e.today?.drafts ?? 0} waiting for the team when they arrived` : ""}.</p>
+      {e.practice && canManage && <div className="int-actions"><button className="btn" disabled={busy} onClick={() => act({ action: "practice_email" }, (j) => j.kind === "answered" ? "Practice email answered: see it in Messages." : "Practice email received: it's waiting in Messages.")}>Play a customer email</button></div>}
+      {canManage && <div className="int-actions">
+        <button className="btn" onClick={() => setShowSetup((v) => !v)} aria-expanded={showSetup}>Forwarding and DNS records</button>
+        <button className="btn int-danger" disabled={busy} onClick={() => act({ action: "disconnect" }, () => "Support email disconnected. Turn off the forwarding in your mailbox too.")}>Disconnect</button>
+      </div>}
+      {showSetup && <><h4 className="int-lbl">Forwarding</h4>{forwardBox}<h4 className="int-lbl">DNS records</h4>{recordsBox}</>}
+    </div>
+  );
+
+  return (
+    <div>
+      {head}{stepper(e.step ?? 1)}{practiceNote}
+      {e.step === 1 && <>
+        <p>Forward <b>{e.address}</b> to this address:</p>
+        {forwardBox}
+        <div className="int-actions">
+          {e.practice
+            ? <button className="btn btn-primary" disabled={busy} onClick={() => act({ action: "practice_email", from: "you@yourbank.com", subject: "Test", text: "Testing the forwarding." }, () => "Test email received.")}>Play the test email</button>
+            : <button className="btn" onClick={onReload}>I&apos;ve sent a test email: check</button>}
+          <span className="label">{e.practice ? "In practice mode this plays a forwarded email." : `Send any email to ${e.address}; it turns green when it arrives here.`}</span>
+        </div>
+      </>}
+      {e.step === 2 && <>
+        <div className="int-note-box ok">✓ Test email received{e.test?.from ? ` from ${e.test.from}` : ""}.</div>
+        <p>So Alexis can reply from <b>{e.address}</b>, add these two records to {e.domain}&apos;s DNS. Your IT team or domain provider does this once; they prove the address is yours, so replies don&apos;t land in spam.</p>
+        {recordsBox}
+        <div className="int-actions"><button className="btn btn-primary" disabled={busy} onClick={() => act({ action: "check_dns" }, (j) => j.verified ? "Records found." : "Not found yet. DNS changes can take a few hours: try again later.")}>Check the records</button>
+          {e.dnsCheckedAt && <span className="label">Last checked {ago(e.dnsCheckedAt)} ago</span>}</div>
+      </>}
+      {e.step === 3 && <>
+        <div className="int-note-box ok">✓ Records found: replies will come from {e.address}.</div>
+        <h4 className="int-lbl">How should Alexis start?</h4>
+        {(["drafts", "replies"] as const).map((m) => (
+          <label key={m} className={`int-choice${mode === m ? " on" : ""}`}>
+            <input type="radio" name="email-mode" checked={mode === m} onChange={() => setMode(m)} />
+            <span><b>{m === "drafts" ? "Drafts first" : "Alexis replies"}</b><span className="label">{m === "drafts" ? "Each email waits for your team in Messages; Draft with Alexis writes the reply, they edit and send it." : "She answers within the rules, hands off when she shouldn't act alone, and says she's an AI."}</span></span>
+          </label>
+        ))}
+        <div className="int-actions"><button className="btn btn-primary" disabled={busy} onClick={() => act({ action: "live", mode }, () => "Support email is live.")}>Go live</button></div>
+      </>}
+      {canManage && <div className="int-actions"><button className="copy" disabled={busy} onClick={() => act({ action: "disconnect" }, () => "Setup cancelled.")}>Start again with another address</button></div>}
     </div>
   );
 }

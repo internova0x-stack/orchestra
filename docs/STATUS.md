@@ -322,3 +322,20 @@ a follow-up turn.
 - Over-cap recalls ask for the customer's yes before they're prepared, then go to the Staff queue.
 - A few sample rules the code needed (other routes' late window, how to submit documents, fixing a failed
   payout, out-of-scope topics, business hours), all editable.
+
+## Support email (Nov 23, Tomi: "email connections can be done now", "Forward and send")
+
+A bank connects its support address on the API page (Channels → Support email) in three steps: forward the mailbox
+to Orchestra's private inbound address (Gmail, Microsoft 365 and other steps shown; Google's forwarding confirmation
+code appears on the page), add two DNS records so replies come from that address (DKIM TXT and the Return-Path
+CNAME, with Check the records), then go live as Drafts first (each email waits for the team in Messages; Draft with
+Alexis; the reply goes out by email) or Alexis replies (her answer is emailed; when she needs the identity check, a
+confirmation or a code, the email carries a one-use link to a secure page valid 24 hours). Emails join their thread
+by headers, else by sender and subject in the last 30 days; automatic replies, bounces and Orchestra's own emails are
+never answered. The email service is Postmark (calls checked against its developer docs, Nov 23). Without Postmark's
+keys in Vercel the channel runs in practice mode: you play the forwarded email on the API page and replies are
+recorded, not sent. Checked: two new tests (the whole practice flow; Postmark's request shapes against a fake) and
+the setup, Messages and the secure page in a browser. Not yet tried with a real Postmark account, a real mailbox or
+real DNS. To go real: a Postmark account, POSTMARK_SERVER_TOKEN and POSTMARK_ACCOUNT_TOKEN in Vercel, and Postmark's
+account approval before it sends to outside addresses.
+

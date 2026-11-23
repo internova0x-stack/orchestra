@@ -65,6 +65,13 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Sign-in and roles: `lib/auth.ts` (roles, `PERMISSIONS`, `requirePermission(sql, req, perm)` in every console route,
   sessions in `staff_sessions`, `login_attempts`); `/signin`, `/account`, `/team`; `/api/staff/users` is "who am I".
   Never take a staff id from the request body: the signed-in person comes from the session.
+- Support email (Nov 23, Tomi: "Forward and send"): `lib/email/` (`provider.ts` Postmark, checked against its docs: inbound
+  address + InboundHookUrl, domains API for the DKIM TXT and Return-Path CNAME, POST /email; practice mode without
+  `POSTMARK_SERVER_TOKEN` + `POSTMARK_ACCOUNT_TOKEN`; `channel.ts`: `email_channel` (one row), steps receive → DNS → live,
+  `handleInbound` from `/api/v1/email/inbound/{secret}` (threading by headers, else sender + subject; auto-replies and
+  loops dropped; drafts first = `awaiting_team 'email_drafts'`, or Alexis replies), team replies emailed from
+  `emitEvent('message.created')`, forms as a one-use 24-hour link to `/e/{token}` (outside the site password and the
+  console frame). API page → Channels → Support email (`/api/admin/email`). Email conversations have `origin = 'email'`.
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.

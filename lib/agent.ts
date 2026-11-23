@@ -121,7 +121,7 @@ export async function operations(sql: Sql): Promise<{ alexisOn: boolean; outage:
  * Keep a customer's message for the team: secrets masked, the screenshot kept, and anything Alexis left
  * open (the identity or code form) closed first, so the history stays valid for when she answers again.
  */
-async function storeForTeam(sql: Sql, conv: Conversation, input: TurnInput, now: Date, user: VerifiedUser | null, emit: (e: StreamEvent) => void) {
+export async function storeForTeam(sql: Sql, conv: Conversation, input: TurnInput, now: Date, user: VerifiedUser | null, emit: (e: StreamEvent) => void) {
   let history = conv.messages as never as MessageParam[];
   // (A code a member of the team sent is theirs, not an open form of Alexis's: it stays.)
   const open = conv.pending_identity_tool_id ?? (conv.pending_code && !conv.pending_code.staff ? conv.pending_code.tool_use_id : null);

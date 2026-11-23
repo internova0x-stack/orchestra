@@ -852,3 +852,22 @@ h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .
 .int-chip.warn { white-space: nowrap; }
 .int-panel, .int-panel > div, .int-hook, .int-addr { min-width: 0; }
 .int-hook .int-steps li, .int-hook p { overflow-wrap: anywhere; }
+/* The private form page a customer opens from an email (Nov 23). */
+.eform { min-height: 100dvh; display: grid; place-items: start center; padding: var(--space-8, 32px) var(--space-4); background: var(--surface-page); }
+.eform-card { width: 100%; max-width: 440px; padding: var(--space-6); display: grid; gap: var(--space-3); }
+.eform-head { display: grid; gap: 2px; }
+.eform-fields { display: grid; gap: var(--space-3); }
+.eform-fields p, .eform-done p { margin: 0; }
+.eform-done { display: grid; gap: var(--space-2); }
+.eform-foot { border-top: 1px solid var(--edge); padding-top: var(--space-3); margin: 0; }
+/* Support email panel (Nov 23). */
+.int-note-box { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--edge); font-size: var(--size-sm); margin: var(--space-2) 0; }
+.int-note-box.ok { background: var(--ok-bg, var(--surface-sunk)); color: var(--ok); border-color: transparent; }
+.int-dns { width: 100%; border-collapse: collapse; font-size: var(--size-xs); table-layout: fixed; margin: var(--space-2) 0; }
+.int-dns th, .int-dns td { text-align: left; padding: var(--space-1); border-top: 1px solid var(--edge); vertical-align: top; overflow-wrap: anywhere; }
+.int-dns th { color: var(--text-2); font-weight: 500; }
+.int-dns th:first-child, .int-dns td:first-child { width: 64px; } .int-dns th:last-child, .int-dns td:last-child { width: 64px; text-align: right; }
+.int-choice { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2) var(--space-3); border: 1px solid var(--edge); border-radius: var(--radius-lg); margin: var(--space-2) 0; cursor: pointer; }
+.int-choice.on { border-color: var(--brand-600); }
+.int-choice > span { display: grid; gap: 2px; }
+.int-choice input { margin-top: 3px; accent-color: var(--brand-600); }
