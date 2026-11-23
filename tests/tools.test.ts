@@ -672,3 +672,38 @@ test("planted 13: David's verification failed on a blurry document: the reason a
   assert.match(d.reason, /blurry/);
   assert.match(d.missing, /clear photo/);
 });
+
+// ---------------------------------------------------------------- use cases 9 and 11: payment tracing
+
+test("use case 11: each failure type names the responsible party with evidence", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("grace", MONDAY);
+  const expect: [string, string, string][] = [
+    ["PAY-62001", "Authorisation", "Card issuer"],
+    ["PAY-62002", "Capture", "Merchant's integration"],
+    ["PAY-62003", "Settlement", "Processor or acquirer"],
+    ["PAY-62004", "Payout to the merchant", "Platform or bank hold"],
+  ];
+  for (const [id, stage, party] of expect) {
+    const d = (await call(s, "get_payment_timeline", { transaction_id: id })).data as Record<string, string>;
+    assert.equal(d.broke_at, stage, id);
+    assert.equal(d.responsible, party, id);
+    assert.ok(d.evidence.length > 10, id);
+  }
+});
+
+test("use case 11: a conflicting timeline means 'can't tell', never a guess", { skip }, async () => {
+  const s = await session("grace", MONDAY);
+  const d = (await call(s, "get_payment_timeline", { transaction_id: "PAY-62005" })).data as Record<string, string>;
+  assert.equal(d.diagnosis, "Can't tell");
+  assert.equal(d.responsible, undefined);
+});
+
+test("use case 9: an ID on another customer's account reveals nothing", { skip }, async () => {
+  const s = await session("chioma", MONDAY);
+  const out = await call(s, "get_payment_by_id", { transaction_id: "PAY-62003" });
+  assert.equal(out.ok, false);
+  assert.doesNotMatch(JSON.stringify(out), /Camden|219|grace/i);
+  const mine = await call(s, "get_payment_by_id", { transaction_id: "pay-61003" });
+  assert.equal((mine.data as { merchant: string }).merchant, "Konga (online store)");
+});

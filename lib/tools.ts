@@ -19,6 +19,7 @@ import { freezeCard, getCard, orderReplacement } from "./tools/cards.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
 import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
 import { getAccountLimits, waiveFee } from "./tools/fees.ts";
+import { getPaymentById, getPaymentTimeline } from "./tools/tracing.ts";
 import {
   AWAITING_CODE,
   AWAITING_IDENTITY,
@@ -825,7 +826,8 @@ const getFees = {
 const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees,
   sendOneTimeCode, sendResetLink, unlockAccount,
   getCard, freezeCard, orderReplacement, listTransactions, openDispute,
-  findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits];
+  findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits,
+  getPaymentById, getPaymentTimeline];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

@@ -274,6 +274,17 @@ create table if not exists waivers (
 );
 create sequence if not exists waiver_seq start 9201;
 
+-- Use cases 9 and 11: each stage of a payment and who reported it.
+create table if not exists payment_events (
+  id bigserial primary key,
+  payment_id text not null references payments(id) on delete cascade,
+  stage text not null check (stage in ('authorization','capture','settlement','payout')),
+  status text not null check (status in ('ok','failed')),
+  detail text,
+  reported_by text not null,
+  at timestamptz not null
+);
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -300,6 +311,7 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "payment_events",
   "waivers",
   "reversals",
   "payments",

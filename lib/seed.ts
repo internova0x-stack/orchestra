@@ -230,6 +230,7 @@ async function seedInto(tx: any, now: Date) {
     await seedCards(tx, now);
     await seedPayments(tx, now);
     await seedFeesAndLimits(tx, now);
+    await seedTimelines(tx, now);
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
     await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;
@@ -396,4 +397,44 @@ async function seedFeesAndLimits(tx: any, now: Date) {
   await tx`update businesses set verification_reason = 'Document unreadable: the photo of the driving licence was blurry',
     verification_missing = 'a clear photo of the front and back of the driving licence, all four corners visible',
     verification_submitted_at = ${new Date(now.getTime() - 5 * day)} where id = 'david'`;
+}
+
+// ---------------------------------------------------------------- use cases 9 and 11
+
+/** One payment per failure type, plus one with a conflicting timeline (Tools and Data Spec, phase 3). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedTimelines(tx: any, now: Date) {
+  const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * H);
+  const base = { holder_id: "grace", channel: "card", location: "London", terminal_bank: null, processor: "Thames Card Processing (simulated)", card_last4: "3307", currency: "GBP" };
+  const payments = [
+    { ...base, id: "PAY-62001", merchant_name: "Riverside Florist", amount: 64, outcome: "declined", failure_detail: "Declined by the card issuer at authorisation", at: at(50) },
+    { ...base, id: "PAY-62002", merchant_name: "Northline Rail (tickets)", amount: 38.5, outcome: "successful", failure_detail: null, at: at(98) },
+    { ...base, id: "PAY-62003", merchant_name: "Camden Electronics", amount: 219, outcome: "successful", failure_detail: null, at: at(120) },
+    { ...base, id: "PAY-62004", merchant_name: "Studio Nine Yoga", amount: 90, outcome: "successful", failure_detail: null, at: at(170) },
+    { ...base, id: "PAY-62005", merchant_name: "Blue Fern Café", amount: 12.4, outcome: "successful", failure_detail: null, at: at(75) },
+  ];
+  for (const p of payments) await tx`insert into payments ${tx(p)}`;
+  const ev = (payment_id: string, stage: string, status: string, reported_by: string, hoursAgo: number, detail: string | null = null) =>
+    tx`insert into payment_events (payment_id, stage, status, detail, reported_by, at) values (${payment_id}, ${stage}, ${status}, ${detail}, ${reported_by}, ${at(hoursAgo)})`;
+  // Declined at authorisation: the card issuer.
+  await ev("PAY-62001", "authorization", "failed", "Card issuer", 50, "Declined: card's online payments setting was off");
+  // Authorised but never captured: the merchant's integration.
+  await ev("PAY-62002", "authorization", "ok", "Card issuer", 98);
+  // Captured but not settled: the processor or acquirer.
+  await ev("PAY-62003", "authorization", "ok", "Card issuer", 120);
+  await ev("PAY-62003", "capture", "ok", "Merchant (Camden Electronics)", 119.5);
+  // Settled but no payout: a platform or bank hold on the merchant's side.
+  await ev("PAY-62004", "authorization", "ok", "Card issuer", 170);
+  await ev("PAY-62004", "capture", "ok", "Merchant (Studio Nine Yoga)", 169.8);
+  await ev("PAY-62004", "settlement", "ok", "Thames Card Processing", 146);
+  // Conflicting: the processor reports settlement failed and settled.
+  await ev("PAY-62005", "authorization", "ok", "Card issuer", 75);
+  await ev("PAY-62005", "capture", "ok", "Merchant (Blue Fern Café)", 74.9);
+  await ev("PAY-62005", "settlement", "failed", "Thames Card Processing", 51, "Settlement file rejected");
+  await ev("PAY-62005", "settlement", "ok", "Acquiring bank (simulated)", 50);
+  // The demo's own payments also get a timeline, so tracing works on them.
+  await ev("PAY-61003", "authorization", "ok", "Card issuer", 6 * 24);
+  await ev("PAY-61003", "capture", "ok", "Merchant (Konga)", 6 * 24 - 0.1);
+  await ev("PAY-61003", "settlement", "ok", "Card processor", 5 * 24);
+  await ev("PAY-61003", "payout", "ok", "Card processor", 4 * 24);
 }
