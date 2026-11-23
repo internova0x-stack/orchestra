@@ -40,7 +40,7 @@ export const draftClaimPack = {
   name: "draft_claim_pack",
   tier: 1 as Tier,
   description:
-    "When a case needs action from another bank, a processor or a card scheme (a recall, a chargeback, a settlement query), draft the claim pack from the records: payment references, amounts, dates, each stage of the timeline and who reported it, and the evidence. Anything missing or uncertain is marked, never guessed. The draft goes to the staff queue for a person to review, edit and send; you never send it. Then tell the customer the team will pursue it and they'll be updated.",
+    "When a case needs action from another bank, a processor or a card scheme (a recall, a chargeback, a settlement query), draft the claim pack from the records: payment references, amounts, dates, each stage of the timeline and who reported it, and the evidence. Anything missing or uncertain is marked, never guessed. The draft goes to the team's Cases screen for a person to review, edit and send; you never send it. Then tell the customer the team will pursue it and they'll be updated.",
   schema: input,
   async run(i: z.infer<typeof input>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const T = "draft_claim_pack";
@@ -116,7 +116,7 @@ export const draftClaimPack = {
     const [existing] = await ctx.sql<{ reference: string }[]>`select reference from claim_drafts where subject = ${subject} and kind = ${i.kind}`;
     if (existing) {
       await audit(ctx, { kind: "refusal", tool: T, summary: `${T} · refused: already drafted ${existing.reference}`, input: i, refusal_reason: "Duplicate claim draft" });
-      return { ok: false, reference: existing.reference, reason: `A claim draft for this already exists (${existing.reference}) in the staff queue.` };
+      return { ok: false, reference: existing.reference, reason: `A claim draft for this already exists (${existing.reference}) on the Cases screen.` };
     }
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('claim_seq')::text as seq`;
     const reference = `CLM-${seq}`;
@@ -138,7 +138,7 @@ export const draftClaimPack = {
       values (${escalation}, ${ctx.conv.id}, ${user.business_id}, ${user.id}, ${summary.urgency}, 'claim_draft', ${ctx.sql.json(summary)}, ${deadline}, ${ctx.sql.json({ type: "claim", reference } as never)}, ${route.team})`;
     await emitEvent(ctx.sql, "case.created", { reference: escalation, conversation_id: ctx.conv.id, urgency: summary.urgency, team: route.team, category: route.category, trigger: "claim_draft", respond_by: deadline?.toISOString() ?? null, customer: { user_id: user.id, holder_id: user.business_id }, summary, action: { type: "claim", reference } });
     await watch(ctx.sql, { conversationId: ctx.conv.id, holderId: user.business_id, userId: user.id, kind: "case", reference: escalation, label: `claim with ${draft!.to.split(",")[0]}`, status: "open", expectedBy: deadline });
-    await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${subject} · ${reference} in the staff queue (${escalation})`, input: i, result: { reference, missing: draft!.missing } });
+    await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${subject} · ${reference} in Cases (${escalation})`, input: i, result: { reference, missing: draft!.missing } });
     return {
       ok: true,
       reference: escalation,

@@ -41,12 +41,12 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   created by the app itself on first use and on Reset demo, so nobody pastes SQL into Supabase.
 - `app/api/chat` streams a turn as newline-delimited JSON · `app/api/activity` the audit log for the
   activity panel · `app/api/reset` Reset demo · `app/api/users` the customer picker · `app/api/proof` a payment
-  confirmation as a PDF (`lib/proofPdf.ts`, watermarked, no institution's name) · `app/api/staff` the Staff
-  queue (`lib/staff.ts`: Approve, Decline, Mark resolved; as the signed-in person).
+  confirmation as a PDF (`lib/proofPdf.ts`, watermarked, no institution's name) · `app/api/staff` the Cases
+  screen, formerly the Staff queue (`lib/staff.ts`: Approve, Decline, Mark resolved; as the signed-in person).
 - Confirmation is enforced in code: a tier 2/3 tool's first call stores `conversations.pending_action` and
   shows Yes/Cancel; only the customer's button or typed yes sets it confirmed (`runTurn`), never the model.
-- Two apps (Tomi, Nov 23): the bank's **support console** (`app/components/Frame.tsx`: Dashboard first, Messages (the Inbox) at `/messages`, Staff
-  queue, Rules; `/` sends each person to their first screen; the sidebar folds to icons) receives conversations; the **customer app** (`/customer`, `app/components/Chat.tsx`, no console
+- Two apps (Tomi, Nov 23): the bank's **support console** (`app/components/Frame.tsx`: Dashboard first, Messages (the Inbox) at `/messages`, Cases
+  (the Staff queue, renamed; `/cases`, old `/staff` links redirect), Rules; `/` sends each person to their first screen; the sidebar folds to icons) receives conversations; the **customer app** (`/customer`, `app/components/Chat.tsx`, no console
   frame) is how a tester plays the customer. The customer app never reads the activity log
   (`app/api/conversation/[id]` gives it team replies, who is handling it and decisions).
 - Messages, formerly the Inbox (`app/messages/page.tsx`, `app/api/cases`, `lib/cases.ts`): every customer conversation live, with category,

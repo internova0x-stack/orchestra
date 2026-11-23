@@ -44,8 +44,8 @@ export function healthOf(c: ConnectorSettings & { envReady: boolean }): { state:
 export async function noteHealth(sql: Sql, kind: CrmKind, ok: boolean, err?: { message: string; status?: number }) {
   try {
     await sql`insert into crm_connectors (kind) values (${kind}) on conflict (kind) do nothing`;
-    if (ok) await sql`update crm_connectors set last_ok_at = now(), recent = (jsonb_build_array(true) || recent) - 20 where kind = ${kind}`;
-    else await sql`update crm_connectors set last_error = ${(err?.message ?? "").slice(0, 300)}, last_error_status = ${err?.status ?? null}, last_error_at = now(),
+    if (ok) await sql`update crm_connectors set last_ok_at = clock_timestamp(), recent = (jsonb_build_array(true) || recent) - 20 where kind = ${kind}`;
+    else await sql`update crm_connectors set last_error = ${(err?.message ?? "").slice(0, 300)}, last_error_status = ${err?.status ?? null}, last_error_at = clock_timestamp(),
       recent = (jsonb_build_array(false) || recent) - 20 where kind = ${kind}`;
   } catch (e) {
     console.error("connector health", e);

@@ -280,7 +280,7 @@ export default function InboxPage() {
                   <StatusChip status={c.status} />
                   {c.urgency && <UrgencyChip urgency={c.urgency} />}
                   {detail?.handoffs.map((h) => (
-                    <a key={h.reference} className="ref case-link" href={`/staff?case=${h.reference}`} title={h.trigger.replace(/_/g, " ")}>{h.reference} ↗</a>
+                    <a key={h.reference} className="ref case-link" href={`/cases?case=${h.reference}`} title={h.trigger.replace(/_/g, " ")}>{h.reference} ↗</a>
                   ))}
                 </span>
               </div>

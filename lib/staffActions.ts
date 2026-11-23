@@ -182,7 +182,7 @@ async function requestSecondApproval(sql: Sql, conv: Conversation, holderId: str
   await sql`insert into audit_log (conversation_id, tool_use_id, kind, tool, summary, staff)
     values (${conv.id}, ${`staff-approval-${reference}`}, 'handoff', 'staff_action', ${`staff_action · ${label.toLowerCase()} · ${amount} · ${reference} waiting for a second supervisor`}, ${staff.name})`;
   await emitEvent(sql, "case.created", { reference, conversation_id: conv.id, urgency: "high", team: route.team, trigger: "staff_action_approval", summary, action });
-  return { status: "needs_second_approval", reference, message: `${amount} needs a second supervisor's approval. It's in the Staff queue as ${reference}; run the action again once it's approved.` };
+  return { status: "needs_second_approval", reference, message: `${amount} needs a second supervisor's approval. It's in Cases as ${reference}; run the action again once it's approved.` };
 }
 
 /** The customer's Yes or Cancel (button or typed) on an action a member of the team asked for. */

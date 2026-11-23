@@ -22,7 +22,7 @@ const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidde
 const TABS = [
   { href: "/dashboard", label: "Dashboard", icon: "chart", perm: "dashboard_view" },
   { href: "/messages", label: "Messages", icon: "inbox", perm: "inbox_view" },
-  { href: "/staff", label: "Staff queue", icon: "people", perm: "staff_queue_view" },
+  { href: "/cases", label: "Cases", icon: "people", perm: "staff_queue_view" },
   { href: "/rules", label: "Rules", icon: "sliders", perm: "rules_view" },
   { href: "/billing", label: "Plan and usage", icon: "receipt", perm: "billing_view" },
   { href: "/team", label: "Team", icon: "team", perm: "team_manage" },
