@@ -1,11 +1,9 @@
 import { db } from "@/lib/db.ts";
 import { decide, staffUser, type Decision } from "@/lib/staff.ts";
+import { transcriptOf } from "@/lib/cases.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type Block = { type: string; text?: string };
-type Message = { role: string; content: string | Block[] };
 
 /** One case: the handoff summary, the transcript (text only, secrets already masked) and the activity log. */
 export async function GET(_req: Request, { params }: { params: Promise<{ ref: string }> }) {
@@ -18,12 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ref: st
     where e.reference = ${ref.toUpperCase()}`;
   const c = rows[0];
   if (!c) return Response.json({ error: "not_found" }, { status: 404 });
-  const transcript = ((c.messages ?? []) as Message[])
-    .map((m) => ({
-      who: m.role === "assistant" ? "Alexis" : "Customer",
-      text: typeof m.content === "string" ? m.content : m.content.map((b) => (b.type === "text" && b.text?.trim() ? b.text : b.type === "image" ? "[Screenshot attached]" : "")).filter(Boolean).join("\n"),
-    }))
-    .filter((m) => m.text);
+  const transcript = transcriptOf(c.messages);
   const activity = c.conversation_id
     ? await sql`select id, kind, summary, approver, created_at from audit_log where conversation_id = ${c.conversation_id} order by id`
     : [];

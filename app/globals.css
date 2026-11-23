@@ -304,6 +304,35 @@ a { color: var(--brand-accent); }
   .summary div { grid-template-columns: 1fr; gap: 2px; }
 }
 
+/* ---------- Cases screen: every conversation ---------- */
+.cases-page { display: flex; flex-direction: column; gap: var(--space-4); height: 100%; min-height: 0; }
+.stat-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3); }
+.stat { background: var(--surface-panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); display: grid; gap: 2px; }
+.stat-value { font-size: var(--size-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-stop .stat-value { color: var(--stop); }
+.cases-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 400px 1fr; gap: var(--space-4); }
+.filters { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); display: grid; gap: var(--space-2); }
+.filter-input, .filter select {
+  width: 100%; min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-md);
+  background: var(--surface-sunk); border: 1px solid var(--border-strong); color: var(--text-1); font-size: var(--size-sm);
+}
+.filter-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.case-snippet { color: var(--text-2); font-size: var(--size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-facts { margin: 0; padding: var(--space-3) var(--space-6); display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); border-bottom: 1px solid var(--border); }
+.case-facts dt { color: var(--text-2); font-size: var(--size-xs); }
+.case-facts dd { margin: 0; font-size: var(--size-sm); display: grid; gap: 2px; }
+.case-link { color: var(--brand-accent); text-decoration: none; min-height: 24px; }
+.case-link:hover { text-decoration: underline; }
+.history { display: flex; flex-direction: column; gap: var(--space-3); }
+@media (max-width: 1099px) { .stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 899px) {
+  .cases-page { height: auto; }
+  .cases-grid { grid-template-columns: 1fr; }
+  .cases-grid .case-list { max-height: 320px; }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filter-row { grid-template-columns: 1fr; }
+}
+
 /* Confirmation prompt and team updates */
 .confirm { margin-top: var(--space-3); display: grid; gap: var(--space-2); white-space: normal; }
 .confirm-action { font-weight: 600; }

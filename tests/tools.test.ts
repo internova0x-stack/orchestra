@@ -10,6 +10,7 @@ import { createConversation, verifiedUser, type Conversation } from "../lib/sess
 import { checkIdentity } from "../lib/identity.ts";
 import { Rules } from "../lib/rules.ts";
 import { fromLocal } from "../lib/time.ts";
+import { categoryOf, statusOf, urgencyOf, listCases, caseCounts } from "../lib/cases.ts";
 
 const url = process.env.TEST_DATABASE_URL;
 const sql = url ? postgres(url, { prepare: false, onnotice: () => {} }) : null;
@@ -907,4 +908,48 @@ test("use case 16: a USSD debit without value and a cash deposit at an agent, ea
   assert.match(agent.next, /hand off/);
   const ussd = d.sessions.find((x) => x.type === "USSD session")!;
   assert.match(ussd.next, /matching transfer or failed payment/);
+});
+
+
+// ---------------------------------------------------------------- the Cases screen
+
+test("cases: category, status and urgency are worked out from what's recorded", () => {
+  assert.equal(categoryOf(["verify_identity", "get_transfer_status", "initiate_recall"], []), "Payouts");
+  assert.equal(categoryOf(["get_transfer_status"], ["formal_complaint"]), "Complaint", "a complaint handoff says more than the tools");
+  assert.equal(categoryOf(["verify_identity"], []), "General question");
+  assert.equal(categoryOf(["verify_identity"], ["payout_past_window"]), "Payouts", "a handoff with no lookups takes its reason's area");
+  assert.equal(categoryOf(["find_incoming_payment"], ["payout_past_window"]), "Incoming payments", "what Alexis looked into comes first");
+  const now = new Date("2026-11-23T12:00:00Z");
+  const h = (status: string, urgency = "normal", action: { type?: string } | null = null) => ({ reference: "ESC-1", urgency, status, action, created_at: now });
+  assert.equal(statusOf({ handoffs: [], waiting: false, lastActivity: new Date(now.getTime() - 60_000) }, now), "In progress");
+  assert.equal(statusOf({ handoffs: [], waiting: false, lastActivity: new Date(now.getTime() - 60 * 60_000) }, now), "Resolved by Alexis");
+  assert.equal(statusOf({ handoffs: [], waiting: true, lastActivity: new Date(now.getTime() - 60 * 60_000) }, now), "Waiting on customer");
+  assert.equal(statusOf({ handoffs: [h("open")], waiting: false, lastActivity: now }, now), "Handed off");
+  assert.equal(statusOf({ handoffs: [h("open", "high", { type: "recall" })], waiting: false, lastActivity: now }, now), "Needs approval");
+  assert.equal(statusOf({ handoffs: [h("resolved")], waiting: false, lastActivity: now }, now), "Resolved by staff");
+  assert.equal(urgencyOf([h("open", "normal"), h("open", "urgent"), h("open", "high")]), "urgent");
+  assert.equal(urgencyOf([]), null);
+});
+
+test("cases: every conversation is listed, resolved by Alexis or handed off, with the counts", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const said = (q: string) => sql!.json([{ role: "user", content: q }, { role: "assistant", content: [{ type: "text", text: "Here's what I found." }] }] as never);
+  const a = await session("ada", MONDAY);
+  await call(a, "get_transfer_status", { recipient: "Lumen Print" });
+  await sql!`update conversations set messages = ${said("Where is my payment to Lumen Print?")} where id = ${a.conv.id}`;
+  const m = await session("maya", MONDAY);
+  await call(m, "escalate_to_human", { request: "Payout late", checked: "PO-77310", did: "None", needed: "Chase", told: "The team will pick it up", trigger: "payout_past_window", urgency: "high" });
+  await sql!`update conversations set messages = ${said("My payout is late")} where id = ${m.conv.id}`;
+  const empty = await session("lena", MONDAY);
+  const rows = await listCases(sql!, new Date(MONDAY.getTime() + 60 * 60_000));
+  assert.equal(rows.length, 2, "a conversation with no messages isn't a case");
+  assert.ok(!rows.some((r) => r.id === empty.conv.id));
+  const ada = rows.find((r) => r.id === a.conv.id)!;
+  assert.deepEqual([ada.status, ada.category, ada.urgency, ada.business, ada.firstMessage], ["Resolved by Alexis", "Payouts", null, "Brightline Studios Ltd", "Where is my payment to Lumen Print?"]);
+  const maya = rows.find((r) => r.id === m.conv.id)!;
+  assert.equal(maya.status, "Handed off");
+  assert.equal(maya.category, "Payouts");
+  assert.equal(maya.urgency, "high");
+  assert.match(maya.references[0], /^ESC-/);
+  assert.deepEqual(caseCounts(rows), { total: 2, open: 1, resolvedByAlexis: 1, handedOff: 1, urgentOpen: 0, withoutPerson: 50 });
 });

@@ -7,6 +7,7 @@ import Chat from "./Chat";
 
 const TABS = [
   { href: "/", label: "Chat" },
+  { href: "/cases", label: "Cases" },
   { href: "/rules", label: "Rules" },
   { href: "/staff", label: "Staff queue" },
 ];

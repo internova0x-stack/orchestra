@@ -145,6 +145,12 @@ export default function StaffPage() {
     if (res.ok) setDetail(await res.json());
   }, []);
 
+  // A link from the Cases screen (/staff?case=ESC-…) opens that case.
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get("case");
+    if (ref && /^[A-Z]+-[0-9]+$/i.test(ref)) open(ref.toUpperCase());
+  }, [open]);
+
   useEffect(() => {
     load();
     const t = setInterval(() => document.visibilityState === "visible" && load(), 4000);

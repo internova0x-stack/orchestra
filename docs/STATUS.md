@@ -33,6 +33,16 @@ root-cause tracing, 10 complaints with screenshots, 7 loans, 8 merchant payouts,
 banking (`get_ussd_session`; cash at an agent always goes to a person). `npm test` runs 77 tests.
 Not built because they aren't use cases: the hours-saved dashboard and the Operations phase (backlog).
 
+## The Cases screen (Nov 23, Tomi: "Every conversation")
+
+A Cases tab lists every customer conversation, not only handoffs (`lib/cases.ts`, `app/cases`,
+`app/api/cases`). Each shows the customer, a category (the first area Alexis looked into; a complaint or
+fraud handoff overrides it; a handoff with no lookups takes its reason's area), a status (In progress,
+Waiting on customer, Resolved by Alexis after 15 idle minutes, Handed off, Needs approval, Resolved by
+staff), the urgency of any handoff, and opens the full chat history and activity log, with links to the
+Staff queue for handoffs. Filters by status, category and urgency, a search, and counts at the top (all
+worked out from the data already stored: no new tables).
+
 ## What has been checked, and how
 
 - `npm test` (43 tests) runs every tool against a real Postgres with the seeded bank: each scripted test's

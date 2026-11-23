@@ -46,6 +46,8 @@ const CHIP: Record<string, { tone: string; icon: "check" | "clock" | "cross" | "
   Failed: { tone: "stop", icon: "cross" }, Reversed: { tone: "stop", icon: "cross" }, Blocked: { tone: "stop", icon: "cross" },
   Declined: { tone: "stop", icon: "cross" }, Resolved: { tone: "ok", icon: "check" },
   "On hold": { tone: "info", icon: "pause" }, "Needs approval": { tone: "info", icon: "pause" },
+  "In progress": { tone: "wait", icon: "clock" }, "Waiting on customer": { tone: "wait", icon: "clock" },
+  "Handed off": { tone: "info", icon: "pause" }, "Resolved by Alexis": { tone: "ok", icon: "check" }, "Resolved by staff": { tone: "ok", icon: "check" },
 };
 
 function Icon({ name }: { name: "check" | "clock" | "cross" | "pause" | "flag" }) {
