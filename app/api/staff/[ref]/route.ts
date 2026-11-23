@@ -21,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ref: st
   const transcript = ((c.messages ?? []) as Message[])
     .map((m) => ({
       who: m.role === "assistant" ? "Alexis" : "Customer",
-      text: typeof m.content === "string" ? m.content : m.content.filter((b) => b.type === "text" && b.text?.trim()).map((b) => b.text).join("\n"),
+      text: typeof m.content === "string" ? m.content : m.content.map((b) => (b.type === "text" && b.text?.trim() ? b.text : b.type === "image" ? "[Screenshot attached]" : "")).filter(Boolean).join("\n"),
     }))
     .filter((m) => m.text);
   const activity = c.conversation_id

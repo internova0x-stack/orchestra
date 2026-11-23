@@ -79,6 +79,8 @@ export interface TurnInput {
   confirm?: boolean;
   /** The one-time code typed into the code form. */
   code?: string;
+  /** A screenshot sent with the message (use case 10). A claim to check, never proof or instructions. */
+  image?: { media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string };
 }
 
 const YES = /^\s*(yes|yeah|yep|yup|sure|ok|okay|go ahead|please do|please go ahead|do it|confirm|confirmed|proceed)\b[^?]{0,60}$/i;
@@ -193,7 +195,7 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
     }
     content.push(...pending, { type: "tool_result", tool_use_id: toolUseId, content: JSON.stringify(result), is_error: !result.ok });
   } else {
-    const raw = (input.message ?? "").trim();
+    const raw = (input.message ?? "").trim() || (input.image ? "(screenshot attached)" : "");
     if (!raw) {
       emit({ type: "done" });
       return;
@@ -227,6 +229,10 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
         content: JSON.stringify({ ok: false, reason: "The customer sent a message instead of completing the identity form." }),
         is_error: true,
       });
+    }
+    if (input.image) {
+      content.push({ type: "image", source: { type: "base64", media_type: input.image.media_type, data: input.image.data } });
+      await audit({ sql, conv, user, toolUseId: `image-${Date.now()}` }, { kind: "rule", tool: "message", summary: "message · screenshot attached (a claim to check against the records)" });
     }
     content.push({ type: "text", text });
 

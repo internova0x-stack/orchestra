@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GREETING, OPENERS } from "@/lib/greeting";
 import { RESET_EVENT } from "./events";
+import { drawSample, readImage, type Attachment, type Sample } from "./screenshots";
 
 // ---------------------------------------------------------------- types
 
@@ -24,6 +25,7 @@ interface Msg {
   confirm?: { action: string; consequence: string; state: "open" | "answered" };
   code?: { sentTo: string; code: string; state: "open" | "sent"; retry?: boolean };
   update?: boolean;
+  image?: string;
   thinking?: boolean;
   showLabel?: boolean;
 }
@@ -251,6 +253,10 @@ export default function Chat() {
   const [messages, setMessages] = useState<Msg[]>(() => [greeting()]);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ActivityRow[]>([]);
   const [running, setRunning] = useState<{ id: string; name: string }[]>([]);
   const [view, setView] = useState<"chat" | "activity">("chat");
@@ -275,6 +281,9 @@ export default function Chat() {
   }, []);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
+  useEffect(() => {
+    fetch("/api/samples", { cache: "no-store" }).then((r) => r.json()).then((j) => setSamples(j.samples ?? [])).catch(() => {});
+  }, []);
 
   const startOver = useCallback(() => {
     setConversationId(newId());
@@ -341,7 +350,7 @@ export default function Chat() {
       return copy;
     });
 
-  async function send(body: { message?: string; confirm?: boolean; code?: string; identity?: { full_name: string; date_of_birth: string; registration_number: string } }, shown: string) {
+  async function send(body: { message?: string; confirm?: boolean; code?: string; image?: { media_type: string; data: string }; identity?: { full_name: string; date_of_birth: string; registration_number: string } }, shown: string, imagePreview?: string) {
     if (busy) return;
     setBusy(true);
     setMessages((ms) => [
@@ -352,7 +361,7 @@ export default function Chat() {
         if (x.code?.state === "open") x = { ...x, code: { ...x.code, state: "sent" as const } };
         return x;
       }),
-      { id: newId(), role: "customer", text: shown },
+      { id: newId(), role: "customer", text: shown, image: imagePreview },
       { id: newId(), role: "alexis", text: "", thinking: true, showLabel: true },
     ]);
     try {
@@ -431,10 +440,23 @@ export default function Chat() {
 
   const submit = () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text && !attachment) return;
+    const a = attachment;
     setDraft("");
-    send({ message: text }, text);
+    setAttachment(null);
+    send({ message: text, ...(a ? { image: { media_type: a.media_type, data: a.data } } : {}) }, text, a?.preview);
   };
+
+  async function attachFile(file: File | undefined) {
+    setAttachError(null);
+    if (!file) return;
+    if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.type)) { setAttachError("Attach a PNG, JPEG, WebP or GIF image."); return; }
+    try {
+      setAttachment(await readImage(file));
+    } catch {
+      setAttachError("That image couldn't be read.");
+    }
+  }
 
   const selected = users.find((u) => u.id === typingUserId);
   const empty = messages.length === 1;
@@ -482,6 +504,7 @@ export default function Chat() {
           {messages.map((m) => (
             <div key={m.id} className={`msg msg-${m.role}${m.update ? " update" : ""}`}>
               {m.role === "alexis" && m.showLabel && <div className="msg-meta">Alexis · AI</div>}
+              {m.image && <img className="msg-image" src={m.image} alt="Screenshot sent by the customer" />}
               {m.thinking && !m.text ? (
                 <span className="dots" aria-label="Alexis is thinking"><span /><span /><span /></span>
               ) : (
@@ -557,8 +580,31 @@ export default function Chat() {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
             }}
           />
-          <button className="btn btn-primary" type="submit" disabled={busy || !draft.trim()}>Send</button>
+          <button className="btn btn-primary" type="submit" disabled={busy || (!draft.trim() && !attachment)}>Send</button>
         </form>
+        <div className="attach-bar">
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => { attachFile(e.target.files?.[0]); e.target.value = ""; }} />
+          <button className="btn" type="button" onClick={() => fileRef.current?.click()} disabled={busy}>Attach screenshot</button>
+          {samples.length > 0 && (
+            <select
+              aria-label="Attach a sample screenshot"
+              value=""
+              disabled={busy}
+              onChange={(e) => { const sm = samples.find((x) => x.id === e.target.value); if (sm) setAttachment(drawSample(sm)); }}
+            >
+              <option value="">Sample screenshots…</option>
+              {samples.map((sm) => <option key={sm.id} value={sm.id}>{sm.label}</option>)}
+            </select>
+          )}
+          {attachment && (
+            <span className="attach-chip">
+              <img src={attachment.preview} alt="" />
+              {attachment.name}
+              <button className="copy" type="button" onClick={() => setAttachment(null)} aria-label="Remove the screenshot">Remove</button>
+            </span>
+          )}
+          {attachError && <span className="rule-error" role="alert">{attachError}</span>}
+        </div>
       </section>
 
       <Activity rows={rows} running={running} />
