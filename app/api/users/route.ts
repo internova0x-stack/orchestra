@@ -1,4 +1,4 @@
-import { db } from "@/lib/db.ts";
+import { db, dbProblem } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 
 export const runtime = "nodejs";
@@ -11,7 +11,12 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured", users: [] }, { status: 503 });
   const sql = db();
-  await ensureSeeded(sql);
+  try {
+    await ensureSeeded(sql);
+  } catch (e) {
+    console.error("database setup failed", e);
+    return Response.json({ error: "db", message: dbProblem(e), users: [] }, { status: 500 });
+  }
   const rows = await sql<{ id: string; full_name: string; role: string; dob: string; business: string; reg: string | null; kind: string; account: string | null }[]>`
     select u.id, u.full_name, u.role, to_char(u.date_of_birth, 'YYYY-MM-DD') as dob, b.name as business,
       b.registration_number as reg, b.kind, b.account_number as account

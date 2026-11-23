@@ -296,7 +296,7 @@ export default function Chat() {
       const res = await fetch("/api/users", { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) {
-        setSetupProblem(json.error === "not_configured" ? "The database isn't connected yet: add DATABASE_URL in Vercel's settings." : "Couldn't load the sample users.");
+        setSetupProblem(json.error === "not_configured" ? "The database isn't connected yet: add DATABASE_URL in Vercel's settings." : json.message ?? "Couldn't load the sample users.");
         return;
       }
       setSetupProblem(null);
