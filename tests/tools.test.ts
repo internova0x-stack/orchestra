@@ -414,3 +414,53 @@ test("rule edits are checked, logged, and change the next tool call", { skip }, 
   await seed(sql!, MONDAY);
   assert.equal((await sql!`select value from rules where id = 'recall_cap_usd'`)[0].value, "10000");
 });
+
+// ---------------------------------------------------------------- step 7: verification, fees, S2
+
+test("test 10: Harbour and Vine's verification is Incomplete, with the missing ownership document and how to submit it", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("sam", MONDAY);
+  const out = await call(s, "get_kyc_status", {});
+  const d = out.data as Record<string, string>;
+  assert.equal(d.status, "Incomplete");
+  assert.match(d.reason, /Ownership document missing/);
+  assert.match(d.missing, /ownership/);
+  assert.match(d.how_to_submit, /dashboard/);
+});
+
+test("verification: Pending shows days against the normal window", { skip }, async () => {
+  const s = await session("rosa", MONDAY);
+  const d = (await call(s, "get_kyc_status", {})).data as Record<string, unknown>;
+  assert.equal(d.status, "Pending");
+  assert.equal(d.normal_review_time, "2 business days");
+  assert.equal(d.past_window, false);
+});
+
+test("test 12: yesterday's GBP to USD conversion: rate, time, both amounts and the fee", { skip }, async () => {
+  const s = await session("maya", MONDAY);
+  const out = await call(s, "get_fees", { kind: "conversion" });
+  const c = (out.data as { items: Record<string, string>[] }).items[0];
+  assert.equal(c.type, "Conversion");
+  assert.equal(c.converted, "£5,000.00");
+  assert.equal(c.fee, "£25.00");
+  assert.equal(c.rate, "1 GBP = 1.2718 USD");
+  assert.equal(c.received, "$6,327.21");
+  assert.match(c.time, /^22 November 2026, 10:42/);
+});
+
+test("balances: one per currency, only the business's own", { skip }, async () => {
+  const s = await session("maya", MONDAY);
+  const d = (await call(s, "get_balance", {})).data as { balances: { currency: string; balance: string }[] };
+  assert.deepEqual(d.balances.map((b) => b.currency), ["GBP", "NGN", "USD"]);
+  assert.equal(d.balances.find((b) => b.currency === "GBP")!.balance, "£31,877.42");
+});
+
+test("S2: no tool can add or change a beneficiary, contact details, or approve verification", { skip: false }, async () => {
+  const { toolDefinitions } = await import("../lib/tools.ts");
+  const names = toolDefinitions().map((t) => (t as { name: string }).name);
+  assert.deepEqual(names.sort(), [
+    "escalate_to_human", "find_incoming_payment", "generate_proof_of_payment", "get_account_restrictions", "get_balance",
+    "get_fees", "get_kyc_status", "get_transfer_status", "initiate_recall", "search_knowledge_base", "verify_identity",
+  ].sort());
+  assert.ok(!names.some((n) => /beneficiar|recipient|contact|approve|update|credit/.test(n)));
+});

@@ -803,10 +803,115 @@ const initiateRecall = {
   },
 };
 
+
+// ---------------------------------------------------------------- get_kyc_status
+
+const getKycStatus = {
+  name: "get_kyc_status",
+  tier: 1 as Tier,
+  description:
+    "The verified user's business verification: its status (Incomplete, Pending, Approved, Failed or Blocked), what is missing or why it failed, when it was submitted and how long the review has taken against the normal review time. Explain what to submit and how (through the dashboard); never accept documents or ID numbers in chat and never approve verification. Blocked follows the review-hold rule: no reason, hand off.",
+  schema: z.object({}),
+  async run(_input: Record<string, never>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
+    const user = ctx.user!;
+    const [b] = await ctx.sql<{ verification_status: string; verification_reason: string | null; verification_missing: string | null; verification_submitted_at: Date | null }[]>`
+      select verification_status, verification_reason, verification_missing, verification_submitted_at from businesses where id = ${user.business_id}`;
+    const status = statusLabel(b.verification_status);
+    let data: Record<string, unknown>;
+    if (b.verification_status === "blocked") {
+      // Blocked follows the no-tipping-off rule: nothing about why.
+      data = { status, note: "The account cannot transact. You have no reason and must not suggest one. Say it needs review by a specialist team, escalate (trigger review_hold) and give the reference." };
+    } else {
+      const reviewDays = rules.num("kyc_review_days", 2);
+      await ruleRead(ctx, rules, "kyc_review_days");
+      const submitted = b.verification_submitted_at ? new Date(b.verification_submitted_at) : null;
+      const elapsed = submitted ? businessDaysBetween(submitted, ctx.now, rules.hours()) : null;
+      data = {
+        status,
+        business: user.business_name,
+        ...(b.verification_reason ? { reason: b.verification_reason } : {}),
+        ...(b.verification_missing ? { missing: b.verification_missing, how_to_submit: rules.get("kyc_how_to_submit")?.value } : {}),
+        ...(submitted ? { submitted: dayMonthYear(submitted), business_days_so_far: Math.round((elapsed ?? 0) * 10) / 10 } : {}),
+        ...(b.verification_status === "pending" ? { normal_review_time: `${reviewDays} business days`, past_window: (elapsed ?? 0) > reviewDays } : {}),
+        ...(b.verification_status === "failed" ? { note: "A new application cannot simply be recreated." } : {}),
+      };
+    }
+    await audit(ctx, { kind: "lookup", tool: "get_kyc_status", summary: `get_kyc_status · ${b.verification_status}`, result: data });
+    return { ok: true, data };
+  },
+};
+
+// ---------------------------------------------------------------- get_balance
+
+const getBalance = {
+  name: "get_balance",
+  tier: 1 as Tier,
+  description: "The verified user's business balances, one per currency held.",
+  schema: z.object({}),
+  async run(_input: Record<string, never>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
+    const user = ctx.user!;
+    const rows = await ctx.sql<{ currency: string; amount: string }[]>`
+      select currency, amount from balances where business_id = ${user.business_id} order by currency`;
+    const balances = rows.map((r) => ({ currency: r.currency, balance: money(r.amount, r.currency) }));
+    await audit(ctx, { kind: "lookup", tool: "get_balance", summary: `get_balance · ${balances.map((b) => b.balance).join(", ") || "none"}`, result: balances });
+    return { ok: true, data: { as_of: dateTime(ctx.now), balances } };
+  },
+};
+
+// ---------------------------------------------------------------- get_fees
+
+const feesSchema = z.object({
+  kind: z.enum(["fee", "conversion", "both"]).optional().describe("Fees charged, currency conversions, or both (default)"),
+  payout: z.string().optional().describe("A payout reference, to see the fee charged on it"),
+  on: z.string().optional().describe("A date to look around, as YYYY-MM-DD"),
+});
+
+const getFees = {
+  name: "get_fees",
+  tier: 1 as Tier,
+  description:
+    "Fees charged to the verified user's business, each with what triggered it and the date, and currency conversions with the rate applied, the time, and the amounts in both currencies and the conversion fee. Show the figures; never predict rates or advise when to convert. If the customer says a fee or rate was wrongly applied, escalate (trigger fee_or_rate_disputed).",
+  schema: feesSchema,
+  async run(input: z.infer<typeof feesSchema>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
+    const user = ctx.user!;
+    const { sql } = ctx;
+    const kind = input.kind ?? "both";
+    const since = new Date(ctx.now.getTime() - 30 * 86_400_000);
+    const rows = await sql<{ id: string; kind: string; description: string; trigger: string | null; transfer_id: string | null; currency: string; amount: string; from_currency: string | null; from_amount: string | null; to_currency: string | null; to_amount: string | null; rate: string | null; charged_at: Date }[]>`
+      select * from fees where business_id = ${user.business_id} and charged_at > ${since}
+        ${kind !== "both" ? sql`and kind = ${kind}` : sql``}
+        ${input.payout ? sql`and transfer_id = ${input.payout.trim().toUpperCase()}` : sql``}
+      order by charged_at desc limit 40`;
+    let list: typeof rows[number][] = [...rows];
+    if (input.on) {
+      const target = new Date(`${input.on}T12:00:00Z`).getTime();
+      list = rows.filter((r) => Math.abs(new Date(r.charged_at).getTime() - target) < 2 * 86_400_000);
+    }
+    list = list.slice(0, 8);
+    const items = list.map((r) =>
+      r.kind === "conversion"
+        ? {
+            type: "Conversion",
+            id: r.id,
+            time: dateTime(new Date(r.charged_at)),
+            converted: money(r.from_amount!, r.from_currency!),
+            fee: money(r.amount, r.currency),
+            rate: `1 ${r.from_currency} = ${Number(r.rate).toFixed(4)} ${r.to_currency}`,
+            received: money(r.to_amount!, r.to_currency!),
+            rule: "Rate shown at the time of conversion, with a 0.5% conversion fee (sample)",
+          }
+        : { type: "Fee", id: r.id, date: dateTime(new Date(r.charged_at)), fee: money(r.amount, r.currency), what: r.description, triggered_by: r.trigger },
+    );
+    const conv = items.filter((i) => i.type === "Conversion").length;
+    await audit(ctx, { kind: "lookup", tool: "get_fees", summary: `get_fees · ${conv ? `${conv} conversion${conv === 1 ? "" : "s"}, ` : ""}${items.length - conv} fee${items.length - conv === 1 ? "" : "s"}`, input, result: items });
+    return { ok: true, data: items.length ? { items } : { items: [], note: "No fees or conversions match in the last 30 days." } };
+  },
+};
+
 // ---------------------------------------------------------------- registry
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall];
+const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {
