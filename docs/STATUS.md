@@ -73,6 +73,11 @@ worked out from the data already stored: no new tables).
   its reference (the customer's own only); conversation review (Good / Needs work, filter, dashboard);
   languages (English, French, Nigerian Pidgin; Tomi, Nov 23) with a "Translate to English" for the team. Voice notes left out (Tomi).
 - New rules reach an existing database on deploy (missing ones are added; edited values are kept).
+- **KYC tiers per country** (Nov 23; explaining, not enforcing): rules `kyc_tiers_used` (on for Nigeria),
+  `kyc_approach` (how verification and limits work, per country) and `tier_currency`, with starting values per
+  market in `SEED_OVERRIDES`. `get_account_limits` and `get_kyc_status` follow the customer's country: tiers,
+  limits and what's needed to move up where tiers are used; how verification works where they aren't.
+  Upgrades and tier disputes go to a person. Figures are sample values until Nuvion supplies its own.
 
 ## First runs with the real model (Nov 23)
 

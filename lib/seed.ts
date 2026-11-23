@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Sql } from "./db.ts";
 import { SCHEMA, TABLES_TO_WIPE } from "./schema.ts";
-import { RULE_SET } from "./ruleSet.ts";
+import { RULE_SET, SEED_OVERRIDES } from "./ruleSet.ts";
 import { fromLocal, lastWeekday, local, subtractBusinessDays } from "./time.ts";
 
 // The simulated bank. Every date is an offset from `now`, so "inside its window" and "late" stay
@@ -284,6 +284,9 @@ async function seedInto(tx: any, now: Date) {
       await tx`insert into rules (id, category, name, kind, origin, value, unit, source_url, sort, updated_by, updated_at)
         values (${r.id}, ${r.category}, ${r.name}, ${r.kind}, ${r.origin}, ${r.value}, ${r.unit ?? null}, ${r.source_url ?? null}, ${sort++}, 'Seed', ${now})`;
     }
+    for (const o of SEED_OVERRIDES) {
+      await tx`insert into rule_overrides (rule_id, market, value, updated_by, updated_at) values (${o.rule}, ${o.market}, ${o.value}, 'Seed', ${now})`;
+    }
   }
 }
 
@@ -294,7 +297,7 @@ const ready = globalThis as unknown as { __orchestraReady?: Promise<void> };
  * Postgres advisory lock stops two first visitors from seeding at the same time.
  */
 /** A fingerprint of the schema: the database records the one it has, so unchanged schemas aren't re-run. */
-export const SCHEMA_VERSION = createHash("sha256").update(SCHEMA).update(JSON.stringify(RULE_SET.map((r) => r.id))).digest("hex").slice(0, 16);
+export const SCHEMA_VERSION = createHash("sha256").update(SCHEMA).update(JSON.stringify(RULE_SET.map((r) => r.id))).update(JSON.stringify(SEED_OVERRIDES)).digest("hex").slice(0, 16);
 
 /**
  * Make sure the tables exist and the sample bank is loaded, once per server process. Serverless hosts
@@ -323,10 +326,16 @@ export function ensureSeeded(sql: Sql): Promise<void> {
         else {
           // Rules added in a new version reach a database seeded before them; edited values are kept.
           let sort = 0;
+          const added = new Set<string>();
           for (const r of RULE_SET) {
-            await tx`insert into rules (id, category, name, kind, origin, value, unit, source_url, sort)
+            const ins = await tx`insert into rules (id, category, name, kind, origin, value, unit, source_url, sort)
               values (${r.id}, ${r.category}, ${r.name}, ${r.kind}, ${r.origin}, ${r.value}, ${r.unit ?? null}, ${r.source_url ?? null}, ${sort++})
-              on conflict (id) do nothing`;
+              on conflict (id) do nothing returning id`;
+            if (ins.length) added.add(r.id);
+          }
+          // A new rule's market values come with it; a market value someone removed stays removed.
+          for (const o of SEED_OVERRIDES.filter((x) => added.has(x.rule))) {
+            await tx`insert into rule_overrides (rule_id, market, value, updated_by) values (${o.rule}, ${o.market}, ${o.value}, 'Seed') on conflict do nothing`;
           }
         }
         await tx`insert into app_meta (key, value) values ('schema_version', ${SCHEMA_VERSION})

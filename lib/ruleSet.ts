@@ -144,6 +144,12 @@ export const RULE_SET: RuleSeed[] = [
   a("tier_3", "Account limits", "Tier 3 account (NGN)", "Single transfer up to ₦5,000,000; daily transfers up to ₦25,000,000; no balance cap", "sample"),
   a("tier_up_2", "Account limits", "Moving to Tier 2", "Link your BVN or NIN and add a selfie in the app under Account, Upgrade", "sample"),
   a("tier_up_3", "Account limits", "Moving to Tier 3", "Tier 2 plus proof of address dated within the last 3 months, uploaded in the app", "sample"),
+  // KYC tiers per country (Nov 23): only some countries use numbered tiers. The switch, the explanation
+  // and the tier currency have a value per market (SEED_OVERRIDES below); the tier figures apply where
+  // tiers are used. Alexis explains them; the bank's own systems apply them.
+  l("kyc_tiers_used", "Account limits", "This country uses numbered KYC tiers", "off"),
+  a("kyc_approach", "Account limits", "How verification and limits work here", "Accounts are verified with the standard identity checks when they open. Limits depend on the account, and higher limits are available on request after a review", "sample"),
+  a("tier_currency", "Account limits", "Currency of the tier limits", "NGN", "sample"),
   a("limits_standard", "Account limits", "Standard limits (GBP and USD accounts)", "Daily transfers up to £10,000 or $15,000; higher limits on request after a review", "sample"),
   l("tier_1_single", "Account limits", "Tier 1 single transfer limit", "50000", "₦"),
   l("tier_2_single", "Account limits", "Tier 2 single transfer limit", "100000", "₦"),
@@ -239,6 +245,14 @@ export const RULE_SET: RuleSeed[] = [
   l("time_general_question", "Time saved", "Staff handling time: general questions", "6", "minutes"),
   l("time_handoff_summary", "Time saved", "Time a handoff summary saves on a case a person still handles", "5", "minutes"),
   l("time_staff_cost", "Time saved", "Cost of an hour of a support agent's time", "15", "$"),
+];
+
+/** Starting values for one market only (the Rules screen's per-market values). Sample values. */
+export const SEED_OVERRIDES: { rule: string; market: "NG" | "UK" | "US"; value: string }[] = [
+  { rule: "kyc_tiers_used", market: "NG", value: "on" },
+  { rule: "kyc_approach", market: "NG", value: "Accounts have three tiers. Each tier unlocks higher limits as the customer adds more identity details, and they can move up in the app at any time" },
+  { rule: "kyc_approach", market: "UK", value: "There are no numbered tiers. Identity is checked when the account opens, with extra checks for some customers or larger amounts. Higher limits are available on request after a review" },
+  { rule: "kyc_approach", market: "US", value: "There are no numbered tiers. Identity is checked as required to open the account, with extra checks for some customers or activity. Higher limits are available on request after a review" },
 ];
 
 /** The Guardrails' fixed rules: shown locked on the Rules screen, enforced in code, never editable. */

@@ -61,20 +61,29 @@ export const getAccountLimits = {
   async run(_input: Record<string, never>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const [b] = await ctx.sql<{ kind: string; kyc_tier: number | null; account_number: string | null }[]>`
       select kind, kyc_tier, account_number from businesses where id = ${ctx.user!.business_id}`;
+    // The rules are already this customer's country's (Rules.load with their market): only countries that
+    // use numbered tiers talk about tiers; elsewhere it's how verification and limits work there.
     let data: Record<string, unknown>;
-    if (b.kyc_tier) {
+    const tiers = rules.on("kyc_tiers_used");
+    await ruleRead(ctx, rules, "kyc_tiers_used");
+    if (tiers && b.kyc_tier) {
       const t = b.kyc_tier;
+      const cur = rules.get("tier_currency")?.value?.trim().toUpperCase() || "NGN";
       await ruleRead(ctx, rules, `tier_${t}_single`);
       await ruleRead(ctx, rules, `tier_${t}_daily`);
       data = {
         tier: `Tier ${t}`,
+        how_tiers_work: rules.get("kyc_approach")?.value,
         limits: rules.get(`tier_${t}`)?.value,
-        single_transfer_limit: money(rules.num(`tier_${t}_single`, 0), "NGN"),
-        daily_transfer_limit: money(rules.num(`tier_${t}_daily`, 0), "NGN"),
+        single_transfer_limit: money(rules.num(`tier_${t}_single`, 0), cur),
+        daily_transfer_limit: money(rules.num(`tier_${t}_daily`, 0), cur),
         ...(t < 3 ? { to_move_up: `Tier ${t + 1}: ${rules.get(`tier_up_${t + 1}`)?.value}`, next_tier_limits: rules.get(`tier_${t + 1}`)?.value } : { note: "Already the highest tier." }),
+        note_on_upgrades: "You explain tiers; you can't move anyone up or change a limit. A customer who has submitted what's needed and is still on the lower tier: hand off.",
       };
+    } else if (tiers) {
+      data = { tier: "Not recorded", how_tiers_work: rules.get("kyc_approach")?.value, note: "This account's tier isn't in the records. Don't guess it; hand off if the customer needs it." };
     } else {
-      data = { tier: "Standard", limits: rules.get("limits_standard")?.value };
+      data = { tier: "No numbered tiers in this country", how_verification_works: rules.get("kyc_approach")?.value, limits: rules.get("limits_standard")?.value };
     }
     await audit(ctx, { kind: "lookup", tool: "get_account_limits", summary: `get_account_limits · ${data.tier}`, result: data });
     return { ok: true, data };

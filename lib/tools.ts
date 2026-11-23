@@ -752,8 +752,8 @@ const getKycStatus = {
   schema: z.object({}),
   async run(_input: Record<string, never>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const user = ctx.user!;
-    const [b] = await ctx.sql<{ verification_status: string; verification_reason: string | null; verification_missing: string | null; verification_submitted_at: Date | null }[]>`
-      select verification_status, verification_reason, verification_missing, verification_submitted_at from businesses where id = ${user.business_id}`;
+    const [b] = await ctx.sql<{ verification_status: string; verification_reason: string | null; verification_missing: string | null; verification_submitted_at: Date | null; kyc_tier: number | null }[]>`
+      select verification_status, verification_reason, verification_missing, verification_submitted_at, kyc_tier from businesses where id = ${user.business_id}`;
     const status = statusLabel(b.verification_status);
     let data: Record<string, unknown>;
     if (b.verification_status === "blocked") {
@@ -772,6 +772,10 @@ const getKycStatus = {
         ...(submitted ? { submitted: dayMonthYear(submitted), business_days_so_far: Math.round((elapsed ?? 0) * 10) / 10 } : {}),
         ...(b.verification_status === "pending" ? { normal_review_time: `${reviewDays} business days`, past_window: (elapsed ?? 0) > reviewDays } : {}),
         ...(b.verification_status === "failed" ? { note: "A new application cannot simply be recreated." } : {}),
+        // How verification works in the customer's country (Rules screen, per market): tiers only where used.
+        ...(rules.on("kyc_tiers_used")
+          ? { account_tier: b.kyc_tier ? `Tier ${b.kyc_tier}` : "Not recorded", how_tiers_work: rules.get("kyc_approach")?.value, for_limits_and_upgrades: "get_account_limits" }
+          : { how_verification_works: rules.get("kyc_approach")?.value }),
       };
     }
     await audit(ctx, { kind: "lookup", tool: "get_kyc_status", summary: `get_kyc_status · ${b.verification_status}`, result: data });

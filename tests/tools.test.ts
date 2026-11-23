@@ -1201,3 +1201,35 @@ test("operations: a review is saved, logged under the reviewer and shown in the 
   const log = await sql!`select summary, staff from audit_log where conversation_id = ${s.conv.id} and tool = 'review'`;
   assert.equal(log[0].staff, "Bayo Martins");
 });
+
+
+// ---------------------------------------------------------------- KYC tiers per country
+
+test("KYC tiers: Nigeria explains its tiers; the UK and US have none; each country's values are editable", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const chioma = await session("chioma", MONDAY);
+  const ng = (await call(chioma, "get_account_limits", {})).data as Record<string, string>;
+  assert.equal(ng.tier, "Tier 1");
+  assert.equal(ng.single_transfer_limit, "₦50,000.00");
+  assert.match(ng.to_move_up, /^Tier 2: Link your BVN or NIN/);
+  assert.match(ng.how_tiers_work, /three tiers/);
+  const grace = await session("grace", MONDAY);
+  const uk = (await call(grace, "get_account_limits", {})).data as Record<string, string>;
+  assert.equal(uk.tier, "No numbered tiers in this country");
+  assert.match(uk.how_verification_works, /no numbered tiers/i);
+  const david = await session("david", MONDAY);
+  const us = (await call(david, "get_kyc_status", {})).data as Record<string, string>;
+  assert.match(us.how_verification_works, /no numbered tiers/i);
+  assert.equal(us.account_tier, undefined, "no tier talk where tiers aren't used");
+  const ngKyc = (await call(chioma, "get_kyc_status", {})).data as Record<string, string>;
+  assert.equal(ngKyc.account_tier, "Tier 1");
+  // A supervisor switches tiers on for the UK only, with its own currency: UK customers get them, others don't change.
+  const bayo = (await staffUser(sql!, "bayo"))!;
+  assert.ok((await proposeChange(sql!, { ruleId: "kyc_tiers_used", market: "UK", value: "on", staff: bayo })).ok);
+  assert.ok((await proposeChange(sql!, { ruleId: "tier_currency", market: "UK", value: "GBP", staff: bayo })).ok);
+  await sql!`update businesses set kyc_tier = 2 where id = 'grace'`;
+  const ukNow = (await call(grace, "get_account_limits", {})).data as Record<string, string>;
+  assert.equal(ukNow.tier, "Tier 2");
+  assert.match(ukNow.single_transfer_limit, /^£/);
+  assert.equal(((await call(david, "get_account_limits", {})).data as Record<string, string>).tier, "No numbered tiers in this country");
+});
