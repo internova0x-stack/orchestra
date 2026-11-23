@@ -28,8 +28,10 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
 4. **Staff time savers**: 17 proactive updates (`watch_case`, `send_status_update`), 18 claim drafting
    (`draft_claim_pack`), 19 staff mode (`summarise_case`, `draft_reply`, `draft_case_notes`); roles
    support agent and supervisor; the hours-saved dashboard (`handling_times`, placeholder minutes).
-5. **Configuration**: the settings screen (per action: on/off, identity level, cap per currency,
-   per-customer limit, human approval) and the off switch.
+5. **Configuration**: the Rules screen's basic edit-in-place is in the demo (Knowledge Base, Nov 23).
+   Later: upload a policy document and have rules extracted for review; approval before a change goes
+   live; version history with rollback; separate rule sets per market; test a change against saved
+   conversations before publishing; the off switch for the agent or any single action.
 6. **Nigeria completion**: use cases 13, 14, 16 and the market pack (local transfer types, KYC tiers,
    fees, CBN complaint rules).
 7. **Channels**: in-app chat in a phone frame, then WhatsApp.

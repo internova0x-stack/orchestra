@@ -2,22 +2,28 @@
 
 An AI customer support agent for banks and fintechs that resolves requests end to end: it looks up the
 customer's records, takes the permitted action, explains what it did, and hands off to a human with a
-full summary when it shouldn't act alone. First build: a pitch prototype for Nuvion against a simulated
-bank (business accounts in $, £ and ₦), with an activity panel beside the chat showing every lookup and
-action as it happens.
+full summary when it shouldn't act alone. The agent is called Alexis. First build: a pitch prototype
+for Nuvion against a simulated bank (business accounts in $, £ and ₦), with an activity panel beside
+the chat showing every lookup and action as it happens, and a Rules screen where a viewer edits a rule
+and watches Alexis change behaviour.
 
 ## Read first
-- `docs/DEMO-SPEC.md`: what the 2-day demo builds (six use cases, eleven tools, twelve planted cases)
-  and the decisions taken on Nov 23. **Build only what is in it.**
+- `docs/DEMO-SPEC.md`: what the 2-day demo builds (six use cases, eleven tools, thirteen planted cases,
+  the Rules screen) and the decisions taken on Nov 23. **Build only what is in it.**
+- `docs/KNOWLEDGE-BASE.md`: the dummy rule set the seed loads into `rules` (sourced and sample entries).
 - `docs/BACKLOG.md`: everything after the demo, in phase order.
-- `docs/source/`: the four source documents (PRD, Use Case Playbook, Guardrails and Compliance Policy,
-  Tools and Data Spec). The Guardrails policy wins over the Playbook; DEMO-SPEC wins over all four.
+- `docs/source/`: the source documents, numbered as in the PRD's document set. The Guardrails policy
+  wins over the Playbook; DEMO-SPEC wins over all of them.
 
 ## Stack
 Next.js (App Router) on Vercel, Supabase (Postgres) for the simulated bank and the audit log, the
 Anthropic API for the agent (tool use; the model id lives in one config constant).
 
 ## Rules for this codebase
+- **No fixed facts in code.** Fees, timelines, windows, caps and limits live in the `rules` table (answer
+  rules Alexis states, limit rules the tools enforce) and are read fresh on every message, so a Rules
+  screen edit applies to the next message. Only the Guardrails' fixed rules (identity first, no secrets,
+  no tipping off, the audit log, saying it's an AI) are hard-coded and never editable.
 - **Rules live in code, not just in the prompt.** Identity level, ownership of the record, review
   holds, caps, per-customer limits, on/off switches, duplicate prevention and confirmation are checked
   inside each tool, in the order DEMO-SPEC lists. Nothing typed in chat can raise a cap, skip a check or
