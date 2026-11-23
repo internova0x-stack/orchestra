@@ -46,7 +46,12 @@ export function zendesk(cfg: { subdomain: string; email: string; token: string }
   return {
     kind: "zendesk",
     ticketIdFrom: (b) => firstId(obj(b).ticket_id, obj(obj(b).ticket).id, obj(obj(b).detail).id),
-    ping: async () => { await req("GET", "/api/v2/users/me.json"); },
+    // /users/me also answers anonymous callers (Zendesk's docs: "Allowed For Anonymous users"), so a wrong token
+    // comes back as an anonymous user rather than an error: only a signed-in agent or admin counts as connected.
+    ping: async () => {
+      const me = await req<{ user?: { id: number | null; role?: string } }>("GET", "/api/v2/users/me.json");
+      if (!me.user?.id || !["admin", "agent"].includes(me.user.role ?? "")) throw Object.assign(new Error("Zendesk didn't recognise these details as an agent or admin."), { status: 401 });
+    },
     async fetchTicket(id) {
       const { ticket } = await req<{ ticket: { id: number; subject: string | null; requester_id: number } }>("GET", `/api/v2/tickets/${enc(id)}.json`);
       const { comments } = await req<{ comments: { id: number; author_id: number; plain_body?: string; body: string; public: boolean; created_at: string }[] }>("GET", `/api/v2/tickets/${enc(id)}/comments.json`);

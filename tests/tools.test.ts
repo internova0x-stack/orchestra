@@ -2041,13 +2041,16 @@ test("connecting a bank's own helpdesk: checked with the product, stored encrypt
   const calls: string[] = [];
   const fake = (status: number) => (async (url: string | URL | Request, init?: RequestInit) => {
     calls.push(`${init?.method ?? "GET"} ${String(url)}`);
-    return new Response(JSON.stringify(status === 200 ? { user: { id: 1 } } : { error: "Couldn't authenticate you" }), { status, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify(status === 200 ? { user: { id: 1, role: "admin" } } : status === 299 ? { user: { id: null, role: "end-user", name: "Anonymous user" } } : { error: "Couldn't authenticate you" }), { status: status === 299 ? 200 : status, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
   const typed = { subdomain: "yourbank", email: "it@yourbank.com", token: "tok-ending-3f9a" };
   const bad = await svc.connectWithCredentials(sql!, "zendesk", typed, "Zainab Bello", fake(401));
   assert.equal(bad.ok, false);
   assert.match((bad as { error: string }).error, /turned these details down/);
   assert.equal((await svc.connectorSettings(sql!)).find((c) => c.kind === "zendesk")!.mode, "off");
+  // Zendesk answers a wrong token as an anonymous visitor (200, no id): that is not a connection either.
+  const anon = await svc.connectWithCredentials(sql!, "zendesk", typed, "Zainab Bello", fake(299));
+  assert.equal(anon.ok, false, "an anonymous answer isn't accepted");
 
   // Accepted: stored encrypted, live, with the account and the last 4 for the screen, and a webhook address.
   const ok = await svc.connectWithCredentials(sql!, "zendesk", typed, "Zainab Bello", fake(200));

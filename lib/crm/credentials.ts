@@ -13,11 +13,11 @@ export const FIELDS: Record<CrmKind, Field[]> = {
   zendesk: [
     { id: "subdomain", label: "Your Zendesk address", placeholder: "yourbank", suffix: ".zendesk.com" },
     { id: "email", label: "Admin email", placeholder: "it-admin@yourbank.com" },
-    { id: "token", label: "API token", placeholder: "Paste the token", secret: true, hint: "In Zendesk: Admin Center → Apps and integrations → Zendesk API → Add API token." },
+    { id: "token", label: "API token", placeholder: "Paste the token", secret: true, hint: "In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → Add API token." },
   ],
   freshdesk: [
     { id: "domain", label: "Your Freshdesk address", placeholder: "yourbank", suffix: ".freshdesk.com" },
-    { id: "apiKey", label: "API key", placeholder: "Paste the key", secret: true, hint: "In Freshdesk: your profile picture → Profile settings → View API key (use an admin's)." },
+    { id: "apiKey", label: "API key", placeholder: "Paste the key", secret: true, hint: "In Freshdesk: your profile picture (top right) → Profile settings → the API key is below Change password. Use an admin's." },
   ],
   salesforce: [
     { id: "instanceUrl", label: "Your Salesforce address", placeholder: "https://yourbank.my.salesforce.com" },
@@ -25,7 +25,7 @@ export const FIELDS: Record<CrmKind, Field[]> = {
     { id: "clientSecret", label: "Consumer secret", placeholder: "From the connected app", secret: true, hint: "In Salesforce Setup: App Manager → New Connected App with the client credentials flow enabled and a run-as user." },
   ],
   hubspot: [
-    { id: "accessToken", label: "Private app token", placeholder: "pat-…", secret: true, hint: "In HubSpot: Settings → Integrations → Private apps → Create, with the tickets and contacts scopes." },
+    { id: "accessToken", label: "Private app token", placeholder: "pat-…", secret: true, hint: "In HubSpot: Development → Legacy apps → your private app → Auth → access token (tickets and contacts scopes). HubSpot stopped new private apps on Oct 26, 2026, so this only works with one you already have." },
   ],
 };
 

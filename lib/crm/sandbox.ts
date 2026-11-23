@@ -45,7 +45,8 @@ export function sandboxFetch(sql: Sql, kind: CrmKind): typeof fetch {
     }
     const requesterId = 777;
     // The credentials check each connector makes ("Reconnect").
-    if (/\/users\/me\.json$|\/agents\/me$|\/limits$/.test(url.pathname) || (url.pathname === "/crm/v3/objects/tickets" && url.searchParams.has("limit"))) return json(200, { ok: true });
+    if (/\/users\/me\.json$/.test(url.pathname)) return json(200, { user: { id: 1, role: "admin", name: "Demo admin" } });
+    if (/\/agents\/me$|\/limits$/.test(url.pathname) || (url.pathname === "/crm/v3/objects/tickets" && url.searchParams.has("limit"))) return json(200, { ok: true });
     switch (kind) {
       case "zendesk":
         if (url.pathname === `/api/v2/tickets/${t.id}.json`) return json(200, { ticket: { id: Number(t.id), subject: t.subject, requester_id: requesterId, tags: t.tags } });

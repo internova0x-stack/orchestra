@@ -196,9 +196,15 @@ API key) with the product's three setup steps; the row says "Step 2 to do" until
 Disconnect forgets the details. Demos (the pretend product, mode 'sandbox') have their own Demos group with a
 yellow tag and are never counted as Active. Vercel's variables still work for the Orchestra team's own test
 accounts. Checked: tests (tidying the typed details, encryption, a refused and an accepted check against a fake
-product, the webhook token, Disconnect) and the page in a browser. Still unchecked: the products' menu paths and
-webhook bodies in the step 2 instructions, written from knowledge of each API; the official developer sites were
-blocked from this workspace. Setting `CREDENTIALS_KEY` in Vercel is recommended (changing it later means
+product, the webhook token, Disconnect) and the page in a browser. Checked against the official developer docs
+(Nov 23): Zendesk's token auth, the API token menu (Apps and integrations → APIs → Zendesk API) and webhooks
+connected to a trigger; `/users/me` also answers anonymous callers, so the check now requires a signed-in agent or
+admin. Freshdesk's API key auth and where the key is (Profile settings, below Change password). Not checked:
+Salesforce's pages need a browser to render. Findings that change the plan: Zendesk marks API tokens deprecated and
+its Developer Terms require a global OAuth client ("Sign in with Zendesk", approved by Zendesk) for an app offered
+to several Zendesk customers; tokens are allowed only for internal use. HubSpot stopped new legacy private apps on
+Oct 26, 2026: new connections need an app on its new developer platform (OAuth). So typed tokens suit the pilot;
+selling Orchestra to many banks needs OAuth apps registered with Zendesk and HubSpot. Setting `CREDENTIALS_KEY` in Vercel is recommended (changing it later means
 reconnecting).
 
 ## Listen mode (Nov 23, Tomi: "build the listen mode first")

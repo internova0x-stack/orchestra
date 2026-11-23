@@ -319,8 +319,8 @@ const SHORT: Record<string, string> = { zendesk: "Zendesk", freshdesk: "Freshdes
 /** Where to paste the webhook address in each product, and what to send (step 2). */
 const HOOK_STEPS: Record<string, string[]> = {
   zendesk: [
-    "Admin Center → Apps and integrations → Webhooks → Create webhook: paste the address, method POST, format JSON.",
-    "Objects and rules → Triggers → Add trigger: when a ticket is created (and when the requester replies), action Notify webhook.",
+    "Admin Center → Apps and integrations → Webhooks → Create webhook: choose Trigger or automation, paste the address, method POST, format JSON.",
+    "Objects and rules → Triggers → Add trigger: when a ticket is created (and when the requester replies), action Notify webhook, this webhook.",
     "Use this as the trigger's body: {\"ticket_id\": \"{{ticket.id}}\"}",
   ],
   freshdesk: [
