@@ -224,17 +224,17 @@ paths:
   /connectors/{kind}/webhook:
     post:
       tags: [Listen]
-      summary: A CRM connector's webhook (Zendesk, Freshdesk, Salesforce, HubSpot)
+      summary: A CRM connector's webhook (Zendesk, HubSpot)
       description: |
         Your helpdesk calls this when a ticket is created or the customer replies, with the ticket's id in its own
-        format: Zendesk `{"ticket_id": "{{ticket.id}}"}`, Freshdesk `{"freshdesk_webhook": {"ticket_id": ...}}`,
-        Salesforce `{"caseId": "..."}`, HubSpot `[{"objectId": ...}]`. Orchestra reads the ticket with the connector,
+        format: Zendesk `{"ticket_id": "{{ticket.id}}"}`,
+        HubSpot `[{"objectId": ...}]`. Orchestra reads the ticket with the connector,
         analyses it (listen mode) and, when write-back is on, writes tags, priority, the team's group or queue and an
         internal note into the ticket. Switch connectors on, map teams to groups and try each in the sandbox on the
         console's API page. The key may be sent as `?key=orc_…` where the helpdesk can't set a header.
       operationId: connectorWebhook
       parameters:
-        - { name: kind, in: path, required: true, schema: { type: string, enum: [zendesk, freshdesk, salesforce, hubspot] } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [zendesk, hubspot] } }
       requestBody:
         required: true
         content:

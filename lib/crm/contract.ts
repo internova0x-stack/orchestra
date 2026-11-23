@@ -12,6 +12,12 @@ import type { InteractionIn } from "../listen.ts";
 
 export const CRM_KINDS = ["zendesk", "freshdesk", "salesforce", "hubspot"] as const;
 export type CrmKind = (typeof CRM_KINDS)[number];
+/**
+ * The connectors offered to banks (owner, Nov 23: Freshdesk and Salesforce moved to the backlog). The other two stay
+ * in the code and its tests, but the API page doesn't list them, their webhooks answer 404 and data entry skips them.
+ */
+export const OFFERED_KINDS: readonly CrmKind[] = ["zendesk", "hubspot"];
+export const offered = (kind: string): kind is CrmKind => (OFFERED_KINDS as readonly string[]).includes(kind);
 export const CRM_NAME: Record<CrmKind, string> = { zendesk: "Zendesk", freshdesk: "Freshdesk", salesforce: "Salesforce Service Cloud", hubspot: "HubSpot Service Hub" };
 
 export interface WriteBack {

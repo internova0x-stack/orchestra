@@ -19,9 +19,17 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   reviews and approves a global OAuth client; HubSpot app via its developer platform), a Connect button
   that opens the product's sign-in window, store the refresh token encrypted like today's details, renew
   access tokens, and where the API allows it create the webhook automatically so step 2 disappears.
-  Freshdesk (API key) and Salesforce (connected app) keep typed details until checked otherwise; the
-  Salesforce docs were not verified (they need a browser). Today's typed-token connect stays for the
-  pilot.
+  Today's typed-token connect stays for the pilot.
+- **Freshdesk and Salesforce connectors** (owner, Nov 23: moved to the backlog). The code stays
+  (`lib/crm/connectors.ts`, tested against the stand-in) but they aren't offered: `OFFERED_KINDS` in
+  `lib/crm/contract.ts` lists Zendesk and HubSpot, so the API page doesn't show them, their webhooks
+  answer 404 and data entry skips them. To bring one back: add it to `OFFERED_KINDS` after checking it.
+  Freshdesk: its API key sign-in and where the key is were confirmed in its docs (Nov 23); its docs also
+  list OAuth scopes, so "Sign in with Freshdesk" through Freshworks' developer platform is possible;
+  check Freshworks' marketplace terms before offering it to many banks. Salesforce: not verified (its
+  docs load from help.salesforce.com, which this workspace can't reach); check whether a bank admin's
+  connected app is still the way, or External Client Apps, and plan "Sign in with Salesforce" with
+  Orchestra's own app for many banks (AppExchange review if listed).
 
 
 ## Built on Nov 23 (after the demo)

@@ -6,7 +6,7 @@ import { MODEL } from "../config.ts";
 import { bank } from "../bank/index.ts";
 import { listCases, transcriptOf } from "../cases.ts";
 import { recordUsage } from "../usage.ts";
-import { CRM_KINDS, CRM_NAME, type CrmKind, type NewTicket } from "./contract.ts";
+import { CRM_KINDS, CRM_NAME, offered, type CrmKind, type NewTicket } from "./contract.ts";
 import { connector, connectorSettings, noteHealth } from "./service.ts";
 
 // Data entry (Tomi, Nov 23: "then 3"). For the CRM connectors with "Data entry" on, Orchestra keeps the bank's CRM
@@ -79,7 +79,7 @@ async function requester(sql: Sql, conversationId: string): Promise<NewTicket["r
 
 /** The connectors with data entry on. */
 async function targets(sql: Sql) {
-  const on = (await connectorSettings(sql)).filter((c) => c.data_entry && c.mode !== "off");
+  const on = (await connectorSettings(sql)).filter((c) => c.data_entry && c.mode !== "off" && offered(c.kind));
   const out = [];
   for (const s of on) {
     const c = await connector(sql, s.kind);

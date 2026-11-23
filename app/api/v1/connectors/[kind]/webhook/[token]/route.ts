@@ -1,6 +1,6 @@
 import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
-import { CRM_KINDS, type CrmKind } from "@/lib/crm/contract.ts";
+import { offered, type CrmKind } from "@/lib/crm/contract.ts";
 import { handleCrmWebhook, webhookTokenOk } from "@/lib/crm/service.ts";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export const maxDuration = 60;
  */
 export async function POST(req: Request, { params }: { params: Promise<{ kind: string; token: string }> }) {
   const { kind, token } = await params;
-  if (!CRM_KINDS.includes(kind as CrmKind)) return Response.json({ error: "not_found" }, { status: 404 });
+  if (!offered(kind)) return Response.json({ error: "not_found" }, { status: 404 });
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   const sql = db();
   await ensureSeeded(sql);
