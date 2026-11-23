@@ -210,7 +210,7 @@ export async function seed(sql: Sql, now = new Date()) {
 async function seedInto(tx: any, now: Date) {
   {
     await tx.unsafe(`truncate ${TABLES_TO_WIPE.join(", ")} restart identity cascade`);
-    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101;`);
+    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101; alter sequence waiver_seq restart with 9201;`);
 
     for (const b of BUSINESSES) {
       await tx`insert into businesses (id, name, country, registration_number, verification_status, verification_reason, verification_missing, verification_submitted_at)
@@ -229,6 +229,7 @@ async function seedInto(tx: any, now: Date) {
     }
     await seedCards(tx, now);
     await seedPayments(tx, now);
+    await seedFeesAndLimits(tx, now);
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
     await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;
@@ -371,4 +372,28 @@ async function seedPayments(tx: any, now: Date) {
   for (const r of rows) await tx`insert into payments ${tx(r)}`;
   await tx`insert into reversals (reference, payment_id, holder_id, amount, currency, status, automatic, requested_at, completed_at)
     values ('REV-8001', 'PAY-61002', 'emeka', 40000, 'NGN', 'completed', true, ${at(3 * 24)}, ${at(2 * 24 + 2)})`;
+}
+
+// ---------------------------------------------------------------- use cases 5 and 15 (and 6 for personal)
+
+/** Personal fees (planted 11 and 12), and the KYC record for planted 13. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedFeesAndLimits(tx: any, now: Date) {
+  const day = 86_400_000;
+  const fees = [
+    // Planted 11: Emeka's waivable fee, first request.
+    { id: "FE-P0101", business_id: "emeka", kind: "fee", description: "Account maintenance fee", trigger: "Monthly account maintenance, November", currency: "NGN", amount: 1050, charged_at: new Date(now.getTime() - 3 * day), waivable: true },
+    { id: "FE-P0102", business_id: "emeka", kind: "fee", description: "SMS alert fee", trigger: "Transaction alerts, October", currency: "NGN", amount: 480, charged_at: new Date(now.getTime() - 20 * day), waivable: false },
+    // Planted 12: Grace's waivable fee, but she used this year's goodwill waiver in July.
+    { id: "FE-P0201", business_id: "grace", kind: "fee", description: "Unarranged overdraft fee", trigger: "Balance went below zero on 17 November", currency: "GBP", amount: 15, charged_at: new Date(now.getTime() - 6 * day), waivable: true },
+    { id: "FE-P0202", business_id: "grace", kind: "fee", description: "Unarranged overdraft fee", trigger: "Balance went below zero in July", currency: "GBP", amount: 15, charged_at: new Date(now.getTime() - 130 * day), waivable: true },
+    { id: "FE-P0301", business_id: "chioma", kind: "fee", description: "Card maintenance fee", trigger: "Quarterly card fee", currency: "NGN", amount: 150, charged_at: new Date(now.getTime() - 9 * day), waivable: false },
+  ];
+  for (const f of fees) await tx`insert into fees ${tx(f)}`;
+  await tx`insert into waivers (reference, fee_id, holder_id, amount, currency, created_at)
+    values ('WVR-9100', 'FE-P0202', 'grace', 15, 'GBP', ${new Date(now.getTime() - 128 * day)})`;
+  // Planted 13: David's verification failed on a blurry document.
+  await tx`update businesses set verification_reason = 'Document unreadable: the photo of the driving licence was blurry',
+    verification_missing = 'a clear photo of the front and back of the driving licence, all four corners visible',
+    verification_submitted_at = ${new Date(now.getTime() - 5 * day)} where id = 'david'`;
 }

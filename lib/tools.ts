@@ -18,6 +18,7 @@ import { sendOneTimeCode, sendResetLink, unlockAccount } from "./tools/access.ts
 import { freezeCard, getCard, orderReplacement } from "./tools/cards.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
 import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
+import { getAccountLimits, waiveFee } from "./tools/fees.ts";
 import {
   AWAITING_CODE,
   AWAITING_IDENTITY,
@@ -786,8 +787,9 @@ const getFees = {
     const { sql } = ctx;
     const kind = input.kind ?? "both";
     const since = new Date(ctx.now.getTime() - 30 * 86_400_000);
-    const rows = await sql<{ id: string; kind: string; description: string; trigger: string | null; transfer_id: string | null; currency: string; amount: string; from_currency: string | null; from_amount: string | null; to_currency: string | null; to_amount: string | null; rate: string | null; charged_at: Date }[]>`
-      select * from fees where business_id = ${user.business_id} and charged_at > ${since}
+    const rows = await sql<{ id: string; kind: string; description: string; trigger: string | null; transfer_id: string | null; currency: string; amount: string; from_currency: string | null; from_amount: string | null; to_currency: string | null; to_amount: string | null; rate: string | null; charged_at: Date; waivable: boolean; waived: string | null }[]>`
+      select f.*, (select reference from waivers w where w.fee_id = f.id) as waived
+      from fees f where business_id = ${user.business_id} and charged_at > ${since}
         ${kind !== "both" ? sql`and kind = ${kind}` : sql``}
         ${input.payout ? sql`and transfer_id = ${input.payout.trim().toUpperCase()}` : sql``}
       order by charged_at desc limit 40`;
@@ -809,7 +811,7 @@ const getFees = {
             received: money(r.to_amount!, r.to_currency!),
             rule: "Rate shown at the time of conversion, with a 0.5% conversion fee (sample)",
           }
-        : { type: "Fee", id: r.id, date: dateTime(new Date(r.charged_at)), fee: money(r.amount, r.currency), what: r.description, triggered_by: r.trigger },
+        : { type: "Fee", id: r.id, date: dateTime(new Date(r.charged_at)), fee: money(r.amount, r.currency), what: r.description, triggered_by: r.trigger, waivable: r.waivable, ...(r.waived ? { waived: r.waived } : {}) },
     );
     const conv = items.filter((i) => i.type === "Conversion").length;
     await audit(ctx, { kind: "lookup", tool: "get_fees", summary: `get_fees · ${conv ? `${conv} conversion${conv === 1 ? "" : "s"}, ` : ""}${items.length - conv} fee${items.length - conv === 1 ? "" : "s"}`, input, result: items });
@@ -823,7 +825,7 @@ const getFees = {
 const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees,
   sendOneTimeCode, sendResetLink, unlockAccount,
   getCard, freezeCard, orderReplacement, listTransactions, openDispute,
-  findPayments, getReversalStatus, requestReversal];
+  findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

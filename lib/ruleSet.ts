@@ -137,6 +137,20 @@ export const RULE_SET: RuleSeed[] = [
   l("reversal_window_atm_other", "Reversals", "Other-bank ATM reversal due within", "48", "hours"),
   l("reversal_window_pos_web", "Reversals", "POS and web reversal due within", "72", "hours"),
 
+  // Account tiers (Nigeria, sample values; to verify against the current CBN tiered KYC rules)
+  a("tier_1", "Account limits", "Tier 1 account (NGN)", "Single transfer up to ₦50,000; daily transfers up to ₦300,000; balance up to ₦300,000", "sample"),
+  a("tier_2", "Account limits", "Tier 2 account (NGN)", "Single transfer up to ₦100,000; daily transfers up to ₦500,000; balance up to ₦500,000", "sample"),
+  a("tier_3", "Account limits", "Tier 3 account (NGN)", "Single transfer up to ₦5,000,000; daily transfers up to ₦25,000,000; no balance cap", "sample"),
+  a("tier_up_2", "Account limits", "Moving to Tier 2", "Link your BVN or NIN and add a selfie in the app under Account, Upgrade", "sample"),
+  a("tier_up_3", "Account limits", "Moving to Tier 3", "Tier 2 plus proof of address dated within the last 3 months, uploaded in the app", "sample"),
+  a("limits_standard", "Account limits", "Standard limits (GBP and USD accounts)", "Daily transfers up to £10,000 or $15,000; higher limits on request after a review", "sample"),
+  l("tier_1_single", "Account limits", "Tier 1 single transfer limit", "50000", "₦"),
+  l("tier_2_single", "Account limits", "Tier 2 single transfer limit", "100000", "₦"),
+  l("tier_3_single", "Account limits", "Tier 3 single transfer limit", "5000000", "₦"),
+  l("tier_1_daily", "Account limits", "Tier 1 daily transfer limit", "300000", "₦"),
+  l("tier_2_daily", "Account limits", "Tier 2 daily transfer limit", "500000", "₦"),
+  l("tier_3_daily", "Account limits", "Tier 3 daily transfer limit", "25000000", "₦"),
+
   // Limits and approvals
   l("action_initiate_recall", "Limits and approvals", "Recalls switched on", "on"),
   l("action_generate_proof_of_payment", "Limits and approvals", "Proof of payment switched on", "on"),
@@ -155,6 +169,11 @@ export const RULE_SET: RuleSeed[] = [
   l("reversal_cap_gbp", "Limits and approvals", "Reversal cap before human approval (GBP)", "800", "£"),
   l("reversal_cap_ngn", "Limits and approvals", "Reversal cap before human approval (NGN)", "500000", "₦"),
   l("action_request_reversal", "Limits and approvals", "Reversal requests switched on", "on"),
+  l("waiver_cap_usd", "Limits and approvals", "Fee waiver cap (USD)", "35", "$"),
+  l("waiver_cap_gbp", "Limits and approvals", "Fee waiver cap (GBP)", "25", "£"),
+  l("waiver_cap_ngn", "Limits and approvals", "Fee waiver cap (NGN)", "2000", "₦"),
+  l("waiver_limit", "Limits and approvals", "Goodwill fee waivers per customer", "1", "per 12 months"),
+  l("action_waive_fee", "Limits and approvals", "Fee waivers switched on", "on"),
   l("action_freeze_card", "Limits and approvals", "Card freezing switched on", "on"),
   l("action_order_replacement", "Limits and approvals", "Replacement cards switched on", "on"),
   l("action_open_dispute", "Limits and approvals", "Disputes switched on", "on"),

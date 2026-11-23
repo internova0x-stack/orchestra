@@ -634,3 +634,41 @@ test("reversal: never for a payment that succeeded, or for someone else's", { sk
   assert.match((await call(s, "request_reversal", { payment_id: "PAY-61003" })).reason!, /succeeded/);
   assert.match((await call(s, "request_reversal", { payment_id: "PAY-61002" })).reason!, /No payment/);
 });
+
+// ---------------------------------------------------------------- use cases 5 and 15 (the rest), and 13 for personal KYC
+
+test("planted 11: Emeka's waivable fee is waived once, after the stronger check and his yes", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("emeka", MONDAY, true);
+  const fees = (await call(s, "get_fees", { kind: "fee" })).data as { items: Record<string, unknown>[] };
+  assert.equal(fees.items.find((f) => f.id === "FE-P0101")!.waivable, true);
+  await call(s, "waive_fee", { fee_id: "FE-P0101" });
+  await confirmPending(s);
+  const out = await call(s, "waive_fee", { fee_id: "FE-P0101" });
+  assert.equal(out.ok, true);
+  assert.equal((out.data as { refunded: string }).refunded, "₦1,050.00");
+  assert.match((await call(s, "waive_fee", { fee_id: "FE-P0102" })).reason!, /isn't one that can be waived|used this year/);
+});
+
+test("planted 12: Grace already used this year's waiver: declined politely", { skip }, async () => {
+  const s = await session("grace", MONDAY, true);
+  const out = await call(s, "waive_fee", { fee_id: "FE-P0201" });
+  assert.equal(out.ok, false);
+  assert.match(out.reason!, /goodwill waiver/);
+});
+
+test("planted 19: Chioma's Tier 1 limit and how to move up", { skip }, async () => {
+  const s = await session("chioma", MONDAY);
+  const d = (await call(s, "get_account_limits", {})).data as Record<string, string>;
+  assert.equal(d.tier, "Tier 1");
+  assert.equal(d.single_transfer_limit, "₦50,000.00");
+  assert.match(d.to_move_up, /BVN or NIN/);
+});
+
+test("planted 13: David's verification failed on a blurry document: the reason and what to resubmit", { skip }, async () => {
+  const s = await session("david", MONDAY);
+  const d = (await call(s, "get_kyc_status", {})).data as Record<string, string>;
+  assert.equal(d.status, "Failed");
+  assert.match(d.reason, /blurry/);
+  assert.match(d.missing, /clear photo/);
+});

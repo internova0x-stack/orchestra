@@ -261,6 +261,19 @@ create table if not exists reversals (
 );
 create sequence if not exists reversal_seq start 8101;
 
+-- Use case 5: fee waivers.
+alter table fees add column if not exists waivable boolean not null default false;
+create table if not exists waivers (
+  reference text primary key,
+  fee_id text not null unique references fees(id) on delete cascade,
+  holder_id text not null references businesses(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete set null,
+  amount numeric(18,2) not null,
+  currency text not null,
+  created_at timestamptz not null default now()
+);
+create sequence if not exists waiver_seq start 9201;
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -287,6 +300,7 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "waivers",
   "reversals",
   "payments",
   "disputes",
