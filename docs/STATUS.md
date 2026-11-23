@@ -22,6 +22,17 @@ Where the 2-day demo stands against `docs/BUILD-PLAN.md`. Update this file when 
 - Several matching payments show as compact cards the customer clicks to choose (Design System).
 - Two failed identity checks flag the case for staff in code (Guardrails), not only by Alexis's choice.
 
+## The remaining use cases (Nov 23, after the demo)
+
+Every use case in the PRD is now built, one commit each, with tools, checks in code, prompt sections in
+`prompts/extended-scope.md` and tests: 4 account access (with the one-time code), 1 cards, 2 transactions
+and disputes, 12 debited but no value, 5 and 15 fee waivers and limits, 9 and 11 transaction IDs and
+root-cause tracing, 10 complaints with screenshots, 7 loans, 8 merchant payouts, 17 proactive updates,
+18 claim drafting, 19 staff mode, 13 wrong recipient and personal accounts, 14 airtime, data and bills
+(`get_bill_payment_status`, `refund_bill_payment` with the stronger check and a cap), 16 USSD and agent
+banking (`get_ussd_session`; cash at an agent always goes to a person). `npm test` runs 77 tests.
+Not built because they aren't use cases: the hours-saved dashboard and the Operations phase (backlog).
+
 ## What has been checked, and how
 
 - `npm test` (43 tests) runs every tool against a real Postgres with the seeded bank: each scripted test's

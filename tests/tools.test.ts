@@ -882,3 +882,29 @@ test("use case 13: a personal recall needs the stronger check; a delivered wrong
   assert.equal(out.ok, true);
   assert.match((out.data as { note: string }).note, /Always hand off/);
 });
+
+// ---------------------------------------------------------------- use cases 14 and 16
+
+test("use case 14: failed airtime is refunded once; a delivered token is shown; delivered can't be refunded", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("amara", MONDAY, true);
+  const list = (await call(s, "get_bill_payment_status", {})).data as { payments: Record<string, string>[] };
+  assert.equal(list.payments.find((p) => p.id === "BP-30102")!.token, "4821-0937-5512-6640-2219");
+  assert.equal(list.payments.find((p) => p.id === "BP-30101")!.paid_for, "•••• 0118");
+  await call(s, "refund_bill_payment", { payment_id: "BP-30101" });
+  await confirmPending(s);
+  assert.equal((await call(s, "refund_bill_payment", { payment_id: "BP-30101" })).reference, "BRF-2201");
+  assert.equal((await call(s, "refund_bill_payment", { payment_id: "BP-30101" })).reference, "BRF-2201", "once");
+  assert.match((await call(s, "refund_bill_payment", { payment_id: "BP-30102" })).reason!, /delivered/);
+  assert.match((await call(s, "refund_bill_payment", { payment_id: "BP-30103" })).reason!, /pending/);
+});
+
+test("use case 16: a USSD debit without value and a cash deposit at an agent, each routed to the right flow", { skip }, async () => {
+  const s = await session("amara", MONDAY);
+  const d = (await call(s, "get_ussd_session", {})).data as { sessions: Record<string, string>[] };
+  const agent = d.sessions.find((x) => x.type === "Agent transaction")!;
+  assert.match(agent.agent, /AGT-4471/);
+  assert.match(agent.next, /hand off/);
+  const ussd = d.sessions.find((x) => x.type === "USSD session")!;
+  assert.match(ussd.next, /matching transfer or failed payment/);
+});

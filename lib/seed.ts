@@ -210,7 +210,7 @@ export async function seed(sql: Sql, now = new Date()) {
 async function seedInto(tx: any, now: Date) {
   {
     await tx.unsafe(`truncate ${TABLES_TO_WIPE.join(", ")} restart identity cascade`);
-    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101; alter sequence waiver_seq restart with 9201; alter sequence deferral_seq restart with 4401; alter sequence claim_seq restart with 6601;`);
+    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101; alter sequence waiver_seq restart with 9201; alter sequence deferral_seq restart with 4401; alter sequence claim_seq restart with 6601; alter sequence bill_refund_seq restart with 2201;`);
 
     for (const b of BUSINESSES) {
       await tx`insert into businesses (id, name, country, registration_number, verification_status, verification_reason, verification_missing, verification_submitted_at)
@@ -233,6 +233,7 @@ async function seedInto(tx: any, now: Date) {
     await seedTimelines(tx, now);
     await seedLoansAndPayouts(tx, now);
     await seedRetailTransfers(tx, now);
+    await seedBillsAndUssd(tx, now);
     await tx`insert into staff_users (id, name, role) values ('ife', 'Ife Adeyemi', 'support_agent'), ('bayo', 'Bayo Martins', 'supervisor')`;
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
@@ -490,4 +491,28 @@ async function seedRetailTransfers(tx: any, now: Date) {
         ${t.recipient_country}, ${t.amount}, ${t.currency}, ${t.route}, ${t.description}, ${t.status}, ${t.stage},
         ${t.failure_reason}, ${t.sent_at}, ${t.completed_at}, ${tx.json(t.history)})`;
   }
+}
+
+// ---------------------------------------------------------------- use cases 14 and 16
+
+/** Amara's airtime, electricity and USSD records, and a cash deposit at an agent that wasn't credited. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedBillsAndUssd(tx: any, now: Date) {
+  const at = (h: number) => new Date(now.getTime() - h * 3_600_000);
+  const bills = [
+    // Paid, but the airtime failed at the provider: refundable.
+    { id: "BP-30101", holder_id: "amara", biller: "Skyline Mobile (airtime)", kind: "airtime", customer_ref: "08095550118", amount: 2000, currency: "NGN", status: "failed_at_provider", token: null, provider_ref: "SKY-AT-778201", at: at(20) },
+    // Delivered: the electricity token is on the record.
+    { id: "BP-30102", holder_id: "amara", biller: "Eastern Grid (prepaid electricity)", kind: "electricity", customer_ref: "45021187634", amount: 10000, currency: "NGN", status: "delivered", token: "4821-0937-5512-6640-2219", provider_ref: "EG-PP-120944", at: at(30) },
+    // Still pending at the provider.
+    { id: "BP-30103", holder_id: "amara", biller: "Skyline Mobile (data, 10GB)", kind: "data", customer_ref: "08095550118", amount: 3500, currency: "NGN", status: "pending", token: null, provider_ref: "SKY-DT-778390", at: at(0.5) },
+  ];
+  for (const b of bills) await tx`insert into bill_payments ${tx(b)}`;
+  const sessions = [
+    // A USSD transfer that failed after the debit; it continues as debited but no value.
+    { id: "US-9001", holder_id: "amara", kind: "ussd", code: "*894*1#", agent_name: null, agent_id: null, location: null, action: "Transfer ₦15,000 to 2087654321", amount: 15000, currency: "NGN", outcome: "Session timed out after the debit; transfer not completed", linked_ref: null, at: at(5) },
+    // Cash deposited with an agent, not credited.
+    { id: "US-9002", holder_id: "amara", kind: "agent", code: null, agent_name: "Iya Basira POS Agent", agent_id: "AGT-4471", location: "Ogbete Market, Enugu", action: "Cash deposit", amount: 30000, currency: "NGN", outcome: "Agent's terminal recorded the deposit; not credited to the account", linked_ref: null, at: at(28) },
+  ];
+  for (const u of sessions) await tx`insert into ussd_sessions ${tx(u)}`;
 }

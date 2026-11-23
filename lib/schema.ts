@@ -394,6 +394,38 @@ alter table conversations add column if not exists mode text not null default 'c
 alter table conversations add column if not exists staff_id text;
 alter table conversations add column if not exists case_reference text;
 
+-- Use case 14: airtime, data and bill payments. Use case 16: USSD sessions and agent banking.
+create table if not exists bill_payments (
+  id text primary key,
+  holder_id text not null references businesses(id) on delete cascade,
+  biller text not null,
+  kind text not null check (kind in ('airtime','data','electricity','tv','water')),
+  customer_ref text not null,
+  amount numeric(18,2) not null,
+  currency text not null,
+  status text not null check (status in ('delivered','pending','failed_at_provider','refunded')),
+  token text,
+  provider_ref text,
+  at timestamptz not null,
+  refund_reference text
+);
+create table if not exists ussd_sessions (
+  id text primary key,
+  holder_id text not null references businesses(id) on delete cascade,
+  kind text not null check (kind in ('ussd','agent')),
+  code text,
+  agent_name text,
+  agent_id text,
+  location text,
+  action text not null,
+  amount numeric(18,2) not null,
+  currency text not null,
+  outcome text not null,
+  linked_ref text,
+  at timestamptz not null
+);
+create sequence if not exists bill_refund_seq start 2201;
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -421,6 +453,8 @@ alter table audit_log add column if not exists staff text;
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "ussd_sessions",
+  "bill_payments",
   "claim_drafts",
   "outbox",
   "case_watches",

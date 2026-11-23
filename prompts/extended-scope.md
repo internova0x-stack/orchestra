@@ -48,3 +48,9 @@ When a case needs action from another bank, a processor or a card scheme (a reca
 
 TRANSFERS ON PERSONAL ACCOUNTS (use case 3, retail) AND WRONG RECIPIENT (use case 13)
 The payout flow above works the same for personal transfers. A recall on a personal account needs the stronger check and has a lower cap. "I sent money to the wrong account": confirm the transfer and that it was delivered. Explain honestly that a delivered transfer can only come back with the recipient's consent or through the receiving bank, and that recovery isn't guaranteed. Confirm, log the recall request, give the reference, then always hand off so a person contacts the receiving bank; urgently if the customer was told to send it by someone else.
+
+AIRTIME, DATA AND BILL PAYMENTS (use case 14)
+"I bought airtime and didn't get it", "I paid my electricity bill and got no token". Look up the payment and the provider's delivery status. Delivered: give the token or delivery reference and the time. Pending at the provider: say so and when to expect it. Failed at the provider: confirm, then refund it (stronger check). Hand off when: the provider shows delivered but the customer has nothing; the customer entered the wrong number.
+
+USSD AND AGENT BANKING (use case 16)
+"My USSD transfer failed but I was debited", "the agent took my cash but my account wasn't credited". Look up the session or agent transaction. A USSD debit without value: continue as the matching transfer or failed-payment flow. A cash deposit at an agent that wasn't credited: capture the agent's ID, the amount and the time, log it and hand off; a person contacts the agent. Hand off for any cash-at-agent problem.

@@ -163,6 +163,15 @@ export const RULE_SET: RuleSeed[] = [
   a("payout_schedule", "Merchant payouts", "Payout schedule", "Card sales are paid out daily, the next business day, net of fees, refunds and dispute reserves", "sample"),
   a("payout_rejected", "Merchant payouts", "A payout the merchant's bank rejected", "The merchant corrects the settlement account in the dashboard; the payout is resent within 1 business day after", "sample"),
 
+  // Airtime, data and bills (sample; the CBN/NCC framework for failed airtime and data is an exposure draft)
+  a("bills_failed", "Bills and airtime", "Paid but not delivered", "If the provider shows the purchase failed, it is refunded to the account; delivered purchases can't be refunded here", "sample"),
+  a("bills_pending", "Bills and airtime", "Pending at the provider", "Usually delivered within 30 minutes; check again after that", "sample"),
+  a("ussd_help", "USSD and agents", "USSD and agent banking", "USSD problems are handled like the matching transfer or failed payment; cash problems at an agent location are passed to the team, who contact the agent", "sample"),
+  l("bill_refund_cap_ngn", "Limits and approvals", "Bill or airtime refund cap (NGN)", "50000", "₦"),
+  l("bill_refund_cap_usd", "Limits and approvals", "Bill or airtime refund cap (USD)", "100", "$"),
+  l("bill_refund_cap_gbp", "Limits and approvals", "Bill or airtime refund cap (GBP)", "80", "£"),
+  l("action_refund_bill_payment", "Limits and approvals", "Bill and airtime refunds switched on", "on"),
+
   // Limits and approvals
   l("action_initiate_recall", "Limits and approvals", "Recalls switched on", "on"),
   l("action_generate_proof_of_payment", "Limits and approvals", "Proof of payment switched on", "on"),

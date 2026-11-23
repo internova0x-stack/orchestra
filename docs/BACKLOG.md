@@ -48,7 +48,7 @@ The order that follows best from a successful pitch; detail in the phases below.
    Later: upload a policy document and have rules extracted for review; approval before a change goes
    live; version history with rollback; separate rule sets per market; test a change against saved
    conversations before publishing; the off switch for the agent or any single action.
-6. **Nigeria completion**: use cases 13, 14, 16 and the market pack (local transfer types, KYC tiers,
+6. **Nigeria completion**: use cases 13, 14 and 16 are built (Nov 23); still to do: the market pack (local transfer types, KYC tiers,
    fees, CBN complaint rules).
 7. **Channels**: in-app chat in a phone frame, then WhatsApp.
 8. **Operations**: outage mode, case continuity by reference, fallback when the AI is down,
