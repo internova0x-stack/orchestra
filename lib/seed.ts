@@ -232,6 +232,7 @@ async function seedInto(tx: any, now: Date) {
     await seedFeesAndLimits(tx, now);
     await seedTimelines(tx, now);
     await seedLoansAndPayouts(tx, now);
+    await seedRetailTransfers(tx, now);
     await tx`insert into staff_users (id, name, role) values ('ife', 'Ife Adeyemi', 'support_agent'), ('bayo', 'Bayo Martins', 'supervisor')`;
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
@@ -465,4 +466,28 @@ async function seedLoansAndPayouts(tx: any, now: Date) {
   await tx`insert into merchant_holds (id, business_id, payout_id, amount, currency, kind, customer_reason, internal_reason, created_at) values
     ('MH-501', 'ember', 'PY-21011', 1188000, 'NGN', 'review_hold', null, 'Chargeback ratio spike under risk review', ${new Date(now.getTime() - 2 * day)}),
     ('MH-502', 'okapi', null, 50000, 'NGN', 'customer_fixable', 'Reserve for an open card dispute (DSP on 12 November); released when the dispute closes', null, ${new Date(now.getTime() - 10 * day)})`;
+}
+
+// ---------------------------------------------------------------- use cases 3 (retail) and 13
+
+/** Personal transfers: planted 6 to 8 (David) and the delivered wrong-recipient transfer (Amara). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedRetailTransfers(tx: any, now: Date) {
+  const rows = [
+    // Planted 6: pending past its window: ACH is same or next day, this one was sent four business days ago.
+    transfer({ id: "PO-77501", business_id: "david", created_by: "david", recipient_name: "Mia Torres", recipient_account: "US02 0260 0959 4100 8812", recipient_bank: "Lakeshore National Bank", recipient_country: "United States", amount: 650, currency: "USD", route: "ACH", description: "Rent share, November", status: "processing", stage: "Sent to the payment route", failure_reason: null, sent_at: subtractBusinessDays(now, 4), completed_at: null }),
+    // Planted 7: failed, and the money is already back.
+    transfer({ id: "PO-77502", business_id: "david", created_by: "david", recipient_name: "Coastline Storage LLC", recipient_account: "US77 0210 0002 3300 1190", recipient_bank: "Harbor Point Bank", recipient_country: "United States", amount: 300, currency: "USD", route: "ACH", description: "Storage unit, December", status: "failed", stage: null, failure_reason: "Invalid account details; the money was returned to your account the next day", sent_at: new Date(now.getTime() - 6 * 86_400_000), completed_at: new Date(now.getTime() - 5 * 86_400_000) }),
+    // Planted 8: above the personal recall cap ($1,000).
+    transfer({ id: "PO-77503", business_id: "david", created_by: "david", recipient_name: "J. Whitaker", recipient_account: "US31 0110 0043 2200 6643", recipient_bank: "Harbor Point Bank", recipient_country: "United States", amount: 1800, currency: "USD", route: "RTP", description: "Used car deposit", status: "successful", stage: null, failure_reason: null, sent_at: new Date(now.getTime() - 3 * 3_600_000), completed_at: new Date(now.getTime() - 3 * 3_600_000 + 60_000) }),
+    // Use case 13: Amara sent ₦85,000 to the wrong account yesterday; it was delivered.
+    transfer({ id: "PO-77401", business_id: "amara", created_by: "amara", recipient_name: "Chukwudi Okeke", recipient_account: "0567123498", recipient_bank: "Sahel Trust Bank", recipient_country: "Nigeria", amount: 85000, currency: "NGN", route: "NIP", description: "School fees", status: "successful", stage: null, failure_reason: null, sent_at: new Date(now.getTime() - 26 * 3_600_000), completed_at: new Date(now.getTime() - 26 * 3_600_000 + 5_000) }),
+  ];
+  for (const t of rows) {
+    await tx`insert into transfers (id, business_id, created_by, recipient_name, recipient_account, recipient_bank, recipient_country,
+        amount, currency, route, description, status, stage, failure_reason, sent_at, completed_at, history)
+      values (${t.id}, ${t.business_id}, ${t.created_by}, ${t.recipient_name}, ${t.recipient_account}, ${t.recipient_bank},
+        ${t.recipient_country}, ${t.amount}, ${t.currency}, ${t.route}, ${t.description}, ${t.status}, ${t.stage},
+        ${t.failure_reason}, ${t.sent_at}, ${t.completed_at}, ${tx.json(t.history)})`;
+  }
 }

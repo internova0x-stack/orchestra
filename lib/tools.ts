@@ -142,6 +142,9 @@ const TRIGGERS = {
   loan_hardship: { urgency: "normal", label: "Loan payment difficulty or deferral request" },
   merchant_payout_problem: { urgency: "high", label: "Merchant payout rejected, unreconciled or held" },
   claim_draft: { urgency: "normal", label: "Claim pack ready for review" },
+  wrong_recipient: { urgency: "high", label: "Money sent to the wrong recipient: contact the receiving bank" },
+  bill_payment_problem: { urgency: "normal", label: "Bill or airtime payment delivered per the provider but not received, or a wrong number" },
+  agent_cash_problem: { urgency: "high", label: "Cash problem at an agent location" },
 } as const;
 
 type Trigger = keyof typeof TRIGGERS;
@@ -653,7 +656,11 @@ const initiateRecall = {
     const T = "initiate_recall";
     // 1. Switched on.
     if (!rules.on("action_initiate_recall")) return refuse(ctx, T, input, "Recalls are switched off for this institution. Explain and offer a handoff.", "switched off");
-    // 2. Identity: the standard check (the one-time code is backlog, owner Nov 23), and the role.
+    // 2. Identity: business recalls run on the standard check (owner, Nov 23: the demo's exception);
+    // a personal (retail) recall is tier 3 and needs the stronger check (Guardrails). Then the role.
+    if (user.personal && !user.stronger) {
+      return refuse(ctx, T, input, "A recall on a personal account needs the stronger identity check. Call send_one_time_code.", "stronger check needed");
+    }
     if (user.role !== "payment_rights") {
       return refuse(ctx, T, input, "This user's role is view-only, so they cannot request a recall. Tell them a team member with payment rights can ask, or their admin can change their role. You may still give information about the payout.", "view-only role");
     }
@@ -682,7 +689,7 @@ const initiateRecall = {
       return refuse(ctx, T, input, `This business has reached ${limit} recalls in 30 days, so a new one needs a person to review it. Don't accuse the customer of anything; say it needs staff review and escalate.`, "recall limit reached");
     }
     // 5. The cap, read from the rules on this call.
-    const capId = CAP_RULE[t.currency];
+    const capId = user.personal ? `recall_cap_personal_${t.currency.toLowerCase()}` : CAP_RULE[t.currency];
     const cap = rules.num(capId, Infinity);
     await ruleRead(ctx, rules, capId, `Recall cap (${t.currency})`);
     const overCap = Number(t.amount) > cap;
@@ -722,7 +729,12 @@ const initiateRecall = {
     return {
       ok: true,
       reference,
-      data: { reference, payout: t.id, amount, status: "Recall requested from the receiving bank", note: "Tell the customer it's requested, the reference, and that recovery depends on the receiving bank and isn't guaranteed. Don't predict the outcome or a date." },
+      data: {
+        reference, payout: t.id, amount, status: "Recall requested from the receiving bank",
+        note: t.status === "successful"
+          ? "This transfer was delivered, so it can only come back with the recipient's consent or through the receiving bank; recovery isn't guaranteed. Always hand off now (trigger wrong_recipient) so a person contacts the receiving bank; urgently (scam_in_progress) if someone else told them to send it."
+          : "Tell the customer it's requested, the reference, and that recovery depends on the receiving bank and isn't guaranteed. Don't predict the outcome or a date.",
+      },
     };
   },
 };

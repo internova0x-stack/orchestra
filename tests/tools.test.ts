@@ -856,3 +856,29 @@ test("use case 19: staff mode looks up and drafts, never acts, and logs under th
   assert.equal(logged.staff, "Ife Adeyemi (Support agent)");
   assert.match(logged.summary, /for Ife Adeyemi/);
 });
+
+// ---------------------------------------------------------------- use cases 3 (retail) and 13
+
+test("planted 6-8: David's late transfer, the failed one already returned, and one above the personal cap", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("david", MONDAY, true);
+  const late = ((await call(s, "get_transfer_status", { reference: "PO-77501" })).data as { payouts: Record<string, unknown>[] }).payouts[0];
+  assert.equal(late.late, true);
+  const failed = ((await call(s, "get_transfer_status", { reference: "PO-77502" })).data as { payouts: Record<string, unknown>[] }).payouts[0];
+  assert.match(String(failed.failure_reason), /returned to your account/);
+  await call(s, "initiate_recall", { reference: "PO-77503" });
+  await confirmPending(s);
+  const over = await call(s, "initiate_recall", { reference: "PO-77503" });
+  assert.match(over.reason!, /above the \$1,000 cap/);
+});
+
+test("use case 13: a personal recall needs the stronger check; a delivered wrong-recipient transfer is logged, then always handed off", { skip }, async () => {
+  const standard = await session("amara", MONDAY);
+  assert.match((await call(standard, "initiate_recall", { reference: "PO-77401" })).reason!, /stronger identity check/);
+  const s = await session("amara", MONDAY, true);
+  await call(s, "initiate_recall", { reference: "PO-77401" });
+  await confirmPending(s);
+  const out = await call(s, "initiate_recall", { reference: "PO-77401" });
+  assert.equal(out.ok, true);
+  assert.match((out.data as { note: string }).note, /Always hand off/);
+});
