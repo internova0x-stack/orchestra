@@ -14,6 +14,10 @@ Each rule: `category`, `name`, `value`, `kind` (answer | limit), `origin` (sourc
   simulated data, never presented as Nuvion's real fee, limit or policy; on screen they sit under the
   "Prototype - simulated data" label.
 
+**Nuvion's name never appears (owner, Nov 23).** Rule values say "the platform", never "Nuvion". The
+`source_url` column is stored but never shown on the Rules screen (a "Sourced" tag instead) and never
+returned to the model by `search_knowledge_base`, so Alexis can't quote it.
+
 Sources:
 [intro](https://docs.nuvion.co/introduction) ·
 [send a payout](https://docs.nuvion.co/guides/send-a-payout) ·
@@ -31,7 +35,7 @@ Sources:
 | Incoming payments | Bank transfers and other local payment methods are accepted, and funds settle into the customer's account | intro |
 | Payouts | Money can be sent to bank accounts or wallets worldwide by wire, local bank rails and real-time payment networks | intro |
 | Stablecoins | Customers can receive, hold and send stablecoins and move between regular currency and on-chain assets | intro |
-| Payout destinations | Bank accounts, mobile money wallets, stablecoin addresses and other Nuvion accounts | send a payout |
+| Payout destinations | Bank accounts, mobile money wallets, stablecoin addresses and other accounts on the platform | send a payout |
 
 Out of scope for the demo: cards, stablecoin support, Earn, IPO applications and developer questions.
 Alexis says it can't help with that here and offers a handoff.
@@ -53,7 +57,7 @@ Normal settlement by route (sourced, send a payout; a normal time, not a promise
 | Kenya, Ghana, Tanzania | KES, GHS, TZS | Mobile money | Instant |
 | Anywhere | Any | SWIFT | 1 to 3 business days |
 | Several networks | Stablecoin | Stablecoin transfer | Near-instant |
-| Another Nuvion account | Any | Internal transfer | Instant |
+| Another account on the platform | Any | Internal transfer | Instant |
 
 Payout statuses (sourced; the sample data uses these names):
 

@@ -221,6 +221,20 @@ Staff queue, the Rules screen, verification and fees, the full test run. Ready t
 tests and at least 11 of 12 conversations pass, each on two runs. Reply time: under 10 seconds for most
 turns, within Vercel's per-request time limit.
 
-## Still open
+## Decisions after reading all ten documents (owner, Nov 23)
 
-- The demo fintech's display name (the pitch is to Nuvion; the prototype is labelled as one).
+1. **Response targets** stay at Urgent 1 hour, High 4 business hours, Normal 1 business day (not the
+   Escalation Playbook's 15 minutes / 2 business hours). Alexis works out the wording from the target
+   and the business-hours calendar ("today", "tomorrow morning"), never a fixed "today".
+2. **Nuvion's name never appears** anywhere the viewer sees or hears: screens, Alexis's replies, the
+   proof-of-payment document. The platform is unnamed ("the platform"); the internal-transfer route is
+   "another account on the platform"; the Rules screen shows a "Sourced" tag without the link; source
+   links stay in the database and the repo only, never sent to the model.
+3. **Proof of payment** needs no separate yes: the customer's own request is the confirmation for this
+   action only (a document, no money moves). Recalls still need "Yes, go ahead".
+4. **Formal complaints** go through `escalate_to_human` with the trigger "formal complaint", which issues
+   a CMP- reference instead of ESC-. No `log_complaint` tool in the demo.
+5. **A payout on a review hold** shows the status "On hold" from `get_transfer_status`, with no stage and
+   no reason; the rest comes from `get_account_restrictions`' "review hold".
+6. **Vercel is connected during step 1**, since this cloud session can't be opened in a browser: every
+   push gives Tomi a link to check the step.
