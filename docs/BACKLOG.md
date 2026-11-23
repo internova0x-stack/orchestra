@@ -20,6 +20,14 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   that opens the product's sign-in window, store the refresh token encrypted like today's details, renew
   access tokens, and where the API allows it create the webhook automatically so step 2 disappears.
   Today's typed-token connect stays for the pilot.
+- **WhatsApp, connected directly** (owner, Nov 23): today a bank's own system relays WhatsApp messages
+  through the Channel API. Directly: connect a WhatsApp Business number on the API page (Meta's Cloud
+  API, or a provider such as Twilio or Infobip), receive messages on Orchestra's own webhook, send
+  replies and templates for messages outside the 24-hour window, and show forms (identity check,
+  Yes/Cancel, codes) as WhatsApp buttons or a secure link. Needs a Meta business verification per bank.
+- **App chat, ready-made** (owner, Nov 23): a chat widget or mobile SDK a bank drops into its app
+  instead of building the screen on the Channel API: sign-in handed over from the app, forms shown
+  natively, push notifications for replies.
 - **All four CRM connectors: Zendesk, HubSpot, Freshdesk, Salesforce** (owner, Nov 23: Freshdesk and
   Salesforce moved to the backlog, then Zendesk and HubSpot too). Zendesk and HubSpot come back with
   "Sign in with…" above; the typed-details connect, step 2's webhook address and the demos are built and
