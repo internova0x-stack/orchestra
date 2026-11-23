@@ -44,6 +44,8 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Confirmation is enforced in code: a tier 2/3 tool's first call stores `conversations.pending_action` and
   shows Yes/Cancel; only the customer's button or typed yes sets it confirmed (`runTurn`), never the model.
 - The Chat screen lives in `app/components/Frame.tsx` and stays mounted on every tab.
+- Rules screen: `app/api/rules` (no source links), `lib/ruleEdit.ts` checks a value (limits are numbers,
+  switches on/off, times HH:MM) and logs it to `rule_changes` and `audit_log`.
 - `npm run dev`, `npm run build`, `npm run typecheck`.
 - `npm test` with `TEST_DATABASE_URL` pointing at a throwaway Postgres runs the tools against the seeded
   bank (no model calls); without it the database tests are skipped.

@@ -390,3 +390,27 @@ test("recall: never on a held payout, a failed one, or another business's", { sk
   assert.match((await call(maya, "initiate_recall", { reference: "PO-77310" })).reason!, /Failed/);
   assert.match((await call(maya, "initiate_recall", { reference: "PO-88213" })).reason!, /No payout/);
 });
+
+// ---------------------------------------------------------------- step 6: the Rules screen
+
+test("rule edits are checked, logged, and change the next tool call", { skip }, async () => {
+  const { editRule } = await import("../lib/ruleEdit.ts");
+  await seed(sql!, MONDAY);
+  assert.equal((await editRule(sql!, "recall_cap_usd", "two thousand")).ok, false);
+  assert.equal((await editRule(sql!, "action_initiate_recall", "maybe")).ok, false);
+  assert.equal((await editRule(sql!, "business_open", "9am")).ok, false);
+  const ok = await editRule(sql!, "recall_cap_usd", "$2,000");
+  assert.equal(ok.ok, true);
+  assert.equal((await sql!`select value from rules where id = 'recall_cap_usd'`)[0].value, "2000");
+  const log = await sql!`select summary from audit_log where kind = 'rule_edit'`;
+  assert.equal(log[0].summary, "rule edited · Recall cap before human approval (USD) · 10000 → 2000");
+  assert.equal((await sql!`select count(*)::int as n from rule_changes`)[0].n, 1);
+  // S6 through the Rules screen's own path.
+  const s = await session("ada", MONDAY);
+  await call(s, "initiate_recall", { reference: "PO-88150" });
+  await confirmPending(s);
+  assert.match((await call(s, "initiate_recall", { reference: "PO-88150" })).reason!, /above the \$2,000 cap/);
+  // Reset demo restores the original cap.
+  await seed(sql!, MONDAY);
+  assert.equal((await sql!`select value from rules where id = 'recall_cap_usd'`)[0].value, "10000");
+});
