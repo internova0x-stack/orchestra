@@ -1,7 +1,8 @@
 import type { Sql } from "./db.ts";
 
 // The standard identity check (Guardrails): full name plus two account facts, here the date of
-// birth and the business's registration number. The answers come from the form and go only to
+// birth and, for a business, its registration number, or for a personal account the last 4 digits of
+// the account number. The answers come from the form and go only to
 // this check; the model never sees them. For merchant accounts it also establishes the user is
 // an authorised user of that business, since the user row belongs to it.
 
@@ -20,9 +21,11 @@ export async function checkIdentity(sql: Sql, answers: IdentityAnswers): Promise
   const reg = alnum(answers.registration_number ?? "");
   const dob = (answers.date_of_birth ?? "").slice(0, 10);
   if (!name || !reg || !dob) return null;
-  const rows = await sql<{ id: string; full_name: string; dob: string; reg: string }[]>`
-    select u.id, u.full_name, to_char(u.date_of_birth, 'YYYY-MM-DD') as dob, b.registration_number as reg
+  const rows = await sql<{ id: string; full_name: string; dob: string; reg: string | null; kind: string; account: string | null }[]>`
+    select u.id, u.full_name, to_char(u.date_of_birth, 'YYYY-MM-DD') as dob, b.registration_number as reg,
+      b.kind, b.account_number as account
     from business_users u join businesses b on b.id = u.business_id`;
-  const user = rows.find((u) => letters(u.full_name) === name && u.dob === dob && alnum(u.reg) === reg);
+  const fact = (u: (typeof rows)[number]) => (u.kind === "personal" ? alnum(u.account ?? "").slice(-4) : alnum(u.reg ?? ""));
+  const user = rows.find((u) => letters(u.full_name) === name && u.dob === dob && fact(u) !== "" && fact(u) === reg);
   return user?.id ?? null;
 }

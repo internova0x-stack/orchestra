@@ -11,13 +11,18 @@ export interface Conversation {
   pending_identity_tool_id: string | null;
   pending_results: unknown[];
   pending_action: PendingAction | null;
+  stronger_verified_at: Date | null;
+  pending_code: { tool_use_id: string; code: string; sent_at: string; attempts: number } | null;
   last_activity: Date;
 }
 
 /** An action Alexis has asked the customer to confirm. Only the customer's own yes confirms it. */
 export interface PendingAction {
-  tool: "initiate_recall";
-  transfer_id: string;
+  tool: string;
+  /** The record the action applies to (a payout, card, transaction, fee…). */
+  record: string;
+  /** How to name it to Alexis and in the activity panel, e.g. "recall on PO-88213". */
+  label: string;
   confirmed: boolean;
   asked_at: string;
 }
@@ -29,6 +34,10 @@ export interface VerifiedUser {
   role: "view_only" | "payment_rights";
   business_id: string;
   business_name: string;
+  /** Personal (retail) account rather than a business. */
+  personal: boolean;
+  /** Passed the stronger check (one-time code) in this session. */
+  stronger: boolean;
 }
 
 export async function loadConversation(sql: Sql, id: string): Promise<Conversation | null> {
@@ -48,10 +57,14 @@ export async function verifiedUser(sql: Sql, conv: Conversation, now: Date): Pro
   const idle = now.getTime() - new Date(conv.last_activity).getTime();
   if (idle > SESSION_IDLE_MINUTES * 60_000) return null;
   const rows = await sql<VerifiedUser[]>`
-    select u.id, u.full_name, u.first_name, u.role, u.business_id, b.name as business_name
+    select u.id, u.full_name, u.first_name, u.role, u.business_id, b.name as business_name,
+      (b.kind = 'personal') as personal, false as stronger
     from business_users u join businesses b on b.id = u.business_id
     where u.id = ${conv.verified_user_id}`;
-  return rows[0] ?? null;
+  const user = rows[0];
+  if (!user) return null;
+  user.stronger = Boolean(conv.stronger_verified_at);
+  return user;
 }
 
 /** Most recent payout amount for a business: the second identity fact. */

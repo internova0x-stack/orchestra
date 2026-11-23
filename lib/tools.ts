@@ -1,7 +1,5 @@
 import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
-import type { Sql } from "./db.ts";
-import type { Conversation, VerifiedUser } from "./session.ts";
 import { Rules, settlementRuleId } from "./rules.ts";
 import { maskAccount, money, statusLabel } from "./format.ts";
 import {
@@ -16,121 +14,30 @@ import {
   longDate,
   type BusinessHours,
 } from "./time.ts";
+import { sendOneTimeCode, sendResetLink, unlockAccount } from "./tools/access.ts";
+import {
+  AWAITING_CODE,
+  AWAITING_IDENTITY,
+  audit,
+  confirmFirst,
+  needsIdentity,
+  refuse,
+  ruleRead,
+  type PayoutCard,
+  type ProofDoc,
+  type StreamEvent,
+  type Tier,
+  type ToolCtx,
+  type ToolDef,
+  type ToolResult,
+} from "./toolkit.ts";
 
-// Every tool runs its checks in code before acting (docs/DEMO-SPEC.md, "Every tool's checks"):
-// 1 switched on, 2 identity level, 3 the record belongs to the verified user's business,
-// 4 review hold, 5 cap, 6 per-customer limit, 7 not already done, 8 the customer confirmed.
-// A failed check refuses with a plain-language reason. Every call writes one audit_log row.
+export { AWAITING_CODE, AWAITING_IDENTITY, audit, type PayoutCard, type ProofDoc, type StreamEvent, type Tier, type ToolCtx, type ToolResult };
 
-export type Tier = 0 | 1 | 2 | 3;
-
-export interface ToolResult {
-  ok: boolean;
-  data?: unknown;
-  reason?: string;
-  reference?: string;
-}
-
-/** Events the chat screen shows while a turn runs. */
-export type StreamEvent =
-  | { type: "text"; delta: string }
-  | { type: "break" }
-  | { type: "tool_start"; id: string; name: string }
-  | { type: "tool_end"; id: string; name: string; ok: boolean }
-  | { type: "card"; cards: PayoutCard[] }
-  | { type: "identity_form" }
-  | { type: "handoff"; reference: string; urgency: string; respond: string }
-  | { type: "proof"; proof: ProofDoc }
-  | { type: "masked"; text: string }
-  | { type: "confirm"; action: string; consequence: string }
-  | { type: "error"; message: string }
-  | { type: "done" };
-
-export interface PayoutCard {
-  reference: string;
-  amount: string;
-  counterparty: string;
-  route: string;
-  status: string;
-  date: string;
-  stages: { label: string; state: "done" | "current" | "failed" | "todo" }[];
-}
-
-/** A payment confirmation: the fields the Knowledge Base lists ("Proof of payment: what it shows"). */
-export interface ProofDoc {
-  reference: string;
-  payout: string;
-  amount: string;
-  currency: string;
-  date: string;
-  recipient: string;
-  account: string;
-  route: string;
-  issued: string;
-}
-
-export interface ToolCtx {
-  sql: Sql;
-  conv: Conversation;
-  user: VerifiedUser | null;
-  now: Date;
-  toolUseId: string;
-  emit: (e: StreamEvent) => void;
-}
-
-/** Sentinel: verify_identity needs the form; the turn pauses until the customer submits it. */
-export const AWAITING_IDENTITY = Symbol("awaiting identity");
-
-interface ToolDef<S extends z.ZodTypeAny> {
-  name: string;
-  tier: Tier;
-  description: string;
-  schema: S;
-  run: (input: z.infer<S>, ctx: ToolCtx, rules: Rules) => Promise<ToolResult | typeof AWAITING_IDENTITY>;
-}
-
-// ---------------------------------------------------------------- audit
-
-export async function audit(
-  ctx: Pick<ToolCtx, "sql" | "conv" | "user" | "toolUseId">,
-  row: {
-    kind: "identity" | "lookup" | "action" | "refusal" | "handoff" | "rule" | "approval" | "error";
-    tool?: string;
-    summary: string;
-    input?: unknown;
-    result?: unknown;
-    refusal_reason?: string;
-  },
-) {
-  const { sql } = ctx;
-  await sql`insert into audit_log (conversation_id, user_id, tool_use_id, kind, tool, summary, input, result, refusal_reason)
-    values (${ctx.conv.id}, ${ctx.user?.id ?? null}, ${ctx.toolUseId}, ${row.kind}, ${row.tool ?? null}, ${row.summary},
-            ${row.input === undefined ? null : sql.json(row.input as never)},
-            ${row.result === undefined ? null : sql.json(row.result as never)}, ${row.refusal_reason ?? null})`;
-}
-
-/** Record that a rule was read, so the activity panel shows it. */
-async function ruleRead(ctx: ToolCtx, rules: Rules, id: string, label?: string) {
-  const r = rules.get(id);
-  if (!r) return;
-  const sym = { $: "USD", "£": "GBP", "₦": "NGN" }[r.unit ?? ""];
-  const unit = r.unit && r.value.trim() === "1" ? r.unit.replace(/(day|hour)s\b/, "$1") : r.unit;
-  const value = sym ? money(Number(r.value), sym).replace(/\.00$/, "") : unit ? `${r.value} ${unit}` : r.value;
-  await audit(ctx, { kind: "rule", summary: `rule · ${label ?? r.name} · ${value}` });
-}
-
-/** Refuse with a plain-language reason for Alexis and a short label for the activity panel. */
-async function refuse(ctx: ToolCtx, tool: string, input: unknown, reason: string, short: string): Promise<ToolResult> {
-  await audit(ctx, { kind: "refusal", tool, summary: `${tool} · refused: ${short}`, input, refusal_reason: reason });
-  return { ok: false, reason };
-}
-
-/** Check 2: identity level. Tiers 1-3 need a verified session (the standard check, in the demo). */
-function needsIdentity(tier: Tier, ctx: ToolCtx): string | null {
-  if (tier === 0) return null;
-  if (!ctx.user) return "Identity has not been verified in this conversation. Run verify_identity first.";
-  return null;
-}
+// The registry and the demo's tools. Every tool runs its checks in code before acting
+// (docs/DEMO-SPEC.md, "Every tool's checks"): 1 switched on, 2 identity level, 3 the record belongs
+// to the verified customer, 4 review hold, 5 cap, 6 per-customer limit, 7 not already done, 8 the
+// customer confirmed. A failed check refuses with a plain-language reason; every call is audited.
 
 // ---------------------------------------------------------------- verify_identity
 
@@ -761,26 +668,18 @@ const initiateRecall = {
     const capText = money(cap, t.currency).replace(/\.00$/, "");
 
     // 8. The customer's yes, for this exact payout. Only the customer's message or button sets it.
-    const pending = ctx.conv.pending_action;
-    const confirmed = pending?.tool === T && pending.transfer_id === t.id && pending.confirmed;
-    if (!confirmed) {
-      const action: NonNullable<typeof ctx.conv.pending_action> = { tool: T, transfer_id: t.id, confirmed: false, asked_at: ctx.now.toISOString() };
-      await sql`update conversations set pending_action = ${sql.json(action as never)} where id = ${ctx.conv.id}`;
-      ctx.conv.pending_action = action;
-      const consequence = overCap
+    const waiting = await confirmFirst(
+      ctx,
+      T,
+      t.id,
+      `recall on ${t.id}`,
+      `Recall the ${amount} payout to ${t.recipient_name} (${t.id})?`,
+      overCap
         ? `It's above the ${capText} limit I can act on, so I'll prepare it and send it to our payments team for approval. Recovery isn't guaranteed.`
-        : "I'll ask the receiving bank to return it. Recovery depends on the receiving bank and isn't guaranteed.";
-      ctx.emit({ type: "confirm", action: `Recall the ${amount} payout to ${t.recipient_name} (${t.id})?`, consequence });
-      await audit(ctx, { kind: "rule", tool: T, summary: `${T} · ${t.id} · waiting for the customer's yes`, input });
-      return {
-        ok: false,
-        reason: `CONFIRMATION_NEEDED: the customer is being shown "Yes, go ahead" and "Cancel". In your reply, state the action (recall ${amount} to ${t.recipient_name}, ${t.id}) and its consequence (${consequence}) and wait for their answer. Do not call initiate_recall again until they say yes.`,
-      };
-    }
+        : "I'll ask the receiving bank to return it. Recovery depends on the receiving bank and isn't guaranteed.",
+    );
+    if (waiting) return waiting;
 
-    // Confirmed: the pending action is used up.
-    await sql`update conversations set pending_action = null where id = ${ctx.conv.id}`;
-    ctx.conv.pending_action = null;
     const [{ seq }] = await sql<{ seq: string }[]>`select nextval('recall_seq')::text as seq`;
     const reference = `REC-${seq}`;
     if (overCap) {
@@ -912,7 +811,8 @@ const getFees = {
 // ---------------------------------------------------------------- registry
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees];
+const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees,
+  sendOneTimeCode, sendResetLink, unlockAccount];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {
@@ -925,7 +825,7 @@ export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {
 }
 
 /** Run one tool call: validate the input, run the identity check, then the tool's own checks. */
-export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx): Promise<ToolResult | typeof AWAITING_IDENTITY> {
+export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx): Promise<ToolResult | typeof AWAITING_IDENTITY | typeof AWAITING_CODE> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) {
     await audit(ctx, { kind: "error", tool: name, summary: `${name} · no such tool` });
@@ -938,7 +838,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx): Pr
     return { ok: false, reason: `INVALID_INPUT: ${parsed.error.message}` };
   }
   const rules = await Rules.load(ctx.sql); // fresh every call: a Rules screen edit applies at once
-  const idProblem = needsIdentity(tool.tier, ctx);
+  const idProblem = needsIdentity(tool.tier, ctx, tool.identity);
   if (idProblem) return refuse(ctx, name, parsed.data, idProblem, "identity not verified");
   return tool.run(parsed.data, ctx, rules);
 }

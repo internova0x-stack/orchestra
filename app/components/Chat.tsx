@@ -22,6 +22,7 @@ interface Msg {
   handoff?: Handoff;
   proof?: Proof;
   confirm?: { action: string; consequence: string; state: "open" | "answered" };
+  code?: { sentTo: string; code: string; state: "open" | "sent"; retry?: boolean };
   update?: boolean;
   thinking?: boolean;
   showLabel?: boolean;
@@ -162,6 +163,19 @@ function ProofCard({ proof, conversationId }: { proof: Proof; conversationId: st
   );
 }
 
+function CodeForm({ disabled, retry, onSubmit }: { disabled: boolean; retry: boolean; onSubmit: (code: string) => void }) {
+  const [code, setCode] = useState("");
+  return (
+    <form className="form" autoComplete="off" onSubmit={(e) => { e.preventDefault(); onSubmit(code); setCode(""); }}>
+      <label>
+        {retry ? "That code didn't match. Enter the code again" : "Enter the code we sent"}
+        <input inputMode="numeric" pattern="[0-9 ]*" maxLength={8} value={code} onChange={(e) => setCode(e.target.value)} required disabled={disabled} />
+      </label>
+      <button className="btn btn-primary" type="submit" disabled={disabled}>Confirm code</button>
+    </form>
+  );
+}
+
 function IdentityForm({ disabled, onSubmit }: { disabled: boolean; onSubmit: (a: { full_name: string; date_of_birth: string; registration_number: string }) => void }) {
   const [full_name, setName] = useState("");
   const [date_of_birth, setDob] = useState("");
@@ -178,7 +192,7 @@ function IdentityForm({ disabled, onSubmit }: { disabled: boolean; onSubmit: (a:
     >
       <label>Full name<input value={full_name} onChange={(e) => setName(e.target.value)} required disabled={disabled} /></label>
       <label>Date of birth<input type="date" value={date_of_birth} onChange={(e) => setDob(e.target.value)} required disabled={disabled} /></label>
-      <label>Business registration number<input value={registration_number} onChange={(e) => setReg(e.target.value)} required disabled={disabled} /></label>
+      <label>Business registration number, or for a personal account the last 4 digits of the account number<input value={registration_number} onChange={(e) => setReg(e.target.value)} required disabled={disabled} /></label>
       <button className="btn btn-primary" type="submit" disabled={disabled}>Confirm</button>
     </form>
   );
@@ -327,7 +341,7 @@ export default function Chat() {
       return copy;
     });
 
-  async function send(body: { message?: string; confirm?: boolean; identity?: { full_name: string; date_of_birth: string; registration_number: string } }, shown: string) {
+  async function send(body: { message?: string; confirm?: boolean; code?: string; identity?: { full_name: string; date_of_birth: string; registration_number: string } }, shown: string) {
     if (busy) return;
     setBusy(true);
     setMessages((ms) => [
@@ -335,6 +349,7 @@ export default function Chat() {
         let x = m;
         if (x.identity === "open") x = { ...x, identity: "sent" as const };
         if (x.confirm?.state === "open") x = { ...x, confirm: { ...x.confirm, state: "answered" as const } };
+        if (x.code?.state === "open") x = { ...x, code: { ...x.code, state: "sent" as const } };
         return x;
       }),
       { id: newId(), role: "customer", text: shown },
@@ -384,6 +399,16 @@ export default function Chat() {
                 if (i < 0) return ms;
                 const copy = ms.slice();
                 copy[i] = { ...copy[i], text: e.text };
+                return copy;
+              });
+              break;
+            case "code_form": patchLast((m) => ({ ...m, code: { sentTo: e.sentTo, code: e.code, state: "open" } })); break;
+            case "code_retry":
+              // Wrong code: reopen the form on the message that showed it, and drop the empty reply.
+              setMessages((ms) => {
+                const copy = ms.slice(0, -1);
+                const i = copy.map((x) => Boolean(x.code)).lastIndexOf(true);
+                if (i >= 0) copy[i] = { ...copy[i], code: { ...copy[i].code!, state: "open", retry: true } };
                 return copy;
               });
               break;
@@ -440,13 +465,13 @@ export default function Chat() {
               >
                 {users.length === 0 && <option value="ada">Ada Okafor</option>}
                 {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name} · {u.business} · {u.role}</option>
+                  <option key={u.id} value={u.id}>{u.name} · {u.role === "Personal" ? "Personal account" : `${u.business} · ${u.role}`}</option>
                 ))}
               </select>
             </label>
             {selected && (
               <div className="picker-hint" title="The details this sample user gives at the identity check">
-                Identity check: {selected.name} · born {selected.dob} · reg. {selected.registration}
+                Identity check: {selected.name} · born {selected.dob} · {selected.registration}
               </div>
             )}
           </div>
@@ -475,6 +500,15 @@ export default function Chat() {
                     />
                   ))
                 : m.cards?.map((c) => <PaymentCard key={c.reference} card={c} />)}
+              {m.code && (
+                <div className="code-box">
+                  <div className="sms" aria-label="Simulated text message">
+                    <span className="label">Simulated text message to {m.code.sentTo}</span>
+                    <span>Your verification code is <b className="ref">{m.code.code}</b>. Never share it with anyone.</span>
+                  </div>
+                  <CodeForm disabled={m.code.state !== "open" || busy} retry={Boolean(m.code.retry)} onSubmit={(code) => send({ code }, "Code entered")} />
+                </div>
+              )}
               {m.confirm && (
                 <div className="confirm">
                   <div className="confirm-action">{m.confirm.action}</div>

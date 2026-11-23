@@ -1,5 +1,5 @@
 import type { Sql } from "./db.ts";
-import { ensureSchema, SCHEMA, TABLES_TO_WIPE } from "./schema.ts";
+import { SCHEMA, TABLES_TO_WIPE } from "./schema.ts";
 import { RULE_SET } from "./ruleSet.ts";
 import { fromLocal, lastWeekday, local, subtractBusinessDays } from "./time.ts";
 
@@ -42,6 +42,18 @@ export const USERS: User[] = [
   { id: "kemi", business_id: "ember", full_name: "Kemi Balogun", first_name: "Kemi", date_of_birth: "1983-07-19", role: "payment_rights" },
   { id: "ember-viewer", business_id: "ember", full_name: "Daniel Osei", first_name: "Daniel", date_of_birth: "1997-01-05", role: "view_only" },
 ];
+
+/**
+ * Personal (retail) customers for the use cases after the demo (Tools and Data Spec, "Planted cases for
+ * the MVP"). Each holds one account; the second identity fact is its last 4 digits.
+ */
+export const PERSONAL = [
+  { id: "chioma", name: "Chioma Eze", dob: "1991-04-12", account: "0123456789", currency: "NGN", tier: 1, phone: "+234 803 555 0142", email: "chioma.eze@example.com", note: "Lost card, duplicate hold, POS debited without value, below the tier for a transfer" },
+  { id: "emeka", name: "Emeka Obi", dob: "1986-09-03", account: "2087654321", currency: "NGN", tier: 3, phone: "+234 806 555 0177", email: "emeka.obi@example.com", note: "Daily limit decline, ATM reversal done, waivable fee, loan, locked login" },
+  { id: "grace", name: "Grace Mensah", dob: "1990-02-27", account: "GB82 WEST 1234 5698 7654 32", currency: "GBP", tier: null, phone: "+44 7700 900461", email: "grace.mensah@example.com", note: "Genuine duplicate, unrecognised merchant, waiver already used" },
+  { id: "david", name: "David Park", dob: "1983-12-19", account: "US64 0210 0002 7700 1234", currency: "USD", tier: null, phone: "+1 202 555 0193", email: "david.park@example.com", note: "Transfers: late, failed and reversed, above the cap; KYC document rejected" },
+  { id: "amara", name: "Amara Nwosu", dob: "1995-06-08", account: "3011223344", currency: "NGN", tier: 2, phone: "+234 809 555 0118", email: "amara.nwosu@example.com", note: "Wrong recipient, airtime not delivered, USSD transfer" },
+] as const;
 
 interface Transfer {
   id: string; business_id: string; created_by: string; recipient_name: string; recipient_account: string;
@@ -187,8 +199,11 @@ function feesAndConversions(now: Date, transfers: Transfer[]) {
 
 /** Wipe everything and load the starting data. Used by Reset demo and on first run. */
 export async function seed(sql: Sql, now = new Date()) {
-  await ensureSchema(sql);
-  await sql.begin((tx) => seedInto(tx, now));
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(4207)`;
+    await tx.unsafe(SCHEMA);
+    await seedInto(tx, now);
+  });
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -205,12 +220,26 @@ async function seedInto(tx: any, now: Date) {
     for (const u of USERS) {
       await tx`insert into business_users ${tx(u)}`;
     }
+    for (const c of PERSONAL) {
+      await tx`insert into businesses (id, name, country, kind, account_number, kyc_tier, verification_status)
+        values (${c.id}, ${c.name + " (personal)"}, ${c.currency === "NGN" ? "Nigeria" : c.currency === "GBP" ? "United Kingdom" : "United States"},
+                'personal', ${c.account}, ${c.tier}, ${c.id === "david" ? "failed" : "approved"})`;
+      await tx`insert into business_users (id, business_id, full_name, first_name, date_of_birth, role, phone, email)
+        values (${c.id}, ${c.id}, ${c.name}, ${c.name.split(" ")[0]}, ${c.dob}, 'payment_rights', ${c.phone}, ${c.email})`;
+    }
+    // Planted case 9: Emeka's online access is locked after failed sign-ins.
+    await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;
+    for (const u of USERS) {
+      const digits = String(Math.abs([...u.id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 7))).slice(-4).padStart(4, "0");
+      await tx`update business_users set phone = ${"+44 7700 90" + digits}, email = ${u.first_name.toLowerCase() + "@" + u.business_id + ".example.com"} where id = ${u.id}`;
+    }
 
     const balances: [string, string, number][] = [
       ["brightline", "USD", 48210.55], ["brightline", "GBP", 23940.1], ["brightline", "NGN", 1250000],
       ["kestrel", "GBP", 31877.42], ["kestrel", "USD", 12650.0], ["kestrel", "NGN", 2140500],
       ["harbour", "NGN", 0], ["northfield", "USD", 96420.3], ["okapi", "NGN", 18450000], ["okapi", "USD", 7300],
       ["saltmarsh", "GBP", 0], ["tidewater", "USD", 152300.75], ["tidewater", "GBP", 8800], ["ember", "NGN", 6230000],
+      ["chioma", "NGN", 184250.5], ["emeka", "NGN", 942100], ["grace", "GBP", 2310.44], ["david", "USD", 5870.12], ["amara", "NGN", 61300],
     ];
     for (const [business_id, currency, amount] of balances) {
       await tx`insert into balances (business_id, currency, amount) values (${business_id}, ${currency}, ${amount})`;
@@ -256,23 +285,20 @@ const ready = globalThis as unknown as { __orchestraReady?: Promise<void> };
  */
 export function ensureSeeded(sql: Sql): Promise<void> {
   if (!ready.__orchestraReady) {
-    ready.__orchestraReady = (async () => {
-      await sql.begin(async (tx) => {
+    // Schema and first seed in one transaction under one lock: the schema's ALTERs and the seed's
+    // TRUNCATE take table locks in different orders, so they must never overlap between processes.
+    ready.__orchestraReady = sql
+      .begin(async (tx) => {
         await tx`select pg_advisory_xact_lock(4207)`;
         await tx.unsafe(SCHEMA);
+        const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from rules`;
+        if (n === 0) await seedInto(tx, new Date());
+      })
+      .then(() => undefined)
+      .catch((err) => {
+        ready.__orchestraReady = undefined; // try again on the next request
+        throw err;
       });
-      const [{ count }] = await sql<{ count: number }[]>`select count(*)::int as count from rules`;
-      if (count === 0) {
-        await sql.begin(async (tx) => {
-          await tx`select pg_advisory_xact_lock(4208)`;
-          const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from rules`;
-          if (n === 0) await seedInto(tx, new Date());
-        });
-      }
-    })().catch((err) => {
-      ready.__orchestraReady = undefined; // try again on the next request
-      throw err;
-    });
   }
   return ready.__orchestraReady;
 }

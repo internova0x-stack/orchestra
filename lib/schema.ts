@@ -171,6 +171,17 @@ alter table escalations add column if not exists action jsonb;
 alter table escalations add column if not exists resolution text;
 alter table escalations add column if not exists decided_at timestamptz;
 
+-- Personal (retail) accounts sit beside the business ones (owner, Nov 23: build the remaining use cases).
+alter table businesses add column if not exists kind text not null default 'business';
+alter table businesses add column if not exists account_number text;
+alter table businesses add column if not exists kyc_tier int;
+alter table businesses alter column registration_number drop not null;
+alter table business_users add column if not exists phone text;
+alter table business_users add column if not exists email text;
+alter table business_users add column if not exists login_locked text;
+alter table conversations add column if not exists stronger_verified_at timestamptz;
+alter table conversations add column if not exists pending_code jsonb;
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;

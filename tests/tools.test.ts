@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { seed } from "../lib/seed.ts";
-import { runTool, respondBy, AWAITING_IDENTITY, type StreamEvent, type ToolCtx } from "../lib/tools.ts";
+import { runTool, respondBy, AWAITING_IDENTITY, AWAITING_CODE, type StreamEvent, type ToolCtx, type ToolResult } from "../lib/tools.ts";
 import { createConversation, verifiedUser, type Conversation } from "../lib/session.ts";
 import { checkIdentity } from "../lib/identity.ts";
 import { Rules } from "../lib/rules.ts";
@@ -19,12 +19,13 @@ after(async () => {
   await sql?.end();
 });
 
-async function session(userId: string | null, now: Date) {
+async function session(userId: string | null, now: Date, stronger = false) {
   const conv = await createConversation(sql!, randomUUID(), userId);
   let c: Conversation = conv;
   if (userId) {
-    await sql!`update conversations set verified_user_id = ${userId}, verified_at = ${now}, last_activity = ${now} where id = ${conv.id}`;
-    c = { ...conv, verified_user_id: userId, verified_at: now, last_activity: now };
+    const strongAt = stronger ? now : null;
+    await sql!`update conversations set verified_user_id = ${userId}, verified_at = ${now}, last_activity = ${now}, stronger_verified_at = ${strongAt} where id = ${conv.id}`;
+    c = { ...conv, verified_user_id: userId, verified_at: now, last_activity: now, stronger_verified_at: strongAt };
   }
   const user = await verifiedUser(sql!, c, now);
   const events: StreamEvent[] = [];
@@ -34,8 +35,8 @@ async function session(userId: string | null, now: Date) {
 
 async function call(s: Awaited<ReturnType<typeof session>>, name: string, input: unknown) {
   const out = await runTool(name, input, s.ctx());
-  assert.notEqual(out, AWAITING_IDENTITY);
-  return out as Exclude<typeof out, typeof AWAITING_IDENTITY>;
+  assert.equal(typeof out, "object", "the tool paused for a form");
+  return out as ToolResult;
 }
 
 // Monday 23 November 2026, 11:00 Lagos time.
@@ -458,11 +459,13 @@ test("balances: one per currency, only the business's own", { skip }, async () =
 test("S2: no tool can add or change a beneficiary, contact details, or approve verification", { skip: false }, async () => {
   const { toolDefinitions } = await import("../lib/tools.ts");
   const names = toolDefinitions().map((t) => (t as { name: string }).name);
-  assert.deepEqual(names.sort(), [
+  for (const demo of [
     "escalate_to_human", "find_incoming_payment", "generate_proof_of_payment", "get_account_restrictions", "get_balance",
     "get_fees", "get_kyc_status", "get_transfer_status", "initiate_recall", "search_knowledge_base", "verify_identity",
-  ].sort());
-  assert.ok(!names.some((n) => /beneficiar|recipient|contact|approve|update|credit/.test(n)));
+  ]) assert.ok(names.includes(demo), demo);
+  // Deliberately missing (Tools and Data Spec): no tool changes contact details or beneficiaries,
+  // approves a loan, KYC or dispute, lifts a review hold, credits funds or contacts an outside party.
+  assert.ok(!names.some((n) => /beneficiar|recipient|contact|approve|update_|credit|lift|decide|send_claim/.test(n)), names.join(", "));
 });
 
 // ---------------------------------------------------------------- deployment
@@ -481,6 +484,53 @@ test("first run: two visitors at once on an empty database seed it exactly once"
     await other.end();
   }
   assert.equal((await sql!`select count(*)::int as n from rules where id = 'late_swift'`)[0].n, 1);
-  assert.equal((await sql!`select count(*)::int as n from businesses`)[0].n, 8);
+  assert.equal((await sql!`select count(*)::int as n from businesses where kind = 'business'`)[0].n, 8);
+  assert.equal((await sql!`select count(*)::int as n from businesses where kind = 'personal'`)[0].n, 5);
   await seed(sql!, MONDAY);
+});
+
+// ---------------------------------------------------------------- use case 4: account access
+
+test("one-time code: only after the standard check, sent to the phone on file, pauses for the form", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const anon = await session(null, MONDAY);
+  assert.equal((await call(anon, "send_one_time_code", {})).ok, false);
+  const s = await session("emeka", MONDAY);
+  const out = await runTool("send_one_time_code", {}, s.ctx());
+  assert.equal(out, AWAITING_CODE);
+  const form = s.events.find((e) => e.type === "code_form") as { sentTo: string; code: string };
+  assert.equal(form.sentTo, "•••• 0177");
+  assert.match(form.code, /^\d{6}$/);
+  const [row] = await sql!`select pending_code from conversations where id = ${s.conv.id}`;
+  assert.equal(row.pending_code.code, form.code);
+});
+
+test("planted 9: Emeka's locked access unlocks only with the stronger check and his yes", { skip }, async () => {
+  const standard = await session("emeka", MONDAY);
+  assert.match((await call(standard, "unlock_account", {})).reason!, /stronger identity check/);
+  const s = await session("emeka", MONDAY, true);
+  assert.match((await call(s, "unlock_account", {})).reason!, /CONFIRMATION_NEEDED/);
+  await confirmPending(s);
+  const done = await call(s, "unlock_account", {});
+  assert.equal(done.ok, true);
+  assert.equal((await sql!`select login_locked from business_users where id = 'emeka'`)[0].login_locked, null);
+  assert.match((await call(s, "unlock_account", {})).reason!, /isn't locked/);
+});
+
+test("reset links go only to the email on file, three a day", { skip }, async () => {
+  const s = await session("chioma", MONDAY, true);
+  for (let i = 0; i < 3; i++) {
+    await call(s, "send_reset_link", {});
+    await confirmPending(s);
+    const out = await call(s, "send_reset_link", {});
+    assert.equal(out.ok, true);
+    assert.equal((out.data as { sent_to: string }).sent_to, "c•••@example.com");
+  }
+  assert.match((await call(s, "send_reset_link", {})).reason!, /3 reset links/);
+});
+
+test("personal accounts: identity uses the last 4 digits of the account number", { skip }, async () => {
+  assert.equal(await checkIdentity(sql!, { full_name: "Chioma Eze", date_of_birth: "1991-04-12", registration_number: "6789" }), "chioma");
+  assert.equal(await checkIdentity(sql!, { full_name: "Grace Mensah", date_of_birth: "1990-02-27", registration_number: "5432" }), "grace");
+  assert.equal(await checkIdentity(sql!, { full_name: "Chioma Eze", date_of_birth: "1991-04-12", registration_number: "0123456789" }), null);
 });

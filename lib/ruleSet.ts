@@ -126,6 +126,7 @@ export const RULE_SET: RuleSeed[] = [
   l("recall_cap_ngn", "Limits and approvals", "Recall cap before human approval (NGN)", "10000000", "₦"),
   l("recall_limit", "Limits and approvals", "Recalls per customer before a human reviews", "3", "per 30 days"),
   l("identity_attempts", "Limits and approvals", "Failed identity checks before the check ends", "2", "per conversation"),
+  l("reset_link_limit", "Limits and approvals", "Password reset links per customer", "3", "per 24 hours"),
 
   // Response targets (owner, Nov 23) and the business-hours calendar
   l("response_urgent", "Response targets", "Urgent: first human response within", "1", "hours"),

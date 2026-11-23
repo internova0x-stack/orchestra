@@ -9,7 +9,7 @@ import { maskSecrets } from "./secrets.ts";
 import { Rules } from "./rules.ts";
 import { createConversation, loadConversation, verifiedUser, type Conversation, type VerifiedUser } from "./session.ts";
 import { dateTime, longDate } from "./time.ts";
-import { AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
+import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
@@ -20,6 +20,14 @@ let core: string | null = null;
 function coreInstructions(): string {
   if (core === null) core = fs.readFileSync(path.join(process.cwd(), "prompts", "core-instructions.md"), "utf8").trim();
   return core;
+}
+
+// Instructions for the use cases built after the demo. A separate file so the Behaviour Guide's
+// core instructions stay word for word.
+let extended: string | null = null;
+function extendedScope(): string {
+  if (extended === null) extended = fs.readFileSync(path.join(process.cwd(), "prompts", "extended-scope.md"), "utf8").trim();
+  return extended;
 }
 
 /**
@@ -42,8 +50,8 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
   const pa = conv.pending_action;
   if (pa) {
     lines.push(pa.confirmed
-      ? `- The customer has just confirmed the recall on ${pa.transfer_id}. Call initiate_recall for ${pa.transfer_id} now.`
-      : `- Waiting for the customer to confirm the recall on ${pa.transfer_id}. Only their yes confirms it.`);
+      ? `- The customer has just confirmed: ${pa.label}. Call ${pa.tool} for ${pa.record} now.`
+      : `- Waiting for the customer to confirm: ${pa.label}. Only their yes confirms it.`);
   }
   // Decisions the support team has made on this conversation's cases since the handoff.
   const cases = await sql<{ reference: string; status: string; resolution: string | null; action: { type: string; reference: string; payout: string } | null; decided_at: Date | null }[]>`
@@ -69,6 +77,8 @@ export interface TurnInput {
   identity?: IdentityAnswers;
   /** Set by the "Yes, go ahead" (true) and "Cancel" (false) buttons. */
   confirm?: boolean;
+  /** The one-time code typed into the code form. */
+  code?: string;
 }
 
 const YES = /^\s*(yes|yeah|yep|yup|sure|ok|okay|go ahead|please do|please go ahead|do it|confirm|confirmed|proceed)\b[^?]{0,60}$/i;
@@ -81,15 +91,45 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
   let user = await verifiedUser(sql, conv, now);
   if (!user && conv.verified_user_id) {
     // The verified session expired after inactivity: back to unverified.
-    await sql`update conversations set verified_user_id = null, verified_at = null where id = ${conv.id}`;
-    conv = { ...conv, verified_user_id: null, verified_at: null };
+    await sql`update conversations set verified_user_id = null, verified_at = null, stronger_verified_at = null where id = ${conv.id}`;
+    conv = { ...conv, verified_user_id: null, verified_at: null, stronger_verified_at: null };
   }
 
   const messages = [...(conv.messages as MessageParam[])];
   const pending = (conv.pending_results as ToolResultParam[]) ?? [];
   const content: ContentBlockParam[] = [];
 
-  if (input.identity) {
+  if (input.code !== undefined) {
+    const pc = conv.pending_code;
+    if (!pc) {
+      emit({ type: "error", message: "That code has expired. Send a message to start again." });
+      emit({ type: "done" });
+      return;
+    }
+    const ok = String(input.code).replace(/\D/g, "") === pc.code;
+    const attempts = pc.attempts + 1;
+    const ctxBase = { sql, conv, user, toolUseId: pc.tool_use_id };
+    let result: ToolResult;
+    if (ok) {
+      await sql`update conversations set stronger_verified_at = ${now}, pending_code = null where id = ${conv.id}`;
+      conv = { ...conv, stronger_verified_at: now, pending_code: null };
+      if (user) user = { ...user, stronger: true };
+      result = { ok: true, data: { stronger_check: "passed" } };
+      await audit(ctxBase, { kind: "identity", tool: "send_one_time_code", summary: "send_one_time_code · code confirmed · stronger check passed" });
+    } else {
+      const ended = attempts >= 3;
+      await sql`update conversations set pending_code = ${ended ? null : sql.json({ ...pc, attempts } as never)} where id = ${conv.id}`;
+      result = { ok: false, reason: ended ? "The code was wrong three times. The stronger check has failed: take no action, offer the in-person or documented route, and hand off." : "The code didn't match. The customer can try again in the form." };
+      await audit(ctxBase, { kind: ended ? "refusal" : "identity", tool: "send_one_time_code", summary: `send_one_time_code · wrong code (${attempts} of 3)` });
+      if (!ended) {
+        emit({ type: "code_retry" });
+        emit({ type: "done" });
+        return;
+      }
+    }
+    content.push(...pending, { type: "tool_result", tool_use_id: pc.tool_use_id, content: JSON.stringify(result), is_error: !result.ok });
+    await sql`update conversations set pending_code = null where id = ${conv.id}`;
+  } else if (input.identity) {
     if (!conv.pending_identity_tool_id) {
       emit({ type: "error", message: "The identity form has expired. Send a message to start again." });
       emit({ type: "done" });
@@ -169,6 +209,16 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
         refusal_reason: "Secret in a customer message",
       });
     }
+    if (conv.pending_code) {
+      // The customer typed instead of using the code form: close the open tool call, then their message.
+      content.push(...pending, {
+        type: "tool_result",
+        tool_use_id: conv.pending_code.tool_use_id,
+        content: JSON.stringify({ ok: false, reason: "The customer sent a message instead of entering the code in the form." }),
+        is_error: true,
+      });
+      await sql`update conversations set pending_code = null where id = ${conv.id}`;
+    }
     if (conv.pending_identity_tool_id) {
       // The customer typed instead of using the form: close the open tool call, then their message.
       content.push(...pending, {
@@ -189,11 +239,11 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
         const next = { ...pa, confirmed: true };
         await sql`update conversations set pending_action = ${sql.json(next as never)} where id = ${conv.id}`;
         conv = { ...conv, pending_action: next };
-        await audit({ sql, conv, user, toolUseId: `confirm-${Date.now()}` }, { kind: "rule", tool: pa.tool, summary: `customer confirmed · recall on ${pa.transfer_id}` });
+        await audit({ sql, conv, user, toolUseId: `confirm-${Date.now()}` }, { kind: "rule", tool: pa.tool, summary: `customer confirmed · ${pa.label}` });
       } else if (no) {
         await sql`update conversations set pending_action = null where id = ${conv.id}`;
         conv = { ...conv, pending_action: null };
-        await audit({ sql, conv, user, toolUseId: `confirm-${Date.now()}` }, { kind: "rule", tool: pa.tool, summary: `customer cancelled · recall on ${pa.transfer_id}` });
+        await audit({ sql, conv, user, toolUseId: `confirm-${Date.now()}` }, { kind: "rule", tool: pa.tool, summary: `customer cancelled · ${pa.label}` });
       }
     }
   }
@@ -222,7 +272,8 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
         fallbacks: "default",
         output_config: { effort: EFFORT },
         system: [
-          { type: "text", text: coreInstructions(), cache_control: { type: "ephemeral" } },
+          { type: "text", text: coreInstructions() },
+          { type: "text", text: extendedScope(), cache_control: { type: "ephemeral" } },
           { type: "text", text: await sessionContext(sql, new Date(), user, conv) },
         ],
         tools,
@@ -263,9 +314,10 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
 
       const results: ToolResultParam[] = [];
       let awaiting: string | null = null;
+      let awaitingCode = false;
       for (const use of toolUses) {
         const ctx = { sql, conv, user, now: new Date(), toolUseId: use.id, emit };
-        let out: ToolResult | typeof AWAITING_IDENTITY;
+        let out: ToolResult | typeof AWAITING_IDENTITY | typeof AWAITING_CODE;
         try {
           out = await runTool(use.name, use.input, ctx);
         } catch (err) {
@@ -273,6 +325,11 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
           console.error(`tool ${use.name} failed`, err);
           await audit(ctx, { kind: "error", tool: use.name, summary: `${use.name} · error` }).catch(() => {});
           out = { ok: false, reason: "SYSTEM_ERROR: this tool failed. Tell the customer something went wrong on your side, that you couldn't complete it, and escalate." };
+        }
+        if (out === AWAITING_CODE) {
+          awaitingCode = true;
+          emit({ type: "tool_end", id: use.id, name: use.name, ok: true });
+          continue;
         }
         if (out === AWAITING_IDENTITY) {
           awaiting = use.id;
@@ -283,6 +340,13 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
         results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(out), is_error: !out.ok });
       }
 
+      if (awaitingCode) {
+        // Pause: the code form is on screen. pending_code (set by the tool) names the open call.
+        saved = [...messages];
+        await save({ pending_results: results });
+        emit({ type: "done" });
+        return;
+      }
       if (awaiting) {
         // Pause: the identity form is on screen. The other results wait with the open call.
         saved = [...messages];
@@ -319,7 +383,7 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
       ).catch(() => null);
       emit({
         type: "error",
-        message: handed && handed !== AWAITING_IDENTITY && handed.ok
+        message: handed && typeof handed === "object" && handed.ok
           ? "Something went wrong on my side and I couldn't complete that. I've passed it to the team."
           : "Something went wrong on my side and I couldn't complete that. Please try again in a moment.",
       });
