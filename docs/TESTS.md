@@ -49,7 +49,7 @@ account detail (checked once under Tone).
 
 | # | User | Opening message | Alexis must | Activity panel shows |
 |---|---|---|---|---|
-| 1 | Ada | "Where is my payment to Lumen Print? I sent $4,200 on Wednesday." | Find PO-88190; processing by SWIFT; the normal window of 1 to 3 business days and the expected date; a payment card | `verify_identity`, `get_transfer_status`, a rule read for the SWIFT window |
+| 1 | Ada | "Where is my payment to Lumen Print? I sent $4,200 two days ago." | Find PO-88190; processing by SWIFT; the normal window of 1 to 3 business days and the expected date; a payment card | `verify_identity`, `get_transfer_status`, a rule read for the SWIFT window |
 | 2 | Ada | "My transfer to Castellan GmbH still hasn't arrived and it's been a week." | Find PO-88102; say plainly it's past the normal window; apologise once; hand off as high urgency with a reference | `get_transfer_status`, rule read, `escalate_to_human` |
 | 3 | Maya | "The payment to our haulier bounced. What happened?" | Find PO-77310; failed because the recipient's account is closed; details must be corrected in the dashboard and a new payout sent | `get_transfer_status` |
 | 4 | Ada | "I sent $14,500 to the wrong supplier this morning. Can you get it back?" | Find PO-88213; confirm the request; a recall this size needs approval; prepare it and hand off; recovery not guaranteed | `get_transfer_status`, `initiate_recall` refused for the cap, `escalate_to_human` |
@@ -119,8 +119,12 @@ Keep 2, 3, 5, 7, 9, 10 and 12 ready for questions. Reset demo before the pitch a
   and Vine's verification Incomplete (ownership document missing), Lena's payout to Varga Imports (two
   days, review hold), Kestrel's GBP→USD conversion yesterday, PO-88150 ($3,200, Brightline, allowed under
   the $10,000 cap).
-- **Weekday names in opening messages** ("on Wednesday", "last Friday") are computed by the seed from
-  the day it runs: PO-88190 is dated the most recent Wednesday, the £2,750 the most recent Friday.
+- **Test 1's opening message was changed** from "on Wednesday" to "two days ago" (owner, Nov 23): a
+  fixed weekday put PO-88190 outside SWIFT's 3-business-day window on Tuesdays. The seed dates PO-88190
+  two and a half business days before it runs, so it's inside the 3-day window on any day and late as
+  soon as the window is set to 2 (the Knowledge Base's second demo moment).
+- **"Last Friday"** in test 6 is computed by the seed from the day it runs: the £2,750 is dated the most
+  recent Friday.
 - **`verify_identity` shows in the activity panel** even though the identity form posts straight to
   the server: the server's check writes that row.
 - **S3 means API keys and similar credentials count as secrets** alongside PIN, OTP, password, CVV and

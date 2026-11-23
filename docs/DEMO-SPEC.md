@@ -210,9 +210,8 @@ safety tests, with the named sample users, opening messages, payout references a
 rows. The seed data matches it. The earlier "case 13" (a recall between $2,000 and $10,000 for the cap
 demo) is safety test S6 (PO-88150, $3,200).
 
-The Knowledge Base's second demo moment (SWIFT window 3 → 2 days makes PO-88190 late) is supported but
-not one of the tests: PO-88190 is dated the most recent Wednesday, which isn't always between 2 and 3
-business days ago.
+The Knowledge Base's second demo moment (SWIFT window 3 → 2 days makes PO-88190 late) isn't one of the
+tests but works on any day: PO-88190 is seeded two and a half business days back.
 
 ## Two-day plan
 
