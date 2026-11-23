@@ -16,14 +16,14 @@ export async function proofPdf(p: ProofDoc): Promise<Uint8Array> {
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const ink = rgb(0.08, 0.09, 0.17);
   const grey = rgb(0.36, 0.38, 0.45);
-  const indigo = rgb(0.26, 0.22, 0.79);
+  const black = rgb(0.04, 0.04, 0.04);
 
   // Watermark across the page.
   page.drawText("SIMULATED DOCUMENT", {
     x: 95, y: 260, size: 54, font: bold, color: rgb(0.85, 0.86, 0.92), rotate: degrees(40), opacity: 0.6,
   });
 
-  page.drawRectangle({ x: 0, y: 811.89, width: 595.28, height: 30, color: indigo });
+  page.drawRectangle({ x: 0, y: 811.89, width: 595.28, height: 30, color: black });
   page.drawText("Prototype - simulated data. Not a real payment record.", { x: 48, y: 822, size: 10, font: bold, color: rgb(1, 1, 1) });
 
   page.drawText("Payment confirmation", { x: 48, y: 750, size: 26, font: bold, color: ink });

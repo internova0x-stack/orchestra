@@ -43,73 +43,77 @@ links to the transcript and activity log. Empty: "No open cases. Handoffs from A
 Define once as CSS variables; use them everywhere. Dark is the default; light is the same variables
 switched from the top bar.
 
-```css
-/* Dark theme: the default */
-:root {
-  /* Brand: indigo */
-  --brand-600: #4F46E5;   /* primary buttons */
-  --brand-700: #4338CA;   /* hover and pressed */
-  --brand-accent: #A5B4FC; /* links, Alexis label, selected text */
-  --brand-50:  #232654;   /* tinted backgrounds, selected rows */
+**Owner, Nov 23: the platform is black; indigo is the secondary colour, for highlights only.** Surfaces
+and text are neutral black, white and grey; primary buttons are white on the dark theme and black on the
+light one (`--primary`). Indigo (`--brand-*`) is kept for highlights: links, the "Alexis · AI" label, the
+selected tab and row, the payout timeline, the handoff edge in the activity panel, the rule-saved flash,
+the "AI" in the wordmark and the prototype banner. These tokens are a copy of `app/globals.css`.
 
-  /* Text */
-  --text-1: #ECEEF8;      /* main text */
-  --text-2: #A3A8BF;      /* secondary text, labels */
+```css
+:root {
+  /* Primary: black and white. Main buttons, the surfaces, the text. */
+  --primary: #F4F4F5;        /* primary buttons (white on the black theme) */
+  --primary-hover: #D4D4D8;
+  --on-primary: #09090B;     /* text on a primary button */
+
+  /* Secondary: indigo, for highlights only. */
+  --brand-600: #6366F1;      /* highlight lines and dots: timeline, handoff edge, selected case */
+  --brand-700: #4F46E5;
+  --brand-accent: #A5B4FC;   /* links, the Alexis label, the selected tab's text */
+  --brand-50: #1E1B4B;       /* tinted backgrounds: selected tab and row, rule-saved flash */
+
+  --text-1: #F4F4F5;
+  --text-2: #A1A1AA;
   --text-on-brand: #FFFFFF;
 
-  /* Surfaces */
-  --surface-page:  #0E1020;
-  --surface-panel: #171A2E;
-  --surface-sunk:  #20243C; /* customer message bubble, code rows */
-  --border:        #2C3150; /* dividers and panel edges */
-  --border-strong: #6B7199; /* input and button outlines */
+  --surface-page: #000000;
+  --surface-panel: #0E0E10;
+  --surface-sunk: #1A1A1D;
+  --border: #27272A;
+  --border-strong: #52525B;
 
-  /* Status: always paired with a word and an icon */
-  --ok:   #4ADE80;  --ok-bg:   #12301F;
-  --wait: #FBBF24;  --wait-bg: #3A2A0B;
-  --stop: #F87171;  --stop-bg: #3D1717;
-  --info: #93C5FD;  --info-bg: #172A4D;
+  --ok: #4ADE80;  --ok-bg: #0F2A1A;
+  --wait: #FBBF24; --wait-bg: #33260A;
+  --stop: #F87171; --stop-bg: #361414;
+  --info: #93C5FD; --info-bg: #13233F;
 
-  /* Prototype banner */
-  --banner-bg: #4338CA;  --banner-text: #FFFFFF;
+  --banner-bg: #4338CA; --banner-text: #FFFFFF; /* the prototype label stays a highlight */
 
-  /* Type */
-  --font-ui:   'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --size-xs: 12px;  --size-sm: 14px;  --size-md: 16px;
-  --size-lg: 20px;  --size-xl: 28px;
+  --font-ui: var(--font-inter), 'Inter', system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, monospace;
+  --size-xs: 12px; --size-sm: 14px; --size-md: 16px;
+  --size-lg: 20px; --size-xl: 28px;
   --line: 1.5;
 
-  /* Space and shape */
-  --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px;
   --space-4: 16px; --space-6: 24px; --space-8: 32px;
-  --radius-sm: 6px;  --radius-md: 10px;  --radius-lg: 16px;
-  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
 }
 
-/* Light theme: optional, switched from the top bar */
 [data-theme='light'] {
-  --brand-600: #4338CA;
-  --brand-700: #3730A3;
+  --primary: #09090B;
+  --primary-hover: #27272A;
+  --on-primary: #FFFFFF;
+  --brand-600: #4F46E5;
+  --brand-700: #4338CA;
   --brand-accent: #4338CA;
-  --brand-50:  #EEF0FF;
-
-  --text-1: #14162B;
-  --text-2: #5B6072;
-
-  --surface-page:  #F6F7FB;
+  --brand-50: #EEF0FF;
+  --text-1: #09090B;
+  --text-2: #52525B;
+  --surface-page: #F4F4F5;
   --surface-panel: #FFFFFF;
-  --surface-sunk:  #F0F2F8;
-  --border:        #E3E6EF;
-  --border-strong: #8A90A6;
-
-  --ok:   #166534;  --ok-bg:   #E8F6EC;
-  --wait: #B45309;  --wait-bg: #FDF3E3;
-  --stop: #B91C1C;  --stop-bg: #FDECEC;
-  --info: #1D4ED8;  --info-bg: #E8EEFD;
-
-  --banner-bg: #14162B;
-  --shadow-panel: 0 1px 2px rgba(20, 22, 43, 0.06);
+  --surface-sunk: #F0F0F2;
+  --border: #E4E4E7;
+  --border-strong: #8A8A93;
+  --ok: #166534;  --ok-bg: #E8F6EC;
+  --wait: #B45309; --wait-bg: #FDF3E3;
+  --stop: #B91C1C; --stop-bg: #FDECEC;
+  --info: #1D4ED8; --info-bg: #E8EEFD;
+  --banner-bg: #4338CA;
+  --shadow-panel: 0 1px 2px rgba(9, 9, 11, 0.06);
+  color-scheme: light;
 }
 ```
 

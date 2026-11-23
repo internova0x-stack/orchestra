@@ -1,26 +1,33 @@
-/* Orchestra AI design tokens (docs/DESIGN.md). Dark is the default; light is the same variables. */
+/* Orchestra AI design tokens (docs/DESIGN.md). Dark is the default; light is the same variables.
+   Owner, Nov 23: the platform is black; indigo is the secondary colour, for highlights only. */
 :root {
-  --brand-600: #4F46E5;
-  --brand-700: #4338CA;
-  --brand-accent: #A5B4FC;
-  --brand-50: #232654;
+  /* Primary: black and white. Main buttons, the surfaces, the text. */
+  --primary: #F4F4F5;        /* primary buttons (white on the black theme) */
+  --primary-hover: #D4D4D8;
+  --on-primary: #09090B;     /* text on a primary button */
 
-  --text-1: #ECEEF8;
-  --text-2: #A3A8BF;
+  /* Secondary: indigo, for highlights only. */
+  --brand-600: #6366F1;      /* highlight lines and dots: timeline, handoff edge, selected case */
+  --brand-700: #4F46E5;
+  --brand-accent: #A5B4FC;   /* links, the Alexis label, the selected tab's text */
+  --brand-50: #1E1B4B;       /* tinted backgrounds: selected tab and row, rule-saved flash */
+
+  --text-1: #F4F4F5;
+  --text-2: #A1A1AA;
   --text-on-brand: #FFFFFF;
 
-  --surface-page: #0E1020;
-  --surface-panel: #171A2E;
-  --surface-sunk: #20243C;
-  --border: #2C3150;
-  --border-strong: #6B7199;
+  --surface-page: #000000;
+  --surface-panel: #0E0E10;
+  --surface-sunk: #1A1A1D;
+  --border: #27272A;
+  --border-strong: #52525B;
 
-  --ok: #4ADE80;  --ok-bg: #12301F;
-  --wait: #FBBF24; --wait-bg: #3A2A0B;
-  --stop: #F87171; --stop-bg: #3D1717;
-  --info: #93C5FD; --info-bg: #172A4D;
+  --ok: #4ADE80;  --ok-bg: #0F2A1A;
+  --wait: #FBBF24; --wait-bg: #33260A;
+  --stop: #F87171; --stop-bg: #361414;
+  --info: #93C5FD; --info-bg: #13233F;
 
-  --banner-bg: #4338CA; --banner-text: #FFFFFF;
+  --banner-bg: #4338CA; --banner-text: #FFFFFF; /* the prototype label stays a highlight */
 
   --font-ui: var(--font-inter), 'Inter', system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, monospace;
@@ -31,28 +38,31 @@
   --space-1: 4px; --space-2: 8px; --space-3: 12px;
   --space-4: 16px; --space-6: 24px; --space-8: 32px;
   --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
-  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
 
 [data-theme='light'] {
-  --brand-600: #4338CA;
-  --brand-700: #3730A3;
+  --primary: #09090B;
+  --primary-hover: #27272A;
+  --on-primary: #FFFFFF;
+  --brand-600: #4F46E5;
+  --brand-700: #4338CA;
   --brand-accent: #4338CA;
   --brand-50: #EEF0FF;
-  --text-1: #14162B;
-  --text-2: #5B6072;
-  --surface-page: #F6F7FB;
+  --text-1: #09090B;
+  --text-2: #52525B;
+  --surface-page: #F4F4F5;
   --surface-panel: #FFFFFF;
-  --surface-sunk: #F0F2F8;
-  --border: #E3E6EF;
-  --border-strong: #8A90A6;
+  --surface-sunk: #F0F0F2;
+  --border: #E4E4E7;
+  --border-strong: #8A8A93;
   --ok: #166534;  --ok-bg: #E8F6EC;
   --wait: #B45309; --wait-bg: #FDF3E3;
   --stop: #B91C1C; --stop-bg: #FDECEC;
   --info: #1D4ED8; --info-bg: #E8EEFD;
-  --banner-bg: #14162B;
-  --shadow-panel: 0 1px 2px rgba(20, 22, 43, 0.06);
+  --banner-bg: #4338CA;
+  --shadow-panel: 0 1px 2px rgba(9, 9, 11, 0.06);
   color-scheme: light;
 }
 
@@ -100,8 +110,8 @@ a { color: var(--brand-accent); }
   background: transparent; cursor: pointer; font-size: var(--size-sm); font-weight: 600;
 }
 .btn:hover { background: var(--surface-sunk); }
-.btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: var(--text-on-brand); }
-.btn-primary:hover { background: var(--brand-700); }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .toast {
   position: fixed; top: 100px; left: 50%; transform: translateX(-50%); z-index: 10;
