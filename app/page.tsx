@@ -10,6 +10,7 @@ import { RESET_EVENT } from "./components/events";
 interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: string; urgency: string | null; references: string[]; takenOverBy: string | null;
+  channel: "app" | "whatsapp" | "email"; subject: string | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
 }
 interface Counts { total: number; open: number; resolvedByAlexis: number; handedOff: number; urgentOpen: number; withoutPerson: number | null }
@@ -22,6 +23,12 @@ interface Detail {
 interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
 
 const ALL = "all";
+const CHANNEL_NAME = { app: "App chat", whatsapp: "WhatsApp", email: "Email" } as const;
+
+/** Where the customer wrote from, as a small labelled chip. */
+function ChannelChip({ channel }: { channel: keyof typeof CHANNEL_NAME }) {
+  return <span className={`chip chip-channel chip-${channel}`}>{CHANNEL_NAME[channel]}</span>;
+}
 const STATUS_ORDER = ["In progress", "Taken over", "Waiting on customer", "Handed off", "Needs approval", "Resolved by Alexis", "Resolved by staff"];
 
 function ago(iso: string) {
@@ -40,6 +47,7 @@ export default function InboxPage() {
   const [status, setStatus] = useState(ALL);
   const [category, setCategory] = useState(ALL);
   const [urgency, setUrgency] = useState(ALL);
+  const [channel, setChannel] = useState(ALL);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -118,8 +126,9 @@ export default function InboxPage() {
       (status === ALL || (status === "open" ? !c.status.startsWith("Resolved") : c.status === status)) &&
       (category === ALL || c.category === category) &&
       (urgency === ALL || (urgency === "none" ? !c.urgency : c.urgency === urgency)) &&
-      (!q || [c.customer, c.business, c.firstMessage, ...c.references].some((v) => v?.toLowerCase().includes(q))));
-  }, [cases, status, category, urgency, search]);
+      (channel === ALL || c.channel === channel) &&
+      (!q || [c.customer, c.business, c.firstMessage, c.subject, ...c.references].some((v) => v?.toLowerCase().includes(q))));
+  }, [cases, status, category, urgency, channel, search]);
 
   const c = cases?.find((x) => x.id === selected) ?? null;
   const takenBy = detail?.takenOverBy ?? null;
@@ -166,6 +175,7 @@ export default function InboxPage() {
               <Filter label="Status" value={status} onChange={setStatus} options={[[ALL, "Status"], ["open", "All open"], ...STATUS_ORDER.map((s) => [s, s] as [string, string])]} />
               <Filter label="Category" value={category} onChange={setCategory} options={[[ALL, "Category"], ...categories.map((s) => [s, s] as [string, string])]} />
               <Filter label="Urgency" value={urgency} onChange={setUrgency} options={[[ALL, "Urgency"], ["urgent", "Urgent"], ["high", "High"], ["normal", "Normal"], ["none", "Not handed off"]]} />
+              <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["whatsapp", "WhatsApp"], ["email", "Email"]]} />
             </div>
             <span className="label">{shown.length} of {cases?.length ?? 0} conversations · updates live</span>
           </div>
@@ -181,10 +191,12 @@ export default function InboxPage() {
                 <span className="case-top">
                   <StatusChip status={k.status} />
                   {k.urgency && <UrgencyChip urgency={k.urgency} />}
+                  <ChannelChip channel={k.channel} />
                   <span className="label" style={{ marginLeft: "auto" }}>{ago(k.lastActivity)}</span>
                 </span>
                 <span className="case-business">{k.business ?? "Customer not identified"}{k.customer ? ` · ${k.customer}` : ""}</span>
                 <span className="label">{k.category}{k.verified ? "" : " · identity not verified"}{k.takenOverBy ? ` · ${k.takenOverBy} is handling it` : ""}</span>
+                {k.subject && <span className="case-snippet"><b>{k.subject}</b></span>}
                 {k.firstMessage && <span className="case-snippet">“{k.firstMessage}”</span>}
               </button>
             ))}
@@ -199,7 +211,7 @@ export default function InboxPage() {
               <div className="panel-head inbox-head">
                 <div>
                   <div className="panel-title">{c.business ?? "Customer not identified"}{c.customer ? ` · ${c.customer}` : ""}</div>
-                  <div className="label">{c.category} · started {when(c.started)} · identity {c.verified ? "verified" : "not verified"}</div>
+                  <div className="label">{CHANNEL_NAME[c.channel]}{c.subject ? ` · “${c.subject}”` : ""} · {c.category} · started {when(c.started)} · identity {c.verified ? "verified" : "not verified"}</div>
                 </div>
                 <span className="inbox-chips">
                   <StatusChip status={c.status} />

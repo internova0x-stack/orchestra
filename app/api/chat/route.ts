@@ -2,6 +2,7 @@ import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 import { runTurn } from "@/lib/agent.ts";
 import type { StreamEvent } from "@/lib/tools.ts";
+import { CHANNELS, type Channel } from "@/lib/session.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ export async function POST(req: Request) {
     confirm?: boolean;
     code?: string;
     image?: { media_type: string; data: string };
+    channel?: string;
+    subject?: string;
   } | null;
   if (!body?.conversationId || !UUID.test(body.conversationId)) {
     return Response.json({ error: "bad_request" }, { status: 400 });
@@ -51,6 +54,8 @@ export async function POST(req: Request) {
             confirm: typeof body.confirm === "boolean" ? body.confirm : undefined,
             code: typeof body.code === "string" ? body.code.slice(0, 12) : undefined,
             image: imageOk(body.image) ? (body.image as { media_type: "image/jpeg"; data: string }) : undefined,
+            channel: CHANNELS.includes(body.channel as Channel) ? (body.channel as Channel) : "app",
+            subject: typeof body.subject === "string" ? body.subject.slice(0, 200) : undefined,
           },
           emit,
         );

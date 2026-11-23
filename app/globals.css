@@ -316,7 +316,10 @@ a { color: var(--brand-accent); }
   width: 100%; min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-md);
   background: var(--surface-sunk); border: 1px solid var(--border-strong); color: var(--text-1); font-size: var(--size-sm);
 }
-.filter-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.filter-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.chip-channel { background: var(--surface-sunk); color: var(--text-2); }
+.chip-whatsapp { color: var(--ok); background: var(--ok-bg); }
+.chip-email { color: var(--info); background: var(--info-bg); }
 .case-snippet { color: var(--text-2); font-size: var(--size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .case-facts { margin: 0; padding: var(--space-3) var(--space-6); display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); border-bottom: 1px solid var(--border); }
 .case-facts dt { color: var(--text-2); font-size: var(--size-xs); }
@@ -354,6 +357,21 @@ a { color: var(--brand-accent); }
 .phone .msg { max-width: 88%; }
 .phone .composer { padding: var(--space-3) var(--space-4); }
 .phone .attach-bar { padding: 0 var(--space-4) var(--space-4); }
+.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-1); }
+.segmented .btn { padding: 0 var(--space-2); }
+.segmented .btn[aria-checked='true'] { background: var(--brand-50); color: var(--brand-accent); border-color: var(--brand-600); }
+.secure-link { margin-top: var(--space-2); }
+.email-subject { padding: var(--space-3) var(--space-4) 0; border-top: 1px solid var(--border); }
+.phone-email .email-subject + .composer { border-top: 0; }
+/* WhatsApp: the chat's own look, in the platform's tokens (no logos or brand colours). */
+.phone-whatsapp .phone-head { border-bottom-color: var(--ok); }
+.phone-whatsapp .msg-customer { background: var(--ok-bg); }
+.phone-whatsapp .msg { border-radius: var(--radius-md); }
+/* Email: each message is a full-width email in the thread. */
+.phone-email .messages { gap: var(--space-4); }
+.phone-email .msg { max-width: 100%; align-self: stretch; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-panel); }
+.phone-email .msg-customer { background: var(--surface-sunk); }
+.phone-email .composer textarea { min-height: 96px; }
 .chat-notice { align-self: center; text-align: center; font-size: var(--size-xs); color: var(--text-2); padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); }
 @media (max-width: 799px) {
   .customer-stage { flex-direction: column; align-items: stretch; padding: 0; gap: 0; }

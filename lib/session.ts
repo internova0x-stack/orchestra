@@ -16,7 +16,13 @@ export interface Conversation {
   last_activity: Date;
   /** The member of the team who took the conversation over in the console; Alexis is paused meanwhile. */
   taken_over_by: string | null;
+  /** Where the customer wrote from: the bank's app, WhatsApp or email (simulated). */
+  channel: Channel;
+  email_subject: string | null;
 }
+
+export type Channel = "app" | "whatsapp" | "email";
+export const CHANNELS: Channel[] = ["app", "whatsapp", "email"];
 
 /** An action Alexis has asked the customer to confirm. Only the customer's own yes confirms it. */
 export interface PendingAction {
@@ -49,9 +55,10 @@ export async function loadConversation(sql: Sql, id: string): Promise<Conversati
   return rows[0] ?? null;
 }
 
-export async function createConversation(sql: Sql, id: string, typingUserId: string | null): Promise<Conversation> {
+export async function createConversation(sql: Sql, id: string, typingUserId: string | null, channel: Channel = "app", subject: string | null = null): Promise<Conversation> {
   const rows = await sql<Conversation[]>`
-    insert into conversations (id, typing_user_id) values (${id}, ${typingUserId}) returning *`;
+    insert into conversations (id, typing_user_id, channel, email_subject)
+    values (${id}, ${typingUserId}, ${channel}, ${channel === "email" ? subject : null}) returning *`;
   return rows[0];
 }
 

@@ -113,19 +113,21 @@ export function transcriptOf(messages: Message[] | null): { who: string; text: s
 export interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: CaseStatus; urgency: string | null; references: string[]; takenOverBy: string | null;
+  channel: "app" | "whatsapp" | "email"; subject: string | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
 }
 
 interface ConvRow {
   id: string; created_at: Date; last_activity: Date; messages: Message[];
   pending_action: { confirmed?: boolean } | null; pending_identity_tool_id: string | null; pending_code: unknown; taken_over_by: string | null;
+  channel: "app" | "whatsapp" | "email"; email_subject: string | null;
   verified: boolean; customer: string | null; business: string | null; tools: string[] | null;
 }
 
 /** Every customer conversation, newest activity first. */
 export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> {
   const convs = await sql<ConvRow[]>`
-    select c.id, c.created_at, c.last_activity, c.messages, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by,
+    select c.id, c.created_at, c.last_activity, c.messages, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by, c.channel, c.email_subject,
       c.verified_user_id is not null as verified,
       coalesce(v.full_name, t.full_name) as customer, coalesce(vb.name, tb.name) as business,
       (select array_agg(a.tool order by a.id) from audit_log a where a.conversation_id = c.id and a.tool is not null) as tools
@@ -153,6 +155,8 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
       category: categoryOf(c.tools ?? [], hs.map((h) => h.trigger)),
       status: statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by }, now),
       takenOverBy: c.taken_over_by,
+      channel: c.channel ?? "app",
+      subject: c.email_subject,
       urgency: urgencyOf(hs),
       references: hs.map((h) => h.reference),
       started: new Date(c.created_at).toISOString(),

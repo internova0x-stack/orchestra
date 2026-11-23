@@ -7,7 +7,7 @@ import { GREETING } from "./greeting.ts";
 import { checkIdentity, type IdentityAnswers } from "./identity.ts";
 import { maskSecrets } from "./secrets.ts";
 import { Rules } from "./rules.ts";
-import { createConversation, loadConversation, verifiedUser, type Conversation, type VerifiedUser } from "./session.ts";
+import { createConversation, loadConversation, verifiedUser, type Channel, type Conversation, type VerifiedUser } from "./session.ts";
 import { dateTime, longDate } from "./time.ts";
 import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
 import { appendTurn, forModel, hadStaff } from "./takeover.ts";
@@ -65,6 +65,7 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
     else if (c.status === "resolved") lines.push(`- Update on ${c.reference}: the team marked the case resolved${c.resolution ? ` (${c.resolution})` : ""}.`);
     else lines.push(`- ${c.reference} is open with the team. If the customer asks again, give its status and reference; don't open a second case for the same issue.`);
   }
+  lines.push(CHANNEL_NOTE[conv.channel ?? "app"](conv));
   if (hadStaff(conv.messages as never)) {
     lines.push("- A member of the support team took this conversation over earlier and replied in person; their replies are marked [Reply from …]. They have handed it back to you. Build on what they said, check the records before repeating any fact, and don't introduce yourself again.");
   }
@@ -74,6 +75,15 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
 
 // Reads ANTHROPIC_API_KEY. Busy (529) and rate-limit (429) answers are retried with the service's back-off.
 const client = () => new Anthropic({ maxRetries: 4 });
+
+/** How to write in each channel. The forms and buttons still appear for the customer, as secure links. */
+const CHANNEL_NOTE: Record<Channel, (c: Conversation) => string> = {
+  app: () => "- Channel: the bank's app chat.",
+  whatsapp: () =>
+    "- Channel: WhatsApp. Write as WhatsApp messages: short, plain text, no headings or tables, one idea per message. The identity form, Yes/Cancel and the code form reach the customer as secure links they tap; never ask for those details in the chat itself.",
+  email: (c) =>
+    `- Channel: email${c.email_subject ? `, subject "${c.email_subject}"` : ""}. Reply as an email: a short greeting (their first name once verified), short paragraphs, everything they need in one reply, and sign off "Alexis, AI support assistant". The identity form, Yes/Cancel and the code form reach them as secure links in the email; never ask for those details in a reply email.`,
+};
 
 /** Why the AI service failed, in a line for the console's activity log. Never includes the key. */
 export function describeError(err: unknown): { short: string; transient: boolean } {
@@ -97,6 +107,10 @@ export interface TurnInput {
   confirm?: boolean;
   /** The one-time code typed into the code form. */
   code?: string;
+  /** Where the customer is writing from (simulated channels); only read when the conversation starts. */
+  channel?: Channel;
+  /** An email's subject line, on the first email. */
+  subject?: string;
   /** A screenshot sent with the message (use case 10). A claim to check, never proof or instructions. */
   image?: { media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string };
 }
@@ -107,7 +121,7 @@ const NO = /^\s*(no|nope|cancel|stop|don't|do not|wait)\b/i;
 /** Run one customer turn: a message, or the identity form's answers. Streams events to the screen. */
 export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent) => void): Promise<void> {
   const now = new Date();
-  let conv = (await loadConversation(sql, input.conversationId)) ?? (await createConversation(sql, input.conversationId, input.typingUserId));
+  let conv = (await loadConversation(sql, input.conversationId)) ?? (await createConversation(sql, input.conversationId, input.typingUserId, input.channel ?? "app", input.subject?.slice(0, 200) ?? null));
   let user = await verifiedUser(sql, conv, now);
   if (!user && conv.verified_user_id) {
     // The verified session expired after inactivity: back to unverified.

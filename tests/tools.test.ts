@@ -1119,3 +1119,21 @@ test("rules: past conversations show where Alexis used a rule", { skip }, async 
   assert.equal(used[0].conversation_id, s.conv.id);
   assert.equal(used[0].business, "Brightline Studios Ltd");
 });
+
+
+// ---------------------------------------------------------------- channels
+
+test("channels: a conversation keeps its channel and email subject, and the Inbox shows them", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const id = randomUUID();
+  const c = await createConversation(sql!, id, "ada", "email", "Payment to Lumen Print");
+  assert.equal(c.channel, "email");
+  assert.equal(c.email_subject, "Payment to Lumen Print");
+  const w = await createConversation(sql!, randomUUID(), "maya", "whatsapp", "ignored for chats");
+  assert.equal(w.email_subject, null, "only emails have a subject");
+  await sql!`update conversations set messages = ${sql!.json([{ role: "user", content: "Hello" }] as never)}`;
+  const rows = await listCases(sql!);
+  const e = rows.find((r) => r.id === id)!;
+  assert.deepEqual([e.channel, e.subject], ["email", "Payment to Lumen Print"]);
+  assert.equal(rows.find((r) => r.id === w.id)!.channel, "whatsapp");
+});

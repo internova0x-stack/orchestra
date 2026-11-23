@@ -466,6 +466,10 @@ alter table rule_changes add column if not exists source text;
 alter table rule_changes add column if not exists note text;
 alter table rule_changes add column if not exists decided_by text;
 alter table rule_changes add column if not exists decided_at timestamptz;
+-- Channels (Tomi, Nov 23: simulated email and WhatsApp): where the customer wrote from.
+alter table conversations add column if not exists channel text not null default 'app';
+alter table conversations add column if not exists email_subject text;
+
 create table if not exists rule_overrides (
   rule_id text not null references rules(id) on delete cascade,
   market text not null check (market in ('NG','UK','US')),

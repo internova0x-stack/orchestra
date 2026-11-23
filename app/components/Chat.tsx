@@ -32,6 +32,10 @@ interface Msg {
   showLabel?: boolean;
 }
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+/** The bank's support address in the simulated email channel (an invented domain). */
+const SUPPORT_EMAIL = "support@yourbank.example";
+type Channel = "app" | "whatsapp" | "email";
+
 const greeting = (): Msg => ({ id: newId(), role: "alexis", text: GREETING, showLabel: true });
 
 // ---------------------------------------------------------------- status chip
@@ -226,6 +230,9 @@ export default function Chat() {
   const [setupProblem, setSetupProblem] = useState<string | null>(null);
   const [typingUserId, setTypingUserId] = useState<string>("ada");
   const [conversationId, setConversationId] = useState<string>(() => newId());
+  // Simulated channels (Tomi, Nov 23): the bank's app chat, WhatsApp or email. Each is its own conversation.
+  const [channel, setChannel] = useState<Channel>("app");
+  const [subject, setSubject] = useState("");
   const [messages, setMessages] = useState<Msg[]>(() => [greeting()]);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
@@ -272,11 +279,15 @@ export default function Chat() {
     fetch("/api/samples", { cache: "no-store" }).then((r) => r.json()).then((j) => setSamples(j.samples ?? [])).catch(() => {});
   }, []);
 
-  const startOver = useCallback(() => {
+  const startOver = useCallback((ch?: Channel) => {
     setConversationId(newId());
-    setMessages([greeting()]);
+    // An email starts with the customer writing in; the chats open with Alexis's greeting.
+    setMessages((ch ?? channelRef.current) === "email" ? [] : [greeting()]);
     setTakenOverBy(null);
+    setSubject("");
   }, []);
+  const channelRef = useRef<Channel>("app");
+  channelRef.current = channel;
 
   // Reset demo in the console (another tab or window) starts this chat over too.
   useEffect(() => {
@@ -357,7 +368,7 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, typingUserId, ...body }),
+        body: JSON.stringify({ conversationId, typingUserId, channel, ...(channel === "email" && subject.trim() ? { subject: subject.trim() } : {}), ...body }),
       });
       if (!res.ok || !res.body) {
         const json = await res.json().catch(() => ({}));
@@ -450,7 +461,9 @@ export default function Chat() {
   }
 
   const selected = users.find((u) => u.id === typingUserId);
-  const empty = messages.length === 1;
+  const empty = messages.length === 1 && channel !== "email";
+  const firstEmail = channel === "email" && !messages.some((m) => m.role === "customer");
+  const who = (m: Msg) => (m.staff ? `${m.staff} · Support team` : channel === "email" ? "Alexis, AI support assistant" : "Alexis · AI");
 
   return (
     <div className="customer-page">
@@ -477,7 +490,18 @@ export default function Chat() {
                 <span>{selected.registration}</span>
               </div>
             )}
-            <button className="btn" onClick={startOver} disabled={busy}>Start a new conversation</button>
+            <div className="tester-field">
+              <span className="label">Channel</span>
+              <div className="segmented" role="radiogroup" aria-label="Channel">
+                {(["app", "whatsapp", "email"] as Channel[]).map((c) => (
+                  <button key={c} className="btn" role="radio" aria-checked={channel === c} disabled={busy}
+                    onClick={() => { if (c !== channel) { setChannel(c); startOver(c); } }}>
+                    {c === "app" ? "App chat" : c === "whatsapp" ? "WhatsApp" : "Email"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button className="btn" onClick={() => startOver()} disabled={busy}>Start a new conversation</button>
             <button className="btn" onClick={() => setShowTexts((v) => !v)} aria-expanded={showTexts}>
               Text messages to this customer ({outbox.length})
             </button>
@@ -485,14 +509,18 @@ export default function Chat() {
           </div>
         </aside>
 
-        <section className="phone" aria-label="Customer app">
+        <section className={`phone phone-${channel}`} aria-label={channel === "app" ? "Customer app" : channel === "whatsapp" ? "WhatsApp" : "Email"}>
           <div className="phone-head">
-            <div className="avatar" aria-hidden="true">{takenOverBy ? takenOverBy.charAt(0) : "A"}</div>
+            <div className="avatar" aria-hidden="true">{takenOverBy ? takenOverBy.charAt(0) : channel === "email" ? "@" : "A"}</div>
             <div>
-              <div className="panel-title">{takenOverBy ?? "Alexis"}</div>
-              <div className="label">{takenOverBy ? "Support team" : "AI support assistant"}</div>
+              <div className="panel-title">{channel === "email" ? "Email to support" : takenOverBy ?? "Alexis"}</div>
+              <div className="label">
+                {channel === "email" ? `${SUPPORT_EMAIL}${takenOverBy ? ` · ${takenOverBy} is replying` : ""}`
+                  : channel === "whatsapp" ? (takenOverBy ? "Support team · WhatsApp" : "AI support assistant · WhatsApp business account")
+                  : takenOverBy ? "Support team" : "AI support assistant"}
+              </div>
             </div>
-            <span className="phone-title label">Help &amp; support</span>
+            <span className="phone-title label">{channel === "app" ? "Help & support" : channel === "whatsapp" ? "WhatsApp" : "Mail"}</span>
           </div>
 
         <div className="messages" ref={messagesRef} aria-live="polite">
@@ -500,7 +528,8 @@ export default function Chat() {
           {messages.map((m) => (
             m.role === "notice" ? <div key={m.id} className="chat-notice" role="status">{m.text}</div> :
             <div key={m.id} className={`msg msg-${m.role}${m.update ? " update" : ""}${m.staff ? " msg-staff" : ""}`}>
-              {m.role === "alexis" && m.showLabel && <div className="msg-meta">{m.staff ? `${m.staff} · Support team` : "Alexis · AI"}</div>}
+              {channel === "email" && m.role === "customer" && <div className="msg-meta">From you to {SUPPORT_EMAIL}</div>}
+              {m.role === "alexis" && m.showLabel && <div className="msg-meta">{who(m)}</div>}
               {m.image && <img className="msg-image" src={m.image} alt="Screenshot sent by the customer" />}
               {m.thinking && !m.text ? (
                 <span className="dots" aria-label="Alexis is thinking"><span /><span /><span /></span>
@@ -540,6 +569,9 @@ export default function Chat() {
                 </div>
               )}
               {m.proof && <ProofCard proof={m.proof} conversationId={conversationId} />}
+              {channel !== "app" && (m.identity || m.confirm || m.code) && (
+                <div className="secure-link label">Secure link from the bank: opens this form outside the {channel === "whatsapp" ? "chat" : "email"}</div>
+              )}
               {m.identity && (
                 <IdentityForm
                   disabled={m.identity === "sent" || busy}
@@ -564,17 +596,27 @@ export default function Chat() {
           )}
         </div>
 
+        {channel === "email" && messages.length === 0 && (
+          <div className="empty">Write to {SUPPORT_EMAIL}. Alexis replies to each email.</div>
+        )}
+        {firstEmail && (
+          <div className="email-subject">
+            <label className="sr-only" htmlFor="email-subject">Subject</label>
+            <input id="email-subject" className="filter-input" placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={200} />
+          </div>
+        )}
         <form className="composer" onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <label className="sr-only" htmlFor="message">Message</label>
           <textarea
             id="message"
             className="ph-sensitive"
-            rows={1}
             value={draft}
-            placeholder="Type a message"
+            rows={channel === "email" ? 4 : 1}
+            placeholder={channel === "email" ? "Write your email" : "Type a message"}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+              // An email is written in paragraphs: Enter adds a line, the Send button sends.
+              if (e.key === "Enter" && !e.shiftKey && channel !== "email") { e.preventDefault(); submit(); }
             }}
           />
           <button className="btn btn-primary" type="submit" disabled={busy || (!draft.trim() && !attachment)}>Send</button>
