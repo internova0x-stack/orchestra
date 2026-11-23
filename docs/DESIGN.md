@@ -7,8 +7,8 @@
 > - **Black stays the default.** The delivered system is light; the dark theme re-values the same tokens for
 >   a black page (`:root:not([data-theme='light'])` in `app/globals.css`, our addition). Light is the system
 >   exactly as delivered.
-> - **Sidebar layout.** The console has the 240px sidebar (Inbox, Dashboard, Staff queue, Rules; Customer
->   app under "Testing") and a 60px top bar with the screen's title and Open customer app, the theme switch
+> - **Sidebar layout.** The console has the 240px sidebar (Dashboard, Messages (the Inbox, renamed by Tomi on Nov 23), Staff queue, Rules, Plan and usage, Team, by role; Customer
+>   app under "Testing") and a 60px top bar with the screen's title, the signed-in person and role, the theme switch
 >   and Reset demo. Below 900px the sidebar becomes a scrolling row across the top.
 > - **Primary buttons are indigo** (brand-600), one per view, as the system says; everything else is outlined.
 > - **Our additions, flagged:** success, warning and info badge colours (`--success-*`, `--warning-*`,
