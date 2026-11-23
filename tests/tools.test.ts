@@ -12,7 +12,7 @@ import { Rules } from "../lib/rules.ts";
 import { fromLocal } from "../lib/time.ts";
 import { categoryOf, statusOf, urgencyOf, listCases, caseCounts, transcriptOf } from "../lib/cases.ts";
 import { buildDashboard, timeRuleId } from "../lib/dashboard.ts";
-import { proposeChange, decideChange, pendingChanges, ruleHistory, ruleImpact } from "../lib/ruleChanges.ts";
+import { proposeChange, decideChange, pendingChanges, ruleHistory, ruleImpact, isBig, proposeConflict, resolveConflict, decideMany } from "../lib/ruleChanges.ts";
 import { RULE_SET } from "../lib/ruleSet.ts";
 import { appendTurn, forModel, takeOver, handBack, staffReply, customerView } from "../lib/takeover.ts";
 import { runTurn, operations } from "../lib/agent.ts";
@@ -1184,6 +1184,63 @@ test("rules: an agent's change waits for a supervisor; a supervisor's goes live;
   assert.equal((await Rules.load(sql!)).num("dispute_window", 0), 120);
   const log = await sql!`select summary, staff from audit_log where kind = 'rule_edit' order by id`;
   assert.ok(log.every((r) => r.staff), "every rule change names who made it");
+});
+
+test("policy upload: big changes need their own decision", { skip: false }, async () => {
+  assert.equal(isBig("10000", "30000"), true, "tripled");
+  assert.equal(isBig("1000", "1500"), false);
+  assert.equal(isBig("120", "60"), true, "halved");
+  assert.equal(isBig("5", "0"), true, "set to 0");
+  assert.equal(isBig("on", "off"), true, "a switch flipped");
+  assert.equal(isBig("on", "on"), false);
+  assert.equal(isBig("Resolved within 72 hours", "Resolved within 48 hours"), false, "answer text is never big");
+  assert.equal(isBig("1,000,000", "2,500,000"), true);
+});
+
+test("policy upload: Select all approves the ordinary ones; big changes and conflicts wait for their own decision", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const ife = (await staffUser(sql!, "ife"))!;
+  const bayo = (await staffUser(sql!, "bayo"))!;
+  const upload = { id: "u-1", document: "Product and fees policy 2026.pdf" };
+  const fee = await proposeChange(sql!, { ruleId: "waiver_cap_ngn", market: null, value: "2500", staff: bayo, review: true, upload: { ...upload, page: "4" }, note: "Waivers up to ₦2,500." });
+  const ng = await proposeChange(sql!, { ruleId: "card_limit_max_gbp", market: "UK", value: "9000", staff: bayo, review: true, upload });
+  const big = await proposeChange(sql!, { ruleId: "card_limit_max_usd", market: null, value: "30000", staff: bayo, review: true, upload });
+  assert.ok(fee.ok && !fee.big && ng.ok && !ng.big && big.ok && big.big);
+  const conflict = await proposeConflict(sql!, { ruleId: "dispute_window", market: null, staff: bayo, upload,
+    options: [{ value: "90", quote: "Customers may raise a dispute within 90 days.", page: "12" }, { value: "120", quote: "Disputes: 120 days.", page: "27" }] });
+  assert.ok(conflict.ok);
+  const same = await proposeConflict(sql!, { ruleId: "dispute_limit", market: null, staff: bayo, upload, options: [{ value: "3", quote: "a", page: null }, { value: "3", quote: "b", page: null }] });
+  assert.ok(!same.ok, "two equal values are no conflict");
+  const ids = (await pendingChanges(sql!)).map((c) => Number(c.id));
+  assert.equal(ids.length, 4);
+  const row = (await pendingChanges(sql!)).find((c) => c.rule_id === "waiver_cap_ngn")!;
+  assert.equal(row.document, upload.document);
+  assert.equal(row.page, "4");
+
+  assert.deepEqual(await decideMany(sql!, ids, ife, true), { ok: false, error: "Only a supervisor or an operations admin can approve or decline rule changes." });
+  const out = await decideMany(sql!, ids, bayo, true);
+  assert.ok(out.ok);
+  assert.equal(out.done.length, 2, "the two ordinary ones");
+  assert.equal(out.skipped.length, 2, "the big change and the conflict are left");
+  assert.equal((await Rules.load(sql!)).num("waiver_cap_ngn", 0), 2500);
+  assert.equal((await Rules.load(sql!, "UK")).num("card_limit_max_gbp", 0), 9000);
+  assert.equal((await Rules.load(sql!)).num("card_limit_max_usd", 0), 10000, "a big change isn't approved with Select all");
+
+  // The conflict can't be approved as it stands; picking a value settles it.
+  const c = (conflict as { change: number }).change;
+  assert.ok(!(await decideChange(sql!, c, bayo, true)).ok);
+  assert.ok(!(await resolveConflict(sql!, c, bayo, "60")).ok, "only the document's values");
+  assert.deepEqual(await resolveConflict(sql!, c, bayo, "90"), { ok: true, status: "live" });
+  assert.equal((await Rules.load(sql!)).num("dispute_window", 0), 90);
+  const h = (await ruleHistory(sql!, "dispute_window"))[0];
+  assert.equal(h.page, "12");
+  assert.match(h.note!, /90 days/);
+
+  // The big change on its own.
+  assert.deepEqual(await decideChange(sql!, (big as { change: number }).change, bayo, false), { ok: true });
+  assert.equal((await pendingChanges(sql!)).length, 0);
+  const log = await sql!`select summary from audit_log where kind = 'rule_edit' order by id`;
+  assert.ok(log.some((r) => /rule conflict resolved · Disputes can be opened up to · 120 → 90/.test(r.summary as string)));
 });
 
 test("rules: past conversations show where Alexis used a rule", { skip }, async () => {

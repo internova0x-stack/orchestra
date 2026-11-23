@@ -15,6 +15,29 @@ export interface ChangeRow {
   id: number; rule_id: string; rule_name: string; market: Market | null; old_value: string | null; new_value: string | null;
   status: "pending" | "live" | "declined"; source: string | null; note: string | null;
   changed_by: string; changed_at: Date; decided_by: string | null; decided_at: Date | null;
+  upload_id: string | null; document: string | null; page: string | null; big: boolean; conflict: ConflictOption[] | null;
+}
+
+/** One value a policy document gives for a rule, where it gives more than one. */
+export interface ConflictOption { value: string; quote: string; page: string | null }
+
+/** Where a proposal came from: one policy upload, the document's name and the page. */
+export interface UploadRef { id: string; document: string; page?: string | null }
+
+/**
+ * A big change needs its own decision (never approved with Select all): a number at least doubled or
+ * halved, a value set to 0, or a switch turned on or off.
+ */
+export function isBig(oldValue: string | null, newValue: string | null): boolean {
+  if (oldValue == null || newValue == null) return false;
+  const sw = (v: string) => /^(on|off)$/i.test(v.trim());
+  if (sw(oldValue) && sw(newValue)) return oldValue.trim().toLowerCase() !== newValue.trim().toLowerCase();
+  const num = (v: string) => (/^-?\d[\d,]*(\.\d+)?$/.test(v.trim()) ? Number(v.trim().replace(/,/g, "")) : null);
+  const a = num(oldValue), b = num(newValue);
+  if (a == null || b == null || a === b) return false;
+  if (b === 0 || a === 0) return true;
+  const ratio = b / a;
+  return ratio >= 2 || ratio <= 0.5;
 }
 
 const marketName = (m: Market | null) => (m ? MARKETS.find((x) => x.id === m)?.name ?? m : "all markets");
@@ -43,7 +66,7 @@ async function log(tx: Sql, summary: string, input: unknown, result: unknown, st
 }
 
 export type ProposeResult =
-  | { ok: true; status: "live" | "pending"; change: number; value: string | null }
+  | { ok: true; status: "live" | "pending"; change: number; value: string | null; big: boolean }
   | { ok: false; error: string };
 
 /**
@@ -52,7 +75,7 @@ export type ProposeResult =
  */
 export async function proposeChange(
   sql: Sql,
-  input: { ruleId: string; market: Market | null; value: string | null; staff: StaffUser; source?: string; note?: string; review?: boolean },
+  input: { ruleId: string; market: Market | null; value: string | null; staff: StaffUser; source?: string; note?: string; review?: boolean; upload?: UploadRef },
 ): Promise<ProposeResult> {
   return sql.begin(async (tx) => {
     const [rule] = await tx<{ id: string; kind: string; value: string; unit: string | null; name: string }[]>`
@@ -71,17 +94,96 @@ export async function proposeChange(
     const [waiting] = await tx<{ id: number }[]>`select id from rule_changes where rule_id = ${rule.id} and status = 'pending' and market is not distinct from ${input.market}`;
     if (waiting) return { ok: false as const, error: "A change to this rule is already waiting for approval. Approve or decline it first." };
     const live = can(input.staff.role, "rules_approve") && !input.review;
+    const big = Boolean(input.upload) && isBig(now!.value, value);
     const [{ id }] = await tx<{ id: number }[]>`
-      insert into rule_changes (rule_id, old_value, new_value, changed_by, changed_at, market, status, source, note, decided_by, decided_at)
+      insert into rule_changes (rule_id, old_value, new_value, changed_by, changed_at, market, status, source, note, decided_by, decided_at, upload_id, document, page, big)
       values (${rule.id}, ${now!.own || !input.market ? now!.value : null}, ${value}, ${input.staff.name}, now(), ${input.market}, ${live ? "live" : "pending"},
-        ${input.source ?? "Rules screen"}, ${input.note ?? null}, ${live ? input.staff.name : null}, ${live ? new Date() : null})
+        ${input.source ?? "Rules screen"}, ${input.note ?? null}, ${live ? input.staff.name : null}, ${live ? new Date() : null},
+        ${input.upload?.id ?? null}, ${input.upload?.document ?? null}, ${input.upload?.page ?? null}, ${big})
       returning id`;
     const what = value == null ? `back to the default in ${marketName(input.market)}` : `${now!.value} → ${value}${input.market ? ` in ${marketName(input.market)}` : ""}`;
     if (live) await apply(tx as unknown as Sql, rule.id, input.market, value, input.staff.name);
     await log(tx as unknown as Sql, `rule ${live ? "edited" : "change proposed"} · ${rule.name} · ${what}${input.source && input.source !== "Rules screen" ? ` · from ${input.source}` : ""}`,
       { rule: rule.id, market: input.market, change: id }, { old: now!.value, new: value, status: live ? "live" : "pending" }, input.staff.name);
-    return { ok: true as const, status: live ? ("live" as const) : ("pending" as const), change: id, value };
+    return { ok: true as const, status: live ? ("live" as const) : ("pending" as const), change: id, value, big };
   });
+}
+
+/**
+ * A policy document that gives two or more values for one rule: nothing is proposed, the options wait
+ * together and a supervisor picks the one the bank means (resolveConflict).
+ */
+export async function proposeConflict(
+  sql: Sql,
+  input: { ruleId: string; market: Market | null; options: ConflictOption[]; staff: StaffUser; upload: UploadRef },
+): Promise<{ ok: true; change: number } | { ok: false; error: string }> {
+  return sql.begin(async (tx) => {
+    const [rule] = await tx<{ id: string; kind: string; value: string; unit: string | null; name: string }[]>`
+      select id, kind, value, unit, name from rules where id = ${input.ruleId} for update`;
+    if (!rule) return { ok: false as const, error: "No such rule." };
+    const options: ConflictOption[] = [];
+    for (const o of input.options) {
+      const checked = validateRule(rule, o.value);
+      if (checked.ok && !options.some((x) => x.value === checked.value)) options.push({ value: checked.value, quote: o.quote.slice(0, 500), page: o.page || null });
+    }
+    if (options.length < 2) return { ok: false as const, error: "The document's values for this rule don't actually differ." };
+    const [waiting] = await tx<{ id: number }[]>`select id from rule_changes where rule_id = ${rule.id} and status = 'pending' and market is not distinct from ${input.market}`;
+    if (waiting) return { ok: false as const, error: "A change to this rule is already waiting for approval. Approve or decline it first." };
+    const now = await current(tx as unknown as Sql, rule.id, input.market);
+    const [{ id }] = await tx<{ id: number }[]>`
+      insert into rule_changes (rule_id, old_value, new_value, changed_by, changed_at, market, status, source, note, upload_id, document, conflict)
+      values (${rule.id}, ${now!.own || !input.market ? now!.value : null}, null, ${input.staff.name}, now(), ${input.market}, 'pending',
+        ${`Policy: ${input.upload.document}`}, null, ${input.upload.id}, ${input.upload.document}, ${tx.json(options as never)})
+      returning id`;
+    await log(tx as unknown as Sql, `rule conflict found · ${rule.name} · ${options.map((o) => o.value).join(" vs ")}${input.market ? ` in ${marketName(input.market)}` : ""} · from Policy: ${input.upload.document}`,
+      { rule: rule.id, market: input.market, change: id }, { options: options.map((o) => o.value), status: "pending" }, input.staff.name);
+    return { ok: true as const, change: id };
+  });
+}
+
+/**
+ * A supervisor settles a conflict by picking one of the document's values: the value in force now keeps
+ * it (recorded as declined), any other goes live at once.
+ */
+export async function resolveConflict(sql: Sql, changeId: number, staff: StaffUser, value: string): Promise<{ ok: true; status: "live" | "declined" } | { ok: false; error: string }> {
+  if (!can(staff.role, "rules_approve")) return { ok: false, error: "Only a supervisor or an operations admin can approve or decline rule changes." };
+  return sql.begin(async (tx) => {
+    const [c] = await tx<ChangeRow[]>`
+      select c.*, r.name as rule_name from rule_changes c join rules r on r.id = c.rule_id where c.id = ${changeId} for update of c`;
+    if (!c) return { ok: false as const, error: "That change isn't there any more." };
+    if (c.status !== "pending") return { ok: false as const, error: "That change has already been decided." };
+    if (!c.conflict) return { ok: false as const, error: "That change isn't a conflict." };
+    const pick = c.conflict.find((o) => o.value === value);
+    if (!pick) return { ok: false as const, error: "Pick one of the document's values." };
+    const now = await current(tx as unknown as Sql, c.rule_id, c.market);
+    const keep = now?.value === pick.value;
+    await tx`update rule_changes set new_value = ${pick.value}, page = ${pick.page}, note = ${pick.quote}, status = ${keep ? "declined" : "live"},
+      decided_by = ${staff.name}, decided_at = now() where id = ${changeId}`;
+    if (!keep) await apply(tx as unknown as Sql, c.rule_id, c.market, pick.value, staff.name);
+    await log(tx as unknown as Sql, `rule conflict resolved · ${c.rule_name} · ${keep ? `kept ${pick.value}` : `${now?.value ?? "default"} → ${pick.value}`}${c.market ? ` in ${marketName(c.market)}` : ""} · options were ${c.conflict.map((o) => o.value).join(" vs ")}`,
+      { rule: c.rule_id, market: c.market, change: changeId }, { status: keep ? "declined" : "live", value: pick.value }, staff.name);
+    return { ok: true as const, status: keep ? ("declined" as const) : ("live" as const) };
+  });
+}
+
+/**
+ * Select all: approve or decline many waiting changes at once. Big changes and conflicts are never
+ * decided this way; they come back in `skipped` for their own decision.
+ */
+export async function decideMany(sql: Sql, ids: number[], staff: StaffUser, approve: boolean) {
+  if (!can(staff.role, "rules_approve")) return { ok: false as const, error: "Only a supervisor or an operations admin can approve or decline rule changes." };
+  const unique = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))].slice(0, 500);
+  const rows = await sql<{ id: number; big: boolean; conflict: unknown }[]>`select id, big, conflict from rule_changes where id = any(${unique})`;
+  const done: number[] = [], skipped: { id: number; reason: string }[] = [];
+  for (const id of unique) {
+    const r = rows.find((x) => Number(x.id) === id);
+    if (!r) { skipped.push({ id, reason: "That change isn't there any more." }); continue; }
+    if (r.conflict) { skipped.push({ id, reason: "A conflict: pick the value the bank means." }); continue; }
+    if (r.big && approve) { skipped.push({ id, reason: "A big change: approve it on its own." }); continue; }
+    const out = await decideChange(sql, id, staff, approve);
+    if (out.ok) done.push(id); else skipped.push({ id, reason: out.error });
+  }
+  return { ok: true as const, done, skipped };
 }
 
 /** A supervisor approves (it goes live now) or declines a waiting change. */
@@ -92,6 +194,7 @@ export async function decideChange(sql: Sql, changeId: number, staff: StaffUser,
       select c.*, r.name as rule_name from rule_changes c join rules r on r.id = c.rule_id where c.id = ${changeId} for update of c`;
     if (!c) return { ok: false as const, error: "That change isn't there any more." };
     if (c.status !== "pending") return { ok: false as const, error: "That change has already been decided." };
+    if (c.conflict && approve) return { ok: false as const, error: "The document gives more than one value: pick the one the bank means." };
     await tx`update rule_changes set status = ${approve ? "live" : "declined"}, decided_by = ${staff.name}, decided_at = now() where id = ${changeId}`;
     if (approve) await apply(tx as unknown as Sql, c.rule_id, c.market, c.new_value, staff.name);
     const what = c.new_value == null ? `back to the default in ${marketName(c.market)}` : `${c.new_value}${c.market ? ` in ${marketName(c.market)}` : ""}`;

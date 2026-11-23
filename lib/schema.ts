@@ -557,6 +557,13 @@ alter table rule_changes add column if not exists source text;
 alter table rule_changes add column if not exists note text;
 alter table rule_changes add column if not exists decided_by text;
 alter table rule_changes add column if not exists decided_at timestamptz;
+-- Policy uploads (Nov 23): which upload a proposal came from, its page, a big change (needs its own decision)
+-- and a conflict (the document gives two values: [{value, quote, page}]; a person picks one).
+alter table rule_changes add column if not exists upload_id text;
+alter table rule_changes add column if not exists document text;
+alter table rule_changes add column if not exists page text;
+alter table rule_changes add column if not exists big boolean not null default false;
+alter table rule_changes add column if not exists conflict jsonb;
 -- Channels (Tomi, Nov 23: simulated email and WhatsApp): where the customer wrote from.
 alter table conversations add column if not exists channel text not null default 'app';
 alter table conversations add column if not exists email_subject text;

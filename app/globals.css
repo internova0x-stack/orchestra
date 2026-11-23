@@ -761,3 +761,45 @@ h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .
 .filters-toggle { display: inline-flex; align-items: center; gap: 6px; }
 .chevron { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
 .chevron.up { transform: rotate(180deg); }
+
+/* ---------- Policy upload and Select all (Tomi, Nov 23) ---------- */
+.policy-hint { flex-basis: 100%; margin: 0; text-align: right; }
+.policy-panel { flex-basis: 100%; padding: var(--space-4) var(--space-6); display: grid; gap: var(--space-3); font-size: var(--size-sm); }
+.policy-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.policy-steps { margin: 0; padding-left: var(--space-6); display: grid; gap: var(--space-1); color: var(--text-2); }
+.dropzone { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-6); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
+.dropzone.is-over { border-color: var(--brand-600); background: var(--brand-050); }
+.policy-reading { display: grid; gap: var(--space-2); padding: var(--space-3) 0; }
+.progress { height: 4px; border-radius: var(--radius-full); background: var(--surface-sunk); overflow: hidden; }
+.progress span { display: block; height: 100%; width: 35%; border-radius: inherit; background: var(--brand-600); animation: progress-slide 1.6s ease-in-out infinite; }
+@keyframes progress-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .progress span { animation: none; width: 100%; opacity: 0.5; } }
+.policy-counts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.policy-counts .count { padding: var(--space-1) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-full); }
+.policy-counts .count.is-bad, .tag.tag-big { color: var(--danger-700); background: var(--danger-050); border-color: var(--danger-200); }
+.tag.tag-big { margin-left: var(--space-2); }
+.policy-group { border-top: 1px solid var(--edge); padding-top: var(--space-2); }
+.policy-group summary { cursor: pointer; font-weight: 600; }
+.policy-group ul { margin: var(--space-2) 0; padding-left: var(--space-6); display: grid; gap: var(--space-2); }
+.policy-actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3); }
+.pending { max-height: none; }
+.pending-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-6); border-bottom: 1px solid var(--edge); }
+.pending-count { margin-left: auto; }
+.select-all { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-6); border-bottom: 1px solid var(--edge); cursor: pointer; font-size: var(--size-sm); }
+.select-all input, .pending-check { width: 16px; height: 16px; accent-color: var(--brand-600); flex: none; margin-top: 3px; }
+.pending-check.is-own { appearance: none; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); cursor: not-allowed; }
+.pending-list > li.is-ticked { background: var(--brand-050); }
+.pending-main { flex-wrap: nowrap; align-items: flex-start; }
+.pending-body { flex: 1; min-width: 0; display: grid; gap: var(--space-1); }
+.conflict-options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.bulk-bar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-6);
+  background: var(--surface-panel); border-top: 1px solid var(--edge); box-shadow: var(--shadow-sticky); }
+.bulk-gap { flex: 1; }
+.dialog-scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: var(--space-4); background: rgba(10, 14, 22, 0.45); }
+.dialog { max-width: 460px; width: 100%; padding: var(--space-6); display: grid; gap: var(--space-3); box-shadow: var(--shadow-popover); }
+.dialog h2 { margin: 0; font-family: var(--font-heading); font-size: var(--size-lg, 18px); }
+.dialog p { margin: 0; }
+.dialog-buttons { display: flex; justify-content: flex-end; gap: var(--space-2); }
+@media (max-width: 899px) { .pending-main { flex-wrap: wrap; } .policy-hint { text-align: left; } }
+/* A long Waiting for approval list pushes the rules down; the page scrolls instead of squashing them. */
+.rules-page .rules-grid { min-height: max(520px, calc(100dvh - 240px)); }

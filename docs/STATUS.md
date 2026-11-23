@@ -64,7 +64,13 @@ worked out from the data already stored: no new tables).
   support agent's change waits for a supervisor, a supervisor's goes live; history with Restore; values per
   market (Nigeria, UK, United States; `rule_overrides`, read for the customer's country); "Past
   conversations" lists where Alexis used a rule; a policy document (PDF or text) is read by Claude into
-  proposed changes with their quotes, always waiting for approval.
+  proposed changes with their quotes, always waiting for approval. The upload panel explains the four
+  steps, reads the file and sums up by area (big changes and conflicts flagged, rules not covered listed);
+  Waiting for approval filters by document, area and market; Select all ticks the ordinary ones (each box
+  can still be unticked), a bar at the bottom approves or declines them after a check; big changes are
+  decided one by one and a conflict by picking the value the bank means. History shows the document, page
+  and sentence. Checked: tests (`isBig`, Select all, conflicts) and the journey in a browser with a mocked
+  AI reply; a real PDF still to try on the live site.
 - **Email and WhatsApp, simulated**: the customer app's Channel switcher; Alexis writes in each channel's
   style; the Inbox labels and filters by channel; an email's subject is kept.
 - **Operations**: Alexis's on/off switch and outage mode with its notice (Rules › Operations; a bar across

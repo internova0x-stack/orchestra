@@ -58,7 +58,9 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   switches on/off, times HH:MM); `lib/ruleChanges.ts` is the change workflow (an agent's change waits for a
   supervisor, a supervisor's goes live; history and Restore; per-market values in `rule_overrides`, read by
   `Rules.load(sql, market)` for the customer's country); `lib/policyExtract.ts` turns a policy document into
-  proposals that always wait for approval.
+  proposals that always wait for approval (each with its upload, page and quote; `isBig` flags a number doubled
+  or halved, a 0 or a switch flipped; a document giving two values is a conflict, `proposeConflict`, settled by
+  `resolveConflict`); Select all is `decideMany` (`POST /api/rules/changes`), which never decides big changes or conflicts.
 - Whole-site password: `proxy.ts` + `SITE_PASSWORD` (off when unset). Dashboard: `/dashboard`, `lib/dashboard.ts`.
 - Sign-in and roles: `lib/auth.ts` (roles, `PERMISSIONS`, `requirePermission(sql, req, perm)` in every console route,
   sessions in `staff_sessions`, `login_attempts`); `/signin`, `/account`, `/team`; `/api/staff/users` is "who am I".
