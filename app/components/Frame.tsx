@@ -55,7 +55,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   }
 
   // The customer app has its own look: no console tabs or buttons.
-  if (path.startsWith("/customer")) return <>{children}</>;
+  if (path.startsWith("/customer") || path === "/login") return <>{children}</>;
 
   return (
     <div className="app">
