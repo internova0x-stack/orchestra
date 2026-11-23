@@ -6,7 +6,7 @@ import Connectors from "./Connectors";
 // Managing the Orchestra API from the console: API keys for systems that call Orchestra, and webhook
 // endpoints Orchestra posts to. Supervisors only (simulated sign-in, as on the other screens).
 
-interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
+interface Staff { id: string; name: string; role: string }
 interface Key { id: string; name: string; prefix: string; created_by: string; created_at: string; last_used_at: string | null; revoked_at: string | null }
 interface Endpoint { id: string; url: string; events: string[]; active: boolean; created_by: string; created_at: string }
 interface Delivery { id: number; url: string; event: string; status: string; attempts: number; last_status: number | null; last_error: string | null; created_at: string }
@@ -42,7 +42,8 @@ export default function ApiAdmin() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const staff = staffList.find((s) => s.id === staffId) ?? null;
-  const supervisor = staff?.role === "supervisor";
+  // Operations and IT admins manage keys, webhooks and connectors (lib/auth.ts).
+  const supervisor = staff?.role === "operations_admin" || staff?.role === "it_admin";
 
   const load = useCallback(async () => {
     const [k, w] = await Promise.all([
@@ -56,13 +57,11 @@ export default function ApiAdmin() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => setStaffList(j.staff ?? [])).catch(() => {});
-    try { setStaffId(localStorage.getItem("orchestra-staff") ?? ""); } catch {}
+    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => { setStaffList(j.staff ?? []); setStaffId(j.staff?.[0]?.id ?? ""); }).catch(() => {});
     load();
     const t = setInterval(() => document.visibilityState === "visible" && load(), 10_000);
     return () => clearInterval(t);
   }, [load]);
-  const signIn = (id: string) => { setStaffId(id); try { localStorage.setItem("orchestra-staff", id); } catch {} };
 
   async function post(path: string, body: unknown, method = "POST") {
     setError(null);
@@ -77,14 +76,8 @@ export default function ApiAdmin() {
   return (
     <div className="dev-body">
       <div className="dev-row">
-        <label className="picker">
-          <span className="label">Signed in as</span>
-          <select value={staffId} onChange={(e) => signIn(e.target.value)} aria-label="Staff sign-in (simulated)">
-            <option value="">Choose…</option>
-            {staffList.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.role === "supervisor" ? "Supervisor" : "Support agent"}</option>)}
-          </select>
-        </label>
-        <span className="label">{supervisor ? "You can manage keys and webhooks." : "A supervisor manages keys and webhooks."}</span>
+        <span className="label">Signed in as <b>{staffList[0]?.name ?? "…"}</b></span>
+        <span className="label">{supervisor ? "You can manage keys, webhooks and connectors." : "An operations or IT admin manages keys, webhooks and connectors."}</span>
       </div>
       {error && <div className="case-error" role="alert">{error}</div>}
       {message && <div className="label" role="status">{message}</div>}

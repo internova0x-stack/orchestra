@@ -13,17 +13,22 @@ const ICONS: Record<string, React.ReactNode> = {
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
   sliders: <><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></>,
   code: <><path d="m16 18 6-6-6-6" /><path d="m8 6-6 6 6 6" /></>,
+  team: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
   external: <><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>,
 };
 const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidden="true">{ICONS[name]}</svg>;
 
+// Each screen and the permission that shows it (lib/auth.ts). The server checks every request as well.
 const TABS = [
-  { href: "/", label: "Inbox", icon: "inbox" },
-  { href: "/dashboard", label: "Dashboard", icon: "chart" },
-  { href: "/staff", label: "Staff queue", icon: "people" },
-  { href: "/rules", label: "Rules", icon: "sliders" },
-  { href: "/billing", label: "Plan and usage", icon: "receipt" },
+  { href: "/", label: "Inbox", icon: "inbox", perm: "inbox_view" },
+  { href: "/dashboard", label: "Dashboard", icon: "chart", perm: "dashboard_view" },
+  { href: "/staff", label: "Staff queue", icon: "people", perm: "staff_queue_view" },
+  { href: "/rules", label: "Rules", icon: "sliders", perm: "rules_view" },
+  { href: "/billing", label: "Plan and usage", icon: "receipt", perm: "billing_view" },
+  { href: "/team", label: "Team", icon: "team", perm: "team_manage" },
 ];
+const PAGE_PERM: Record<string, string> = { ...Object.fromEntries(TABS.map((t) => [t.href, t.perm])), "/developers": "api_view", "/account": "" };
+interface Me { id: string; name: string; email: string | null; role: string; roleName: string; must_change: boolean }
 
 import { announceReset } from "./events";
 
@@ -34,10 +39,33 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [service, setService] = useState<{ alexisOn: boolean; outage: string | null }>({ alexisOn: true, outage: null });
+  const [me, setMe] = useState<Me | null>(null);
+  const [perms, setPerms] = useState<string[]>([]);
+  const outside = path.startsWith("/customer") || path === "/login" || path === "/signin";
+
+  // Who is signed in, and what their role allows. Not signed in: to the sign-in page.
+  useEffect(() => {
+    if (outside) return;
+    fetch("/api/staff/users", { cache: "no-store" }).then(async (r) => {
+      if (r.status === 401) { window.location.assign(`/signin?next=${encodeURIComponent(path)}`); return; }
+      const j = await r.json();
+      setMe(j.me ?? null);
+      setPerms(j.permissions ?? []);
+      if (j.me?.must_change && path !== "/account") window.location.assign("/account?first=1");
+      // A role without the Inbox (management, IT) starts on its first screen.
+      const p: string[] = j.permissions ?? [];
+      if (path === "/" && !p.includes("inbox_view")) window.location.replace(TABS.find((t) => p.includes(t.perm))?.href ?? (p.includes("api_view") ? "/developers" : "/account"));
+    }).catch(() => {});
+  }, [path, outside]);
+
+  async function signOut() {
+    await fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
+    window.location.assign("/signin");
+  }
 
   // The service status for the whole team: Alexis switched off, or outage mode on (Rules, Operations).
   useEffect(() => {
-    if (path.startsWith("/customer") || path === "/login") return;
+    if (outside) return;
     const load = () => fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setService).catch(() => {});
     load();
     const t = setInterval(() => document.visibilityState === "visible" && load(), 10_000);
@@ -79,9 +107,11 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   }
 
   // The customer app has its own look: no console tabs or buttons.
-  if (path.startsWith("/customer") || path === "/login") return <>{children}</>;
+  if (outside) return <>{children}</>;
+  const allowed = (href: string) => { const p = PAGE_PERM[href]; return p === undefined || p === "" || perms.includes(p); };
+  const home = TABS.find((t) => perms.includes(t.perm))?.href ?? "/account";
 
-  const current = TABS.find((x) => x.href === path)?.label ?? (path === "/developers" ? "API" : "Support console");
+  const current = TABS.find((x) => x.href === path)?.label ?? (path === "/developers" ? "API" : path === "/account" ? "Your account" : "Support console");
 
   return (
     <div className="app">
@@ -95,21 +125,30 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           </div>
           <nav aria-label="Screens">
             <ul className="nav">
-              {TABS.map((x) => (
+              {TABS.filter((x) => perms.includes(x.perm)).map((x) => (
                 <li key={x.href}>
                   <Link href={x.href} className="tab" aria-current={path === x.href ? "page" : undefined}><Icon name={x.icon} />{x.label}</Link>
                 </li>
               ))}
             </ul>
-            <p className="nav-label">Developers</p>
-            <ul className="nav">
-              <li><Link href="/developers" className="tab" aria-current={path === "/developers" ? "page" : undefined}><Icon name="code" />API</Link></li>
-            </ul>
+            {perms.includes("api_view") && <>
+              <p className="nav-label">Developers</p>
+              <ul className="nav">
+                <li><Link href="/developers" className="tab" aria-current={path === "/developers" ? "page" : undefined}><Icon name="code" />API</Link></li>
+              </ul>
+            </>}
             <p className="nav-label">Testing</p>
             <ul className="nav">
               <li><a className="tab" href="/customer" target="_blank" rel="noopener"><Icon name="external" />Customer app</a></li>
             </ul>
           </nav>
+          {me && (
+            <div className="me">
+              <Link href="/account" className="me-name">{me.name}</Link>
+              <span className="label">{me.roleName}</span>
+              <button className="btn btn-link" onClick={signOut}>Sign out</button>
+            </div>
+          )}
         </aside>
         <div className="main">
           <header className="topbar">
@@ -119,9 +158,11 @@ export default function Frame({ children }: { children: React.ReactNode }) {
               <button className="btn" onClick={switchTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
                 {theme === "dark" ? "Light" : "Dark"}
               </button>
-              <button className="btn" onClick={reset} disabled={resetting}>
-                {resetting ? "Resetting…" : "Reset demo"}
-              </button>
+              {perms.includes("demo_reset") && (
+                <button className="btn" onClick={reset} disabled={resetting}>
+                  {resetting ? "Resetting…" : "Reset demo"}
+                </button>
+              )}
             </div>
           </header>
           {(!service.alexisOn || service.outage) && (
@@ -131,7 +172,11 @@ export default function Frame({ children }: { children: React.ReactNode }) {
               <Link href="/rules?category=Operations">Change in Rules › Operations</Link>
             </div>
           )}
-          <main className="page">{children}</main>
+          <main className="page">
+            {!me ? <div className="empty">Checking your sign-in…</div>
+              : allowed(path) ? children
+              : <div className="empty">Your role ({me.roleName}) doesn&apos;t include this screen. <Link href={home}>Go to your start page</Link>.</div>}
+          </main>
         </div>
       </div>
       {toast && <div className="toast" role="status">{toast}</div>}

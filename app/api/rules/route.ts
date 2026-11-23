@@ -1,3 +1,4 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 import { FIXED_RULES } from "@/lib/ruleSet.ts";
@@ -16,6 +17,8 @@ export async function GET(req: Request) {
   const m = new URL(req.url).searchParams.get("market");
   const market: Market | null = MARKETS.some((x) => x.id === m) ? (m as Market) : null;
   const sql = db();
+  const viewer = await requirePermission(sql, req, "rules_view");
+  if (viewer instanceof Response) return viewer;
   await ensureSeeded(sql);
   const rules = await sql`
     select r.id, r.category, r.name, r.kind, r.origin, coalesce(o.value, r.value) as value, r.value as default_value,

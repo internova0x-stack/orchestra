@@ -630,3 +630,8 @@ a { color: var(--brand-accent); }
 .listen-draft p { margin: var(--space-2) 0 0; white-space: pre-wrap; }
 .connector { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--edge-strong); border-radius: var(--radius-md); }
 .connector pre.dev-code { white-space: pre-wrap; word-break: break-word; }
+/* Signed-in person (Nov 23) */
+.me { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3); border-top: 1px solid var(--edge); font-size: var(--size-sm); }
+.me-name { color: var(--text-1); font-weight: 600; text-decoration: none; }
+.me .btn-link { align-self: flex-start; padding: 0; }
+.team-select { min-height: 36px; padding: 0 var(--space-2); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--edge-strong); color: var(--text-1); font-size: var(--size-sm); }

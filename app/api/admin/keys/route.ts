@@ -1,15 +1,18 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 import { createApiKey } from "@/lib/api/keys.ts";
-import { logAdmin, requireSupervisor } from "@/lib/api/admin.ts";
+import { logAdmin, requireApiAdmin } from "@/lib/api/admin.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** The API keys (never the keys themselves: only their prefix). */
-export async function GET() {
+export async function GET(req: Request) {
   if (!process.env.DATABASE_URL) return Response.json({ keys: [] }, { status: 503 });
   const sql = db();
+  const viewer = await requirePermission(sql, req, "api_view");
+  if (viewer instanceof Response) return viewer;
   await ensureSeeded(sql);
   const keys = await sql`select id, name, prefix, created_by, created_at, last_used_at, revoked_at from api_keys order by created_at desc`;
   return Response.json({ keys }, { headers: { "Cache-Control": "no-store" } });
@@ -20,7 +23,7 @@ export async function POST(req: Request) {
   if (!process.env.DATABASE_URL) return Response.json({ ok: false }, { status: 503 });
   const sql = db();
   const body = (await req.json().catch(() => ({}))) as { name?: string; staffId?: string };
-  const s = await requireSupervisor(sql, body.staffId);
+  const s = await requireApiAdmin(sql, req);
   if (s instanceof Response) return s;
   const k = await createApiKey(sql, body.name ?? "", s.name);
   await logAdmin(sql, s.name, `API key created · ${body.name?.trim() || "Unnamed"} · ${k.prefix}`);

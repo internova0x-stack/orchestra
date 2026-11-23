@@ -33,7 +33,7 @@ interface Detail {
   language: string;
   review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
 }
-interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
+interface Staff { id: string; name: string; role: string }
 
 const ALL = "all";
 const LANGUAGE_NAME: Record<string, string> = { en: "English", fr: "French", pcm: "Pidgin" };
@@ -78,6 +78,8 @@ export default function InboxPage() {
   const picked = useRef(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const staff = staffList.find((s) => s.id === staffId) ?? null;
+  // Read-only roles (compliance, operations) see everything but can't act on conversations or cases (lib/auth.ts).
+  const canAct = Boolean(staff && (staff.role === "support_agent" || staff.role === "supervisor"));
 
   // A link from the Rules screen (/?c=<conversation>) opens that conversation.
   useEffect(() => {
@@ -86,10 +88,8 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => setStaffList(j.staff ?? [])).catch(() => {});
-    try { setStaffId(localStorage.getItem("orchestra-staff") ?? ""); } catch {}
+    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => { setStaffList(j.staff ?? []); setStaffId(j.staff?.[0]?.id ?? ""); }).catch(() => {});
   }, []);
-  const signIn = (id: string) => { setStaffId(id); try { localStorage.setItem("orchestra-staff", id); } catch {} };
 
   const load = useCallback(async () => {
     try {
@@ -210,7 +210,7 @@ export default function InboxPage() {
               <Filter label="Review" value={reviewed} onChange={setReviewed} options={[[ALL, "Review"], ["none", "Not reviewed"], ["good", "Good"], ["needs_work", "Needs work"]]} />
             </div>
             <span className="label">{shown.length} of {cases?.length ?? 0} conversations · updates live</span>
-            <SampleTicket onSent={load} />
+            {canAct && <SampleTicket onSent={load} />}
           </div>
           <div className="case-list">
             {problem && <div className="empty">{problem}</div>}
@@ -259,19 +259,13 @@ export default function InboxPage() {
 
               {c.listen && detail?.listen ? <ListenPanel l={detail.listen} /> : (
               <div className="takeover-bar">
-                <label className="picker">
-                  <span className="label">Signed in as</span>
-                  <select value={staffId} onChange={(e) => signIn(e.target.value)} aria-label="Staff sign-in (simulated)">
-                    <option value="">Choose…</option>
-                    {staffList.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.role === "supervisor" ? "Supervisor" : "Support agent"}</option>)}
-                  </select>
-                </label>
+                <span className="label">Signed in as <b>{staffList[0]?.name ?? "…"}</b></span>
                 <span className="takeover-state">
                   {takenBy ? <><b>{takenBy}</b> is handling this conversation. Alexis is paused.</>
                     : waiting ? <><b>Waiting for the team.</b> {waiting === "switched_off" ? "Alexis is switched off, so the customer's messages come to you." : "The AI service was down, so this came to you. Alexis answers again on the customer's next message."} Take over to reply.</>
                     : <>Alexis is handling this conversation.</>}
                 </span>
-                {!takenBy && <button className="btn btn-primary" disabled={!staff || acting || !detail} onClick={() => act("take_over")} title={staff ? "" : "Sign in first"}>Take over</button>}
+                {!takenBy && canAct && <button className="btn btn-primary" disabled={!canAct || acting || !detail} onClick={() => act("take_over")} title={staff ? "" : "Sign in first"}>Take over</button>}
                 {mine && <button className="btn" disabled={acting} onClick={() => act("hand_back")}>Hand back to Alexis</button>}
               </div>
               )}
@@ -280,12 +274,12 @@ export default function InboxPage() {
                 {detail?.review && <span className={`tag tag-${detail.review.rating === "good" ? "live" : "pending"}`}>{detail.review.rating === "good" ? "Good" : "Needs work"} · {detail.review.by}{detail.review.note ? `: ${detail.review.note}` : ""}</span>}
                 <label className="sr-only" htmlFor="review-note">Review note</label>
                 <input id="review-note" className="filter-input review-note" placeholder="Note (optional)" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} maxLength={1000} />
-                <button className="btn" disabled={!staff || acting || !detail} onClick={() => act("review", undefined, "good")} title={staff ? "" : "Sign in first"}>Good</button>
-                <button className="btn" disabled={!staff || acting || !detail} onClick={() => act("review", undefined, "needs_work")} title={staff ? "" : "Sign in first"}>Needs work</button>
+                <button className="btn" disabled={!canAct || acting || !detail} onClick={() => act("review", undefined, "good")} title={staff ? "" : "Sign in first"}>Good</button>
+                <button className="btn" disabled={!canAct || acting || !detail} onClick={() => act("review", undefined, "needs_work")} title={staff ? "" : "Sign in first"}>Needs work</button>
                 {detail && detail.language !== "en" && (
                   translation
                     ? <button className="btn" onClick={() => setTranslation(null)}>Show the original ({LANGUAGE_NAME[detail.language] ?? detail.language})</button>
-                    : <button className="btn" disabled={!staff || acting} onClick={() => act("translate")}>Translate to English</button>
+                    : <button className="btn" disabled={!canAct || acting} onClick={() => act("translate")}>Translate to English</button>
                 )}
               </div>
               {actError && <div className="case-error takeover-error" role="alert">{actError}</div>}
@@ -323,7 +317,7 @@ export default function InboxPage() {
                       </form>
                     ) : (
                       <div className="watch-note label">
-                        {c.listen ? `Reply in ${SOURCE_NAME[c.listen.source] ?? "the helpdesk"}: the draft above is ready to copy.` : takenBy ? `Only ${takenBy} can reply while they're handling it.` : staff ? "Take over to reply to the customer yourself." : "Sign in above to take over and reply."}
+                        {c.listen ? `Reply in ${SOURCE_NAME[c.listen.source] ?? "the helpdesk"}: the draft above is ready to copy.` : takenBy ? `Only ${takenBy} can reply while they're handling it.` : canAct ? "Take over to reply to the customer yourself." : "Your role can watch conversations but not reply."}
                       </div>
                     )}
                   </div>

@@ -14,7 +14,9 @@ interface Change {
   changed_by: string; changed_at: string; decided_by: string | null; decided_at: string | null;
 }
 interface Impact { conversation_id: string; used: string; at: string; customer: string | null; business: string | null; country: string | null }
-interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
+interface Staff { id: string; name: string; role: string }
+/** Supervisors and operations admins put rule changes live and approve others' (lib/auth.ts). */
+const canApprove = (s: Staff | null | undefined) => Boolean(s && (s.role === "supervisor" || s.role === "operations_admin"));
 interface Market { id: string; name: string }
 
 // The Design System's categories first, then any others the rules use (Cards, Loans…), then Platform.
@@ -147,7 +149,7 @@ function RuleRow({ rule, market, marketName, staff, onSaved, onMessage }: { rule
                 aria-label={`New value for ${rule.name}${market ? ` in ${marketName}` : ""}`}
               />
               <div className="rule-edit-buttons">
-                <button className="btn btn-primary" onClick={() => save(draft)} disabled={saving}>{staff?.role === "supervisor" ? "Save" : "Send for approval"}</button>
+                <button className="btn btn-primary" onClick={() => save(draft)} disabled={saving}>{canApprove(staff) ? "Save" : "Send for approval"}</button>
                 <button className="btn" onClick={() => { setEditing(false); setError(null); }}>Cancel</button>
               </div>
               {market && <div className="label">Only for customers in {marketName}. The default stays {shown(rule.default_value, rule.unit)}.</div>}
@@ -193,7 +195,7 @@ function Pending({ changes, rules, staff, onDone }: { changes: Change[]; rules: 
   return (
     <section className="panel pending" aria-label="Changes waiting for approval">
       <div className="panel-head"><span className="panel-title">Waiting for approval ({changes.length})</span>
-        <span className="label">{staff?.role === "supervisor" ? "Check each one against past conversations, then approve or decline." : "A supervisor approves these before they go live."}</span></div>
+        <span className="label">{canApprove(staff) ? "Check each one against past conversations, then approve or decline." : "A supervisor approves these before they go live."}</span></div>
       {error && <div className="case-error takeover-error" role="alert">{error}</div>}
       <ul className="pending-list">
         {changes.map((c) => (
@@ -207,7 +209,7 @@ function Pending({ changes, rules, staff, onDone }: { changes: Change[]; rules: 
               </div>
               <div className="pending-buttons">
                 <button className="btn" onClick={() => setOpen(open === c.id ? null : c.id)} aria-expanded={open === c.id}>Past conversations</button>
-                {staff?.role === "supervisor" && <>
+                {canApprove(staff) && <>
                   <button className="btn btn-primary" onClick={() => decide(c, "approve")}>Approve</button>
                   <button className="btn" onClick={() => decide(c, "decline")}>Decline</button>
                 </>}
@@ -284,13 +286,11 @@ export default function RulesPage() {
   const staff = staffList.find((s) => s.id === staffId) ?? null;
 
   useEffect(() => {
-    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => setStaffList(j.staff ?? [])).catch(() => {});
-    try { setStaffId(localStorage.getItem("orchestra-staff") ?? ""); } catch {}
+    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => { setStaffList(j.staff ?? []); setStaffId(j.staff?.[0]?.id ?? ""); }).catch(() => {});
     // A link can open a category (the Dashboard links to Time saved).
     const c = new URLSearchParams(window.location.search).get("category");
     if (c) setCategory(c);
   }, []);
-  const signIn = (id: string) => { setStaffId(id); try { localStorage.setItem("orchestra-staff", id); } catch {} };
 
   const load = useCallback(async () => {
     try {
@@ -324,13 +324,7 @@ export default function RulesPage() {
   return (
     <div className="rules-page">
       <div className="rules-toolbar">
-        <label className="picker">
-          <span className="label">Signed in as</span>
-          <select value={staffId} onChange={(e) => signIn(e.target.value)} aria-label="Staff sign-in (simulated)">
-            <option value="">Choose…</option>
-            {staffList.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.role === "supervisor" ? "Supervisor" : "Support agent"}</option>)}
-          </select>
-        </label>
+        <span className="label">Signed in as <b>{staffList[0]?.name ?? "…"}</b></span>
         <label className="picker">
           <span className="label">Market</span>
           <select value={market} onChange={(e) => setMarket(e.target.value)} aria-label="Market">
@@ -340,7 +334,7 @@ export default function RulesPage() {
         </label>
         <PolicyUpload staff={staff} onDone={load} />
         <span className="label rules-who">
-          {!staff ? "Sign in to change rules." : staff.role === "supervisor" ? "Your changes go live at once." : "Your changes wait for a supervisor's approval."}
+          {!staff ? "Sign in to change rules." : canApprove(staff) ? "Your changes go live at once." : "Your changes wait for a supervisor's approval."}
         </span>
       </div>
       {message && <div className="toast" role="status">{message}</div>}
@@ -375,7 +369,7 @@ export default function RulesPage() {
                 </tbody>
               </table>
             )}
-            <p className="rules-note">A supervisor&apos;s change applies to Alexis&apos;s next message. Anyone else&apos;s waits for a supervisor.</p>
+            <p className="rules-note">A supervisor&apos;s or operations admin&apos;s change applies to Alexis&apos;s next message. A support agent&apos;s waits for their approval.</p>
             <ul className="fixed-rules" aria-label="Fixed rules">
               {fixed.map((f) => (
                 <li key={f} title="Fixed by the Guardrails policy. These can't be switched off.">

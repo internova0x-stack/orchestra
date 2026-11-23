@@ -1,4 +1,6 @@
 import type { Sql } from "./db.ts";
+import { ROLE_NAME } from "./auth.ts";
+import type { Role } from "./auth.ts";
 import { bank } from "./bank/index.ts";
 import { emitEvent } from "./api/webhooks.ts";
 
@@ -7,7 +9,7 @@ import { emitEvent } from "./api/webhooks.ts";
 
 export const APPROVER = "Supervisor";
 
-export interface StaffUser { id: string; name: string; role: "support_agent" | "supervisor" }
+export interface StaffUser { id: string; name: string; role: Role }
 
 export async function staffUser(sql: Sql, id: string | null | undefined): Promise<StaffUser | null> {
   if (!id) return null;
@@ -29,7 +31,7 @@ export async function decide(sql: Sql, reference: string, decision: Decision, no
   if ((decision === "approve" || decision === "decline") && staff && staff.role !== "supervisor") {
     return { ok: false as const, error: "supervisor_only" };
   }
-  const who = staff ? `${staff.name} (${staff.role === "supervisor" ? "Supervisor" : "Support agent"})` : APPROVER;
+  const who = staff ? `${staff.name} (${ROLE_NAME[staff.role]})` : APPROVER;
   const result = await decideInTx(sql, reference, decision, note, staff, who);
   if (result.ok) await emitEvent(sql, "case.updated", { reference, status: result.status, decision, by: who, note: note?.trim().slice(0, 500) || null });
   return result;

@@ -1,5 +1,5 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
-import { staffUser } from "@/lib/staff.ts";
 import { draftReply } from "@/lib/drafting.ts";
 
 export const runtime = "nodejs";
@@ -14,8 +14,8 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as { conversationId?: string; staffId?: string; purpose?: string } | null;
   if (!body?.conversationId || !UUID.test(body.conversationId)) return Response.json({ error: "bad_request", message: "Open a conversation first." }, { status: 400 });
   const sql = db();
-  const staff = await staffUser(sql, body.staffId);
-  if (!staff) return Response.json({ error: "sign_in", message: "Sign in as a member of the team first." }, { status: 403 });
+  const staff = await requirePermission(sql, req, "conversation_act");
+  if (staff instanceof Response) return staff;
   try {
     const out = await draftReply(sql, body.conversationId, staff, typeof body.purpose === "string" ? body.purpose : null);
     if ("error" in out) return Response.json({ error: out.error, message: out.error === "empty" ? "There's nothing in the conversation to reply to yet." : "That conversation isn't there any more." }, { status: 404 });

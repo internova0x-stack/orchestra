@@ -1,4 +1,5 @@
 import type { Sql } from "./db.ts";
+import { can } from "./auth.ts";
 import { validateRule } from "./ruleEdit.ts";
 import { MARKETS, type Market } from "./rules.ts";
 import type { StaffUser } from "./staff.ts";
@@ -69,7 +70,7 @@ export async function proposeChange(
     if (value == null && !now!.own) return { ok: false as const, error: `${marketName(input.market)} already uses the default value.` };
     const [waiting] = await tx<{ id: number }[]>`select id from rule_changes where rule_id = ${rule.id} and status = 'pending' and market is not distinct from ${input.market}`;
     if (waiting) return { ok: false as const, error: "A change to this rule is already waiting for approval. Approve or decline it first." };
-    const live = input.staff.role === "supervisor" && !input.review;
+    const live = can(input.staff.role, "rules_approve") && !input.review;
     const [{ id }] = await tx<{ id: number }[]>`
       insert into rule_changes (rule_id, old_value, new_value, changed_by, changed_at, market, status, source, note, decided_by, decided_at)
       values (${rule.id}, ${now!.own || !input.market ? now!.value : null}, ${value}, ${input.staff.name}, now(), ${input.market}, ${live ? "live" : "pending"},
@@ -85,7 +86,7 @@ export async function proposeChange(
 
 /** A supervisor approves (it goes live now) or declines a waiting change. */
 export async function decideChange(sql: Sql, changeId: number, staff: StaffUser, approve: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (staff.role !== "supervisor") return { ok: false, error: "Only a supervisor can approve or decline rule changes." };
+  if (!can(staff.role, "rules_approve")) return { ok: false, error: "Only a supervisor or an operations admin can approve or decline rule changes." };
   return sql.begin(async (tx) => {
     const [c] = await tx<ChangeRow[]>`
       select c.*, r.name as rule_name from rule_changes c join rules r on r.id = c.rule_id where c.id = ${changeId} for update of c`;

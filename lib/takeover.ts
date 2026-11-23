@@ -1,4 +1,5 @@
 import type { Sql } from "./db.ts";
+import { ROLE_NAME } from "./auth.ts";
 import { maskSecrets } from "./secrets.ts";
 import { emitEvent } from "./api/webhooks.ts";
 import type { StaffUser } from "./staff.ts";
@@ -50,7 +51,7 @@ async function log(sql: Sql, conversationId: string, staff: string, kind: "hando
     values (${conversationId}, ${`${tool}-${Date.now()}`}, ${kind}, ${tool}, ${summary}, ${staff})`;
 }
 
-const roleWord = (s: StaffUser) => (s.role === "supervisor" ? "supervisor" : "support agent");
+const roleWord = (s: StaffUser) => ROLE_NAME[s.role].toLowerCase();
 
 export type TakeoverError = "not_found" | "taken_over_by_someone_else" | "not_taken_over" | "empty";
 

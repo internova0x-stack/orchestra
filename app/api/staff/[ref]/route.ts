@@ -1,5 +1,6 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
-import { decide, staffUser, type Decision } from "@/lib/staff.ts";
+import { decide, type Decision } from "@/lib/staff.ts";
 import { transcriptOf } from "@/lib/cases.ts";
 import { moveTeam, pickUp } from "@/lib/routing.ts";
 
@@ -7,10 +8,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** One case: the handoff summary, the transcript (text only, secrets already masked) and the activity log. */
-export async function GET(_req: Request, { params }: { params: Promise<{ ref: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ ref: string }> }) {
   const { ref } = await params;
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   const sql = db();
+  const viewer = await requirePermission(sql, req, "staff_queue_view");
+  if (viewer instanceof Response) return viewer;
   const rows = await sql`
     select e.*, b.name as business, c.messages
     from escalations e left join businesses b on b.id = e.business_id left join conversations c on c.id = e.conversation_id
@@ -38,8 +41,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ ref: st
   if (body?.route === "pick_up" || body?.route === "move") {
     if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
     const sql = db();
-    const staff = await staffUser(sql, body.staffId);
-    if (!staff) return Response.json({ ok: false, error: "sign_in" }, { status: 401 });
+    const staff = await requirePermission(sql, req, "case_work");
+    if (staff instanceof Response) return staff;
     const err = body.route === "pick_up" ? await pickUp(sql, ref.toUpperCase(), staff) : await moveTeam(sql, ref.toUpperCase(), String(body.team ?? ""), staff);
     if (err) return Response.json({ ok: false, error: err, message: ROUTING_ERRORS[err] }, { status: err === "not_found" ? 404 : 409 });
     return Response.json({ ok: true });
@@ -47,8 +50,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ ref: st
   if (!body?.decision || !["approve", "decline", "resolve", "claim_sent"].includes(body.decision)) return Response.json({ error: "bad_request" }, { status: 400 });
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   const sql = db();
-  const staff = await staffUser(sql, body.staffId);
-  if (!staff) return Response.json({ ok: false, error: "sign_in" }, { status: 401 });
+  const staff = await requirePermission(sql, req, body.decision === "approve" || body.decision === "decline" ? "case_approve" : "case_work");
+  if (staff instanceof Response) return staff;
   const out = await decide(sql, ref.toUpperCase(), body.decision, body.note ?? null, staff);
   return Response.json(out, { status: out.ok ? 200 : out.error === "not_found" ? 404 : out.error === "supervisor_only" ? 403 : 409 });
 }

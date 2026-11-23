@@ -449,6 +449,31 @@ create table if not exists staff_users (
   name text not null,
   role text not null check (role in ('support_agent','supervisor'))
 );
+-- Console sign-in and roles (Nov 23, lib/auth.ts): accounts survive Reset demo.
+alter table staff_users drop constraint if exists staff_users_role_check;
+alter table staff_users add constraint staff_users_role_check check (role in ('support_agent','supervisor','operations_admin','compliance','management','it_admin'));
+alter table staff_users add column if not exists email text;
+alter table staff_users add column if not exists password_hash text;
+alter table staff_users add column if not exists active boolean not null default true;
+alter table staff_users add column if not exists must_change boolean not null default false;
+alter table staff_users add column if not exists last_login_at timestamptz;
+alter table staff_users add column if not exists demo boolean not null default false;
+create unique index if not exists staff_users_email on staff_users (email);
+create table if not exists staff_sessions (
+  token_hash text primary key,
+  staff_id text not null references staff_users(id) on delete cascade,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+create table if not exists login_attempts (
+  id bigserial primary key,
+  email text not null,
+  ok boolean not null,
+  at timestamptz not null default now()
+);
+create index if not exists login_attempts_email on login_attempts (email, at);
 alter table conversations add column if not exists mode text not null default 'customer';
 alter table conversations add column if not exists staff_id text;
 alter table conversations add column if not exists case_reference text;
@@ -622,7 +647,6 @@ export const TABLES_TO_WIPE = [
   "escalations",
   "conversations",
   "rule_changes",
-  "staff_users",
   "rules",
   "restrictions",
   "fees",

@@ -1,3 +1,4 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
 
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ export async function GET(req: Request) {
   if (!/^[0-9a-f-]{36}$/i.test(conversation)) return Response.json({ rows: [] });
   if (!process.env.DATABASE_URL) return Response.json({ rows: [] });
   const sql = db();
+  const viewer = await requirePermission(sql, req, "inbox_view");
+  if (viewer instanceof Response) return viewer;
   const rows = await sql`
     select id, tool_use_id, kind, tool, summary, input, result, refusal_reason, approver, created_at
     from audit_log where conversation_id = ${conversation} and id > ${after}

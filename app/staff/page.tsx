@@ -26,7 +26,7 @@ interface CaseDetail {
   claim: ClaimDraft | null;
 }
 
-interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
+interface Staff { id: string; name: string; role: string }
 interface AssistMsg { id: string; who: "staff" | "alexis"; text: string; thinking?: boolean }
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -124,11 +124,11 @@ export default function StaffPage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [staffId, setStaffId] = useState<string>("");
   const staff = staffList.find((x) => x.id === staffId) ?? null;
+  // Read-only roles (compliance, operations) see everything but can't act on conversations or cases (lib/auth.ts).
+  const canAct = Boolean(staff && (staff.role === "support_agent" || staff.role === "supervisor"));
   useEffect(() => {
-    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => setStaffList(j.staff ?? [])).catch(() => {});
-    try { setStaffId(localStorage.getItem("orchestra-staff") ?? ""); } catch {}
+    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => { setStaffList(j.staff ?? []); setStaffId(j.staff?.[0]?.id ?? ""); }).catch(() => {});
   }, []);
-  const signIn = (id: string) => { setStaffId(id); try { localStorage.setItem("orchestra-staff", id); } catch {} };
 
   const load = useCallback(async () => {
     try {
@@ -248,13 +248,7 @@ export default function StaffPage() {
       <section className="panel" aria-label="Open cases">
         <div className="panel-head" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
           <span className="panel-title">Cases</span>
-          <label className="picker">
-            <span className="label">Signed in as</span>
-            <select value={staffId} onChange={(e) => signIn(e.target.value)} aria-label="Staff sign-in (simulated)">
-              <option value="">Choose…</option>
-              {staffList.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.role === "supervisor" ? "Supervisor" : "Support agent"}</option>)}
-            </select>
-          </label>
+          <span className="label">Signed in as <b>{staffList[0]?.name ?? "…"}</b></span>
         </div>
         <div className="route-filters">
           <label className="picker">
@@ -315,10 +309,10 @@ export default function StaffPage() {
               <span className="label">Team</span> <b>{c.team ?? "Not routed"}</b>
               <span className="label">· {c.assigned_to ? `with ${c.assigned_to}` : "nobody on it yet"}</span>
               {c.respond_by && c.status === "open" && <span className={`label${c.overdue_at && !c.assigned_to ? " overdue-text" : ""}`}>· respond by {new Date(c.respond_by).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}{c.overdue_at && !c.assigned_to ? " (overdue)" : ""}</span>}
-              {c.status === "open" && (
+              {c.status === "open" && canAct && (
                 <span className="route-actions">
-                  {!c.assigned_to && <button className="btn btn-primary" disabled={busy || !staff} onClick={() => route({ route: "pick_up" })}>Pick up</button>}
-                  <select aria-label="Move to another team" value="" disabled={busy || !staff} onChange={(e) => e.target.value && route({ route: "move", team: e.target.value })}>
+                  {!c.assigned_to && <button className="btn btn-primary" disabled={busy || !canAct} onClick={() => route({ route: "pick_up" })}>Pick up</button>}
+                  <select aria-label="Move to another team" value="" disabled={busy || !canAct} onChange={(e) => e.target.value && route({ route: "move", team: e.target.value })}>
                     <option value="">Move to…</option>
                     {teams.filter((t) => t !== c.team).map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -376,7 +370,7 @@ export default function StaffPage() {
                 </div>
               )}
               {show === "reply" && (
-                staff ? (
+                canAct && staff ? (
                   <div className="reply-pane">
                     <p className="label">Alexis drafts the reply from the conversation and this case; you edit it and send it. Sending takes the conversation over from Alexis, so the customer sees it came from you.</p>
                     <label className="sr-only" htmlFor="case-reply">Reply to the customer</label>
@@ -387,9 +381,9 @@ export default function StaffPage() {
                     </div>
                     {replyMsg && <p className="label" role="status">{replyMsg}</p>}
                   </div>
-                ) : <div className="empty">Sign in as a staff member (top left) to reply to the customer.</div>
+                ) : <div className="empty">Your role can read this case but not reply.</div>
               )}
-              {show === "assist" && (staff ? <AskAlexis caseRef={c.reference} staff={staff} /> : <div className="empty">Sign in as a staff member (top left) to ask Alexis about this case.</div>)}
+              {show === "assist" && (canAct && staff ? <AskAlexis caseRef={c.reference} staff={staff} /> : <div className="empty">Your role can read this case but not ask Alexis to work on it.</div>)}
               {show === "transcript" && (
                 <div className="transcript">
                   {detail.transcript.map((m, i) => (
@@ -410,7 +404,7 @@ export default function StaffPage() {
                 </div>
               )}
             </div>
-            {c.status === "open" && (
+            {c.status === "open" && canAct && (
               <div className="case-actions">
                 {actError && <div className="case-error" role="alert">{actError}</div>}
                 <input className="note" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />

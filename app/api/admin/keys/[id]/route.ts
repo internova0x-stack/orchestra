@@ -1,6 +1,6 @@
 import { db } from "@/lib/db.ts";
 import { revokeApiKey } from "@/lib/api/keys.ts";
-import { logAdmin, requireSupervisor } from "@/lib/api/admin.ts";
+import { logAdmin, requireApiAdmin } from "@/lib/api/admin.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params;
   if (!process.env.DATABASE_URL) return Response.json({ ok: false }, { status: 503 });
   const sql = db();
-  const s = await requireSupervisor(sql, new URL(req.url).searchParams.get("staffId"));
+  const s = await requireApiAdmin(sql, req);
   if (s instanceof Response) return s;
   const done = await revokeApiKey(sql, id);
   if (done) await logAdmin(sql, s.name, `API key revoked · ${id}`);

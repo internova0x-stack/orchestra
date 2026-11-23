@@ -1,3 +1,4 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 import { ALL_CATEGORIES, caseCounts, listCases } from "@/lib/cases.ts";
@@ -8,9 +9,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Every customer conversation with its category, status and urgency, and the counts at the top. */
-export async function GET() {
+export async function GET(req: Request) {
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured", cases: [] }, { status: 503 });
   const sql = db();
+  const viewer = await requirePermission(sql, req, "inbox_view");
+  if (viewer instanceof Response) return viewer;
   await ensureSeeded(sql);
   const cases = await listCases(sql);
   // Data entry: conversations Alexis resolved on her own are recorded in the CRM, a few at a time, after the response.

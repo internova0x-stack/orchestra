@@ -42,7 +42,7 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - `app/api/chat` streams a turn as newline-delimited JSON · `app/api/activity` the audit log for the
   activity panel · `app/api/reset` Reset demo · `app/api/users` the customer picker · `app/api/proof` a payment
   confirmation as a PDF (`lib/proofPdf.ts`, watermarked, no institution's name) · `app/api/staff` the Staff
-  queue (`lib/staff.ts`: Approve, Decline, Mark resolved; the screen acts as "Supervisor", no login).
+  queue (`lib/staff.ts`: Approve, Decline, Mark resolved; as the signed-in person).
 - Confirmation is enforced in code: a tier 2/3 tool's first call stores `conversations.pending_action` and
   shows Yes/Cancel; only the customer's button or typed yes sets it confirmed (`runTurn`), never the model.
 - Two apps (Tomi, Nov 23): the bank's **support console** (`app/components/Frame.tsx`: Inbox at `/`, Staff
@@ -60,6 +60,9 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   `Rules.load(sql, market)` for the customer's country); `lib/policyExtract.ts` turns a policy document into
   proposals that always wait for approval.
 - Whole-site password: `proxy.ts` + `SITE_PASSWORD` (off when unset). Dashboard: `/dashboard`, `lib/dashboard.ts`.
+- Sign-in and roles: `lib/auth.ts` (roles, `PERMISSIONS`, `requirePermission(sql, req, perm)` in every console route,
+  sessions in `staff_sessions`, `login_attempts`); `/signin`, `/account`, `/team`; `/api/staff/users` is "who am I".
+  Never take a staff id from the request body: the signed-in person comes from the session.
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.

@@ -1,4 +1,5 @@
 import type { Sql } from "./db.ts";
+import type { Role } from "./auth.ts";
 import { SESSION_IDLE_MINUTES } from "./config.ts";
 import { bank } from "./bank/index.ts";
 
@@ -46,7 +47,7 @@ export interface PendingAction {
   confirmed: boolean;
   asked_at: string;
   /** Set when a member of the team asked for it from the console (lib/staffActions.ts): the customer answers in their app. */
-  staff?: { id: string; name: string; role: "support_agent" | "supervisor"; approvedBy?: string | null };
+  staff?: { id: string; name: string; role: Role; approvedBy?: string | null };
   input?: unknown;
   action?: string;
   consequence?: string;

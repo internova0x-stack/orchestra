@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Sql } from "./db.ts";
+import type { Role } from "./auth.ts";
 import type { Conversation, PendingAction, VerifiedUser } from "./session.ts";
 import type { Rules } from "./rules.ts";
 import { money } from "./format.ts";
@@ -59,7 +60,7 @@ export interface ProofDoc {
 }
 
 /** A member of the team taking an account action from the console (lib/staffActions.ts). */
-export interface StaffActor { id: string; name: string; role: "support_agent" | "supervisor"; approvedBy?: string | null }
+export interface StaffActor { id: string; name: string; role: Role; approvedBy?: string | null }
 
 export interface ToolCtx {
   /** In staff mode: the staff member Alexis is working for; everything is logged under their name. */

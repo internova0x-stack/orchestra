@@ -1,11 +1,13 @@
 import type { Sql } from "../db.ts";
-import { staffUser, type StaffUser } from "../staff.ts";
+import { requirePermission, type Staff } from "../auth.ts";
 
-/** Managing keys and webhooks is a supervisor's job (simulated sign-in, like the rest of the console). */
-export async function requireSupervisor(sql: Sql, staffId: string | null | undefined): Promise<StaffUser | Response> {
-  const s = await staffUser(sql, staffId);
-  if (!s) return Response.json({ ok: false, error: "Sign in at the top of the API page first." }, { status: 403 });
-  if (s.role !== "supervisor") return Response.json({ ok: false, error: "Only a supervisor can manage API keys and webhooks." }, { status: 403 });
+/** Managing keys, webhooks and connectors: operations and IT admins (lib/auth.ts). */
+export async function requireApiAdmin(sql: Sql, req: Request): Promise<Staff | Response> {
+  const s = await requirePermission(sql, req, "api_manage");
+  if (s instanceof Response) {
+    const j = (await s.clone().json().catch(() => ({}))) as { message?: string };
+    return Response.json({ ok: false, error: j.message ?? "Not allowed." }, { status: s.status });
+  }
   return s;
 }
 

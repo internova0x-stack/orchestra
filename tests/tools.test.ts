@@ -1156,7 +1156,7 @@ test("rules: an agent's change waits for a supervisor; a supervisor's goes live;
   assert.equal(await cap(), 2000, "not live until approved");
   const again = await proposeChange(sql!, { ruleId: "waiver_cap_ngn", market: null, value: "4000", staff: bayo });
   assert.ok(!again.ok, "one waiting change per rule");
-  assert.deepEqual((await decideChange(sql!, (p as { change: number }).change, ife, true)), { ok: false, error: "Only a supervisor can approve or decline rule changes." });
+  assert.deepEqual((await decideChange(sql!, (p as { change: number }).change, ife, true)), { ok: false, error: "Only a supervisor or an operations admin can approve or decline rule changes." });
   assert.deepEqual(await decideChange(sql!, (p as { change: number }).change, bayo, true), { ok: true });
   assert.equal(await cap(), 3000);
   assert.equal((await pendingChanges(sql!)).length, 0);
@@ -1859,7 +1859,13 @@ test("data entry: a handoff opens a CRM ticket with its case notes; later steps 
   await call(s, "get_transfer_status", { reference: "PO-88102" });
   const esc = await call(s, "escalate_to_human", { trigger: "payout_past_window", urgency: "normal", request: "Where is PO-88102", checked: "PO-88102 late", did: "None", needed: "Chase the bank", told: "The team will pick it up" });
   const [e] = await sql!`select team, summary, urgency, respond_by from escalations where reference = ${esc.reference!}`;
-  await dataEntryOnEvent(sql!, "case.created", { reference: esc.reference, conversation_id: s.conv.id, urgency: e.urgency, team: e.team, category: "Payouts", respond_by: e.respond_by, summary: e.summary });
+  // The handoff's event writes it in the background; wait for it (or write it if the background hasn't started).
+  for (let i = 0; i < 40; i++) {
+    const [r] = await sql!`select ticket_id from crm_records where conversation_id = ${s.conv.id} and kind = 'zendesk'`;
+    if (r && r.ticket_id !== "pending") break;
+    if (i === 20 && !r) await dataEntryOnEvent(sql!, "case.created", { reference: esc.reference, conversation_id: s.conv.id, urgency: e.urgency, team: e.team, category: "Payouts", respond_by: e.respond_by, summary: e.summary });
+    await new Promise((res) => setTimeout(res, 50));
+  }
   const [rec] = await sql!`select ticket_id from crm_records where conversation_id = ${s.conv.id} and kind = 'zendesk'`;
   assert.equal(rec.ticket_id, "1099");
   const post = (await sql!`select body from crm_sandbox_calls where kind = 'zendesk' and method = 'POST' order by id desc limit 1`)[0].body.ticket;
@@ -1885,4 +1891,63 @@ test("data entry: a handoff opens a CRM ticket with its case notes; later steps 
     assert.match(solved.comment.body, /Recorded by Orchestra \(AI\)/);
   }
   await saveConnector(sql!, "zendesk", { mode: "off", data_entry: false }, "Bayo");
+});
+
+// ---------------------------------------------------------------- console sign-in and roles (Nov 23)
+
+test("sign-in: the first admin sets up the console; passwords are hashed; wrong ones are paused; roles decide what's allowed", { skip }, async () => {
+  const auth = await import("../lib/auth.ts");
+  await sql!`delete from staff_sessions`;
+  await sql!`delete from login_attempts`;
+  await sql!`update staff_users set password_hash = null, must_change = false, active = true`;
+  await sql!`delete from staff_users where demo is not true`;
+  assert.equal(await auth.needsSetup(sql!), true);
+  assert.equal((await auth.setupFirstAdmin(sql!, { name: "Tomi", email: "tomi@bank.example", password: "short" }) as { error: string }).error, "Use at least 10 characters.");
+  assert.equal((await auth.setupFirstAdmin(sql!, { name: "Tomi", email: "tomi@bank.example", password: "orchestra-2026" })).ok, true);
+  assert.equal(await auth.needsSetup(sql!), false);
+  assert.equal((await auth.setupFirstAdmin(sql!, { name: "Eve", email: "eve@bank.example", password: "orchestra-2026" })).ok, false, "only once");
+  const [u] = await sql!`select password_hash from staff_users where email = 'tomi@bank.example'`;
+  assert.match(u.password_hash, /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/);
+  assert.ok(!u.password_hash.includes("orchestra-2026"));
+
+  // Wrong passwords never say whether the email exists; five in 15 minutes pause sign-in for that email.
+  const wrong = await auth.signIn(sql!, "tomi@bank.example", "nope-nope-1", null);
+  const unknown = await auth.signIn(sql!, "nobody@bank.example", "nope-nope-1", null);
+  assert.deepEqual(wrong, unknown);
+  for (let i = 0; i < 4; i++) await auth.signIn(sql!, "tomi@bank.example", "nope-nope-1", null);
+  assert.match((await auth.signIn(sql!, "tomi@bank.example", "orchestra-2026", null) as { error: string }).error, /Too many attempts/);
+  await sql!`delete from login_attempts`;
+  const ok = await auth.signIn(sql!, "TOMI@bank.example ", "orchestra-2026", null);
+  assert.ok(ok.ok);
+  const token = (ok as { token: string }).token;
+  assert.equal((await sql!`select count(*)::int as n from staff_sessions where token_hash = ${token}`)[0].n, 0, "only a hash of the token is stored");
+  const req = (method = "GET", headers: Record<string, string> = {}) => new Request("https://console.example/api/x", { method, headers: { cookie: `orc_session=${encodeURIComponent(token)}`, ...headers } });
+  const me = await auth.currentStaff(sql!, req());
+  assert.equal(me?.role, "operations_admin");
+
+  // Roles: an operations admin manages the team and rules but doesn't work conversations or approve cases.
+  assert.ok(!((await auth.requirePermission(sql!, req(), "team_manage")) instanceof Response));
+  assert.equal(((await auth.requirePermission(sql!, req(), "conversation_act")) as Response).status, 403);
+  assert.equal(((await auth.requirePermission(sql!, req(), "case_approve")) as Response).status, 403);
+  assert.equal(((await auth.requirePermission(sql!, new Request("https://console.example/api/x"), "rules_view")) as Response).status, 401, "not signed in");
+  assert.equal(((await auth.requirePermission(sql!, req("POST", { origin: "https://evil.example" }), "team_manage")) as Response).status, 403, "changes only from the console");
+  assert.ok(auth.can("compliance", "inbox_view") && !auth.can("compliance", "conversation_act") && !auth.can("compliance", "rules_propose"));
+  assert.ok(auth.can("management", "billing_view") && !auth.can("management", "inbox_view"));
+  assert.ok(auth.can("supervisor", "case_approve") && !auth.can("support_agent", "case_approve"));
+
+  // Accounts: a temporary password must be changed; the last admin can't be removed; switching off ends sessions.
+  const added = await auth.addMember(sql!, me!, { name: "Ngozi Eke", email: "ngozi@bank.example", role: "support_agent" });
+  assert.ok(added.ok);
+  const s2 = await auth.signIn(sql!, "ngozi@bank.example", (added as { tempPassword: string }).tempPassword, null);
+  const r2 = new Request("https://console.example/api/x", { headers: { cookie: `orc_session=${(s2 as { token: string }).token}` } });
+  assert.equal(((await auth.requirePermission(sql!, r2, "inbox_view")) as Response).status, 403, "choose a password first");
+  const agent = (await auth.currentStaff(sql!, r2))!;
+  assert.ok((await auth.changeOwnPassword(sql!, agent, (added as { tempPassword: string }).tempPassword, "my-new-pass-42")).ok);
+  assert.ok(!((await auth.requirePermission(sql!, r2, "conversation_act")) instanceof Response));
+  assert.equal((await auth.updateMember(sql!, me!, me!.id, { active: false }) as { error: string }).error, "You can't change your own role or switch yourself off. Ask another admin.");
+  assert.ok((await auth.updateMember(sql!, me!, agent.id, { active: false })).ok);
+  assert.equal(await auth.currentStaff(sql!, r2), null, "switched off: signed out");
+  // The sample team can be given one password to try each role.
+  assert.equal((await auth.enableDemoTeam(sql!, me!, "demo-pass-2026") as { count: number }).count, 6);
+  assert.ok((await auth.signIn(sql!, "lara@yourbank.example", "demo-pass-2026", null)).ok);
 });

@@ -117,6 +117,24 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## Sign-in and roles (Nov 23, Tomi: "build the roles and log in")
+
+The console now has real accounts (`lib/auth.ts`): each member of the team signs in with their work email and
+password at `/signin`, and has one role: Support agent, Supervisor, Operations admin, Compliance (read-only),
+Management (read-only) or IT admin. What each role can see and do is one table (`PERMISSIONS`), checked by the
+server on every console request; the screens hide what the role can't use (the sidebar shows only its screens,
+read-only roles see no action buttons). The old "Signed in as" pickers are gone: actions are recorded under the
+signed-in person. Approvals: recalls over the cap, large staff actions and bank freezes stay with supervisors; rule
+changes go live from supervisors and operations admins. Passwords are scrypt-hashed; sessions are a random token in
+an httpOnly cookie, stored only as a hash, ending after 12 hours idle or 7 days; five wrong passwords in 15 minutes
+pause that email; changes must come from the console (Origin check); every sign-in, failure and account change is
+in the activity log. First visit with no accounts: the sign-in page creates the first operations admin. Team page
+(operations and IT admins): add people with a temporary password shown once (they choose their own at first
+sign-in), change roles, switch accounts off (signs them out), reset passwords; the last admin can't be removed;
+"Let the sample team sign in" gives the six invented sample accounts (one per role, @yourbank.example) one password
+to try each role. Accounts survive Reset demo. The customer app and the integration APIs don't use these accounts.
+Not built: single sign-on with the bank's identity provider, two-factor sign-in. One new test.
+
 ## Data entry (Nov 23, Tomi: "then 3")
 
 With "Data entry" ticked for a connector (API page), Orchestra keeps the bank's CRM up to date about the conversations

@@ -3,6 +3,7 @@ import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { appendTurn } from "./takeover.ts";
 import type { Sql } from "./db.ts";
+import { ROLE_NAME } from "./auth.ts";
 import { recordUsage } from "./usage.ts";
 import { EFFORT, MAX_STEPS, MAX_TOKENS, MODEL } from "./config.ts";
 import { staffUser } from "./staff.ts";
@@ -50,7 +51,7 @@ export async function runStaffTurn(
   }
   await sql`update conversations set last_activity = ${now} where id = ${conv.id}`;
   const user = await verifiedUser(sql, { ...conv, last_activity: now }, now);
-  const label = `${staff.name} (${staff.role === "supervisor" ? "Supervisor" : "Support agent"})`;
+  const label = `${staff.name} (${ROLE_NAME[staff.role]})`;
   const context = [
     `Staff session: ${label}. Case ${kase.reference}. It is ${longDate(now)}, ${dateTime(now).split(", ")[1]} Lagos time.`,
     user ? `The case's customer: ${user.full_name}, ${user.business_name}${user.personal ? "" : `, ${user.role === "payment_rights" ? "payment rights" : "view-only"}`}.` : "The case's customer was never verified, so their account records can't be looked up; work from the case materials.",

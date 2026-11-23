@@ -235,7 +235,16 @@ async function seedInto(tx: any, now: Date) {
     await seedLoansAndPayouts(tx, now);
     await seedRetailTransfers(tx, now);
     await seedBillsAndUssd(tx, now);
-    await tx`insert into staff_users (id, name, role) values ('ife', 'Ife Adeyemi', 'support_agent'), ('bayo', 'Bayo Martins', 'supervisor')`;
+    // The sample team, one per role (invented people). Accounts survive Reset demo; they can sign in once an admin
+    // gives them a password (Team page: "Let the sample team sign in").
+    await tx`insert into staff_users (id, name, role, email, demo) values
+      ('ife', 'Ife Adeyemi', 'support_agent', 'ife@yourbank.example', true),
+      ('bayo', 'Bayo Martins', 'supervisor', 'bayo@yourbank.example', true),
+      ('zainab', 'Zainab Bello', 'operations_admin', 'zainab@yourbank.example', true),
+      ('lara', 'Lara Cole', 'compliance', 'lara@yourbank.example', true),
+      ('musa', 'Musa Danjuma', 'management', 'musa@yourbank.example', true),
+      ('dayo', 'Dayo Akin', 'it_admin', 'dayo@yourbank.example', true)
+      on conflict (id) do nothing`;
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
     await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;

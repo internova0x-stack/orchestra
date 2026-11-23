@@ -1,3 +1,4 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 import { ingestInteraction, SAMPLE_TICKETS } from "@/lib/listen.ts";
@@ -17,6 +18,8 @@ export async function POST(req: Request) {
   const t = SAMPLE_TICKETS[Number(body?.index)];
   if (!t) return Response.json({ error: "bad_request" }, { status: 400 });
   const sql = db();
+  const viewer = await requirePermission(sql, req, "conversation_act");
+  if (viewer instanceof Response) return viewer;
   await ensureSeeded(sql);
   // A fresh ticket id each time, so the sample can be sent again.
   const { label: _label, ...ticket } = t;

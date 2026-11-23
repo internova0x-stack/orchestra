@@ -1,6 +1,6 @@
+import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
 import { transcriptOf } from "@/lib/cases.ts";
-import { staffUser } from "@/lib/staff.ts";
 import { handBack, staffReply, takeOver } from "@/lib/takeover.ts";
 import { saveReview, translateConversation } from "@/lib/review.ts";
 import { runStaffAction, STAFF_ACTIONS } from "@/lib/staffActions.ts";
@@ -11,11 +11,13 @@ export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f-]{36}$/i;
 
 /** One conversation's full chat history (text only, secrets already masked), its activity log and handoffs. */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   if (!UUID.test(id)) return Response.json({ error: "not_found" }, { status: 404 });
   const sql = db();
+  const viewer = await requirePermission(sql, req, "inbox_view");
+  if (viewer instanceof Response) return viewer;
   const [c] = await sql`select c.id, c.messages, c.proactive, c.listen, c.taken_over_by, c.awaiting_team, c.language, r.rating, r.note, r.reviewed_by
     from conversations c left join conversation_reviews r on r.conversation_id = c.id where c.id = ${id} and c.mode = 'customer'`;
   if (!c) return Response.json({ error: "not_found" }, { status: 404 });
@@ -43,8 +45,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!UUID.test(id)) return Response.json({ error: "not_found" }, { status: 404 });
   const body = (await req.json().catch(() => null)) as { action?: string; staffId?: string; text?: string; rating?: string; note?: string; tool?: string; input?: Record<string, unknown> } | null;
   const sql = db();
-  const staff = await staffUser(sql, body?.staffId);
-  if (!staff) return Response.json({ error: "sign_in", message: "Sign in as a member of the team first (top of the Inbox)." }, { status: 403 });
+  const staff = await requirePermission(sql, req, "conversation_act");
+  if (staff instanceof Response) return staff;
   // Account actions by the team (lib/staffActions.ts), and the one-time code they send for the stronger check.
   if (body?.action === "staff_action" || body?.action === "send_code") {
     const tool = String(body.tool ?? "");

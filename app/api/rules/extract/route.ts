@@ -1,7 +1,7 @@
+import { requirePermission } from "@/lib/auth.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db.ts";
 import { extractFromPolicy } from "@/lib/policyExtract.ts";
-import { staffUser } from "@/lib/staff.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,8 +18,8 @@ export async function POST(req: Request) {
   }
   if (!process.env.DATABASE_URL || !process.env.ANTHROPIC_API_KEY) return Response.json({ ok: false, error: "The database or the AI service isn't set up." }, { status: 503 });
   const sql = db();
-  const staff = await staffUser(sql, body?.staffId);
-  if (!staff) return Response.json({ ok: false, error: "Sign in at the top of the Rules screen first." }, { status: 403 });
+  const staff = await requirePermission(sql, req, "rules_propose");
+  if (staff instanceof Response) return staff;
   try {
     const out = await extractFromPolicy(sql, { name: String(f.name ?? "policy").slice(0, 120), media_type: f.media_type!, data: f.data }, staff);
     return Response.json({ ok: true, ...out });
