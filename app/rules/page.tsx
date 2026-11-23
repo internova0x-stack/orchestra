@@ -255,7 +255,7 @@ function PolicyUpload({ staff, onDone }: { staff: Staff | null; onDone: () => vo
   return (
     <>
       <input ref={file} type="file" accept="application/pdf,text/plain,.md,.txt" hidden onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
-      <button className="btn" disabled={!staff || busy} onClick={() => file.current?.click()} title={staff ? "" : "Sign in first"}>{busy ? "Reading the document…" : "Upload a policy document"}</button>
+      <button className="btn btn-primary" disabled={!staff || busy} onClick={() => file.current?.click()} title={staff ? "" : "Sign in first"}>{busy ? "Reading the document…" : "Upload a policy document"}</button>
       {(error || result) && (
         <div className="policy-result panel" role="status">
           {error && <div className="rule-error">{error}</div>}
@@ -324,7 +324,6 @@ export default function RulesPage() {
   return (
     <div className="rules-page">
       <div className="rules-toolbar">
-        <span className="label">Signed in as <b>{staffList[0]?.name ?? "…"}</b></span>
         <label className="picker">
           <span className="label">Market</span>
           <select value={market} onChange={(e) => setMarket(e.target.value)} aria-label="Market">
@@ -332,10 +331,10 @@ export default function RulesPage() {
             {markets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
-        <PolicyUpload staff={staff} onDone={load} />
         <span className="label rules-who">
           {!staff ? "Sign in to change rules." : canApprove(staff) ? "Your changes go live at once." : "Your changes wait for a supervisor's approval."}
         </span>
+        <PolicyUpload staff={staff} onDone={load} />
       </div>
       {message && <div className="toast" role="status">{message}</div>}
 
