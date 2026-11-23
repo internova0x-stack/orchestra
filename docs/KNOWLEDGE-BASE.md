@@ -160,6 +160,21 @@ promise.
 Business hours (sample, also a rule; the same calendar counts business days everywhere, including the
 SWIFT late window): Monday to Friday, 09:00 to 17:00, Lagos time (WAT).
 
+## Added during the build (Nov 23, sample)
+
+Entries the code needs that the Knowledge Base didn't have, all marked sample and editable:
+- **Other routes count as late after: 1 business day** (only SWIFT had a late rule).
+- **Fixing a failed payout:** correct the recipient's details in the dashboard under Beneficiaries, where a
+  second approver confirms changes, then send a new payout (from the Behaviour Guide's model wording).
+- **How to submit documents:** through the platform's dashboard, under Verification; never in chat.
+- **Not covered in this chat:** cards, stablecoin support, Earn, IPO applications and developer questions.
+- **Business days, hours start, hours end:** Monday to Friday, 09:00 to 17:00 (Lagos time, fixed).
+- Switches for recalls and proof of payment (on), recalls per customer (3 per 30 days) and failed
+  identity checks per conversation (2) are limit rules too.
+
+The Rules screen gets a **Platform** category for the platform facts, alongside the Design System's
+seven.
+
 ## Not editable
 
 The Guardrails' fixed rules are not rules in this table and can't be changed on the Rules screen:

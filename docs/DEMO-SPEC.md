@@ -119,8 +119,10 @@ asked, checked, done, left.
 ## Identity (demo decision)
 
 - Tier 0 (general answers): no check.
-- Tiers 1-3: the **standard check**: full name plus two account facts (e.g. date of birth and last
-  transaction amount), checked against the simulated bank; it also sets the user's role.
+- Tiers 1-3: the **standard check**: full name plus two account facts, checked against the simulated
+  bank; it also sets the user's role. **The two facts are the date of birth and the business's
+  registration number** (decided in the build, Nov 23: Harbour and Vine has never sent a payout, so a
+  "last transaction amount" couldn't verify Sam in test 10). The customer picker shows them for testers.
 - **Decision, Nov 23:** the stronger check (one-time code) is **not in the first demo**. In the demo,
   `initiate_recall` (tier 3) runs after the standard check plus payment rights. The one-time code is
   in the backlog; when it lands, tier 3 tools require it.

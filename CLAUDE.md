@@ -26,10 +26,22 @@ and watches Alexis change behaviour.
   wins over the Playbook; DEMO-SPEC wins over all of them.
 
 ## Stack
-Next.js (App Router, TypeScript) on Vercel, Supabase (Postgres) for the simulated bank and the audit
-log, the Anthropic API through the Vercel AI SDK for the agent loop and streaming. Use the current
-Claude Sonnet model id, kept in one config constant. Check each library's current documentation before
-using it.
+Next.js 16 (App Router, TypeScript) on Vercel; Supabase Postgres for the simulated bank and the audit
+log, reached with one `DATABASE_URL` (the transaction pooler string) through `postgres`; Anthropic's own
+TypeScript SDK (`@anthropic-ai/sdk`) for the agent loop and streaming, not the Vercel AI SDK the Build
+Plan named (decided Nov 23: the loop pauses for the identity form and checks confirmations itself, which
+the official SDK's manual streaming loop fits). Model `claude-sonnet-5-5` with server-side refusal
+fallbacks, in `lib/config.ts`. Check each library's current documentation before using it.
+
+## Layout and commands
+- `lib/agent.ts` the turn loop · `lib/tools.ts` the tools and their checks · `lib/rules.ts` reads
+  `rules` · `lib/seed.ts` the simulated bank (dates relative to now) · `lib/schema.ts` the tables,
+  created by the app itself on first use and on Reset demo, so nobody pastes SQL into Supabase.
+- `app/api/chat` streams a turn as newline-delimited JSON · `app/api/activity` the audit log for the
+  activity panel · `app/api/reset` Reset demo · `app/api/users` the customer picker.
+- `npm run dev`, `npm run build`, `npm run typecheck`.
+- `npm test` with `TEST_DATABASE_URL` pointing at a throwaway Postgres runs the tools against the seeded
+  bank (no model calls); without it the database tests are skipped.
 
 ## Working with Tomi
 Tomi owns the project, is non-technical and doesn't write or edit code.
