@@ -210,7 +210,7 @@ export async function seed(sql: Sql, now = new Date()) {
 async function seedInto(tx: any, now: Date) {
   {
     await tx.unsafe(`truncate ${TABLES_TO_WIPE.join(", ")} restart identity cascade`);
-    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001;`);
+    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301;`);
 
     for (const b of BUSINESSES) {
       await tx`insert into businesses (id, name, country, registration_number, verification_status, verification_reason, verification_missing, verification_submitted_at)
@@ -227,6 +227,8 @@ async function seedInto(tx: any, now: Date) {
       await tx`insert into business_users (id, business_id, full_name, first_name, date_of_birth, role, phone, email)
         values (${c.id}, ${c.id}, ${c.name}, ${c.name.split(" ")[0]}, ${c.dob}, 'payment_rights', ${c.phone}, ${c.email})`;
     }
+    await seedCards(tx, now);
+
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
     await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;
     for (const u of USERS) {
@@ -301,4 +303,51 @@ export function ensureSeeded(sql: Sql): Promise<void> {
       });
   }
   return ready.__orchestraReady;
+}
+
+// ---------------------------------------------------------------- use cases 1 and 2
+
+const H = 3_600_000;
+
+/** Cards and card transactions for the personal customers, with planted cases 1 to 5. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedCards(tx: any, now: Date) {
+  const cards = [
+    { id: "CARD-4421", holder_id: "chioma", last4: "4421", currency: "NGN", daily_limit: 500000, delivery_address: "14 Admiralty Way, Lekki Phase 1, Lagos" },
+    { id: "CARD-7710", holder_id: "emeka", last4: "7710", currency: "NGN", daily_limit: 200000, delivery_address: "3 Aminu Kano Crescent, Wuse 2, Abuja" },
+    { id: "CARD-3307", holder_id: "grace", last4: "3307", currency: "GBP", daily_limit: 1500, delivery_address: "Flat 4, 22 Pratt Street, Camden, London" },
+    { id: "CARD-9902", holder_id: "david", last4: "9902", currency: "USD", daily_limit: 2500, delivery_address: "418 Elm Street, Arlington, Virginia" },
+    { id: "CARD-5150", holder_id: "amara", last4: "5150", currency: "NGN", daily_limit: 300000, delivery_address: "9 Ogui Road, Enugu" },
+  ];
+  for (const c of cards) {
+    await tx`insert into cards (id, holder_id, last4, status, currency, daily_limit, delivery_address, created_at)
+      values (${c.id}, ${c.holder_id}, ${c.last4}, 'active', ${c.currency}, ${c.daily_limit}, ${c.delivery_address}, ${new Date(now.getTime() - 300 * 86_400_000)})`;
+  }
+  const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * H);
+  const rows: [string, string, string, string, string | null, string | null, string, number, string, string, string | null, Date][] = [
+    // id, holder, card, descriptor, merchant name, location, channel, amount, currency, status, decline reason, at
+    // Planted 1: Chioma lost her card yesterday evening; two payments after the loss aren't hers.
+    ["TX-90011", "chioma", "CARD-4421", "MOBIL LEKKI", "Mobil filling station", "Lekki, Lagos", "POS", 18500, "NGN", "settled", null, at(40)],
+    ["TX-90012", "chioma", "CARD-4421", "LEKKI GADGETS HUB", "Lekki Gadgets Hub", "Lekki, Lagos", "POS", 85000, "NGN", "settled", null, at(9)],
+    ["TX-90013", "chioma", "CARD-4421", "QUICKBITE*LAGOS", "QuickBite Lagos (food delivery)", "Online", "web", 12500, "NGN", "settled", null, at(7)],
+    // Planted 3: a duplicate where one is a pending hold.
+    ["TX-90014", "chioma", "CARD-4421", "SHOPRITE LEKKI", "Shoprite, Lekki", "Lekki, Lagos", "POS", 23400, "NGN", "settled", null, at(50)],
+    ["TX-90015", "chioma", "CARD-4421", "SHOPRITE LEKKI", "Shoprite, Lekki", "Lekki, Lagos", "POS", 23400, "NGN", "pending", null, at(49.9)],
+    // Planted 2: Emeka's card declined for reaching the daily limit.
+    ["TX-90021", "emeka", "CARD-7710", "JUMIA ONLINE", "Jumia (online store)", "Online", "web", 180000, "NGN", "settled", null, at(5)],
+    ["TX-90022", "emeka", "CARD-7710", "JUMIA ONLINE", "Jumia (online store)", "Online", "web", 65000, "NGN", "declined", "Daily spending limit reached (₦200,000 a day)", at(2)],
+    ["TX-90023", "emeka", "CARD-7710", "CHICKEN REP WUSE", "Chicken Republic, Wuse", "Abuja", "POS", 7800, "NGN", "settled", null, at(30)],
+    // Planted 4: Grace's genuine duplicate, both settled.
+    ["TX-90031", "grace", "CARD-3307", "HOLLOW TREE BOOKS", "Hollow Tree Books", "Camden, London", "card", 42.99, "GBP", "settled", null, at(72)],
+    ["TX-90032", "grace", "CARD-3307", "HOLLOW TREE BOOKS", "Hollow Tree Books", "Camden, London", "card", 42.99, "GBP", "settled", null, at(71.98)],
+    // Planted 5: an unrecognised statement name that is a known merchant under another name.
+    ["TX-90033", "grace", "CARD-3307", "PP*NBLX 0294 LONDON", "Nimble Bikes Ltd (bike hire, paid through a payment processor)", "Online, London", "web", 29.0, "GBP", "settled", null, at(26)],
+    ["TX-90034", "grace", "CARD-3307", "TFL TRAVEL CH", "Transport for London (contactless travel)", "London", "card", 7.8, "GBP", "settled", null, at(20)],
+    ["TX-90041", "david", "CARD-9902", "GROCERY OUTLET", "Grocery Outlet", "Arlington, VA", "card", 63.12, "USD", "settled", null, at(30)],
+    ["TX-90051", "amara", "CARD-5150", "SPAR ENUGU", "Spar, Enugu", "Enugu", "POS", 15200, "NGN", "settled", null, at(28)],
+  ];
+  for (const r of rows) {
+    await tx`insert into transactions (id, holder_id, card_id, descriptor, merchant_name, location, channel, amount, currency, status, decline_reason, at)
+      values (${r[0]}, ${r[1]}, ${r[2]}, ${r[3]}, ${r[4]}, ${r[5]}, ${r[6]}, ${r[7]}, ${r[8]}, ${r[9]}, ${r[10]}, ${r[11]})`;
+  }
 }

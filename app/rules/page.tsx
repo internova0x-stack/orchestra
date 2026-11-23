@@ -8,8 +8,8 @@ interface Rule {
   value: string; unit: string | null; updated_by: string; updated_at: string;
 }
 
-// The Design System's categories, plus Platform for the platform facts.
-const CATEGORIES = ["Payouts", "Incoming payments", "Proof of payment", "Verification", "Fees and FX", "Limits and approvals", "Response targets", "Platform"];
+// The Design System's categories first, then any others the rules use (Cards, Loans…), then Platform.
+const ORDER = ["Payouts", "Incoming payments", "Proof of payment", "Verification", "Fees and FX", "Limits and approvals", "Response targets"];
 
 function when(iso: string) {
   const d = new Date(iso);
@@ -89,7 +89,7 @@ function RuleRow({ rule, onSaved }: { rule: Rule; onSaved: (r: Rule) => void }) 
 export default function RulesPage() {
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [fixed, setFixed] = useState<string[]>([]);
-  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [category, setCategory] = useState(ORDER[0]);
   const [problem, setProblem] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -113,6 +113,8 @@ export default function RulesPage() {
   }, [load]);
 
   const shown = (rules ?? []).filter((r) => r.category === category);
+  const used = [...new Set((rules ?? []).map((r) => r.category))];
+  const CATEGORIES = [...ORDER, ...used.filter((c) => !ORDER.includes(c) && c !== "Platform"), "Platform"];
 
   return (
     <div className="rules-grid">

@@ -182,6 +182,54 @@ alter table business_users add column if not exists login_locked text;
 alter table conversations add column if not exists stronger_verified_at timestamptz;
 alter table conversations add column if not exists pending_code jsonb;
 
+-- Use cases 1 and 2: cards, card transactions and disputes.
+create table if not exists cards (
+  id text primary key,
+  holder_id text not null references businesses(id) on delete cascade,
+  last4 text not null,
+  status text not null check (status in ('active','frozen','replaced','expired')),
+  currency text not null,
+  daily_limit numeric(18,2),
+  delivery_address text,
+  created_at timestamptz not null default now()
+);
+create table if not exists transactions (
+  id text primary key,
+  holder_id text not null references businesses(id) on delete cascade,
+  card_id text references cards(id) on delete set null,
+  descriptor text not null,
+  merchant_name text,
+  location text,
+  channel text not null check (channel in ('card','POS','ATM','web','transfer')),
+  amount numeric(18,2) not null,
+  currency text not null,
+  status text not null check (status in ('pending','settled','declined','reversed')),
+  decline_reason text,
+  at timestamptz not null
+);
+create table if not exists disputes (
+  reference text primary key,
+  transaction_id text not null unique references transactions(id) on delete cascade,
+  holder_id text not null references businesses(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete cascade,
+  amount numeric(18,2) not null,
+  currency text not null,
+  reason text not null,
+  status text not null default 'open',
+  created_at timestamptz not null default now()
+);
+create table if not exists card_replacements (
+  reference text primary key,
+  card_id text not null references cards(id) on delete cascade,
+  holder_id text not null references businesses(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete cascade,
+  fee numeric(18,2) not null,
+  currency text not null,
+  created_at timestamptz not null default now()
+);
+create sequence if not exists dispute_seq start 7001;
+create sequence if not exists replacement_seq start 3301;
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -208,6 +256,10 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "disputes",
+  "card_replacements",
+  "transactions",
+  "cards",
   "recalls",
   "proofs",
   "escalations",

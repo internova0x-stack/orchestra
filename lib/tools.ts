@@ -15,6 +15,8 @@ import {
   type BusinessHours,
 } from "./time.ts";
 import { sendOneTimeCode, sendResetLink, unlockAccount } from "./tools/access.ts";
+import { freezeCard, getCard, orderReplacement } from "./tools/cards.ts";
+import { listTransactions, openDispute } from "./tools/transactions.ts";
 import {
   AWAITING_CODE,
   AWAITING_IDENTITY,
@@ -812,7 +814,8 @@ const getFees = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees,
-  sendOneTimeCode, sendResetLink, unlockAccount];
+  sendOneTimeCode, sendResetLink, unlockAccount,
+  getCard, freezeCard, orderReplacement, listTransactions, openDispute];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {
@@ -838,6 +841,11 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx): Pr
     return { ok: false, reason: `INVALID_INPUT: ${parsed.error.message}` };
   }
   const rules = await Rules.load(ctx.sql); // fresh every call: a Rules screen edit applies at once
+  // Check 1: an action with a switch on the Rules screen is refused while it's off.
+  const sw = rules.get(`action_${name}`);
+  if (sw && !rules.on(`action_${name}`)) {
+    return refuse(ctx, name, parsed.data, `${sw.name.replace(/ switched on$/, "")} is switched off for this institution. Explain and offer a handoff.`, "switched off");
+  }
   const idProblem = needsIdentity(tool.tier, ctx, tool.identity);
   if (idProblem) return refuse(ctx, name, parsed.data, idProblem, "identity not verified");
   return tool.run(parsed.data, ctx, rules);

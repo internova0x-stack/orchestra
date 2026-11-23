@@ -534,3 +534,70 @@ test("personal accounts: identity uses the last 4 digits of the account number",
   assert.equal(await checkIdentity(sql!, { full_name: "Grace Mensah", date_of_birth: "1990-02-27", registration_number: "5432" }), "grace");
   assert.equal(await checkIdentity(sql!, { full_name: "Chioma Eze", date_of_birth: "1991-04-12", registration_number: "0123456789" }), null);
 });
+
+// ---------------------------------------------------------------- use cases 1 and 2: cards and disputes
+
+test("planted 1: Chioma's lost card is frozen after her yes, then the two charges after the loss are disputed", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("chioma", MONDAY);
+  const card = (await call(s, "get_card", {})).data as Record<string, string>;
+  assert.equal(card.card, "•••• 4421");
+  assert.equal(card.status, "Active");
+  assert.match((await call(s, "freeze_card", {})).reason!, /CONFIRMATION_NEEDED/);
+  assert.equal((await sql!`select status from cards where id = 'CARD-4421'`)[0].status, "active", "nothing before the yes");
+  await confirmPending(s);
+  assert.equal((await call(s, "freeze_card", {})).ok, true);
+  assert.equal((await sql!`select status from cards where id = 'CARD-4421'`)[0].status, "frozen");
+  for (const id of ["TX-90012", "TX-90013"]) {
+    await call(s, "open_dispute", { transaction_id: id, reason: "not_mine" });
+    await confirmPending(s);
+    assert.equal((await call(s, "open_dispute", { transaction_id: id, reason: "not_mine" })).ok, true, id);
+  }
+  const again = await call(s, "open_dispute", { transaction_id: "TX-90012", reason: "not_mine" });
+  assert.equal(again.ok, false);
+  assert.equal(again.reference, "DSP-7001", "a second dispute returns the first");
+});
+
+test("planted 2: Emeka's decline is explained from the record", { skip }, async () => {
+  const s = await session("emeka", MONDAY);
+  const card = (await call(s, "get_card", {})).data as { recent_declines: { reason: string }[] };
+  assert.match(card.recent_declines[0].reason, /Daily spending limit reached/);
+});
+
+test("planted 3: a duplicate where one is a pending hold can't be disputed", { skip }, async () => {
+  const s = await session("chioma", MONDAY);
+  const list = (await call(s, "list_transactions", { merchant: "shoprite" })).data as { transactions: Record<string, string>[] };
+  assert.ok(list.transactions.some((t) => t.possible_duplicate_of && /pending hold/.test(t.note)));
+  assert.match((await call(s, "open_dispute", { transaction_id: "TX-90015", reason: "duplicate" })).reason!, /pending hold/);
+});
+
+test("planted 4 and 5: a genuine duplicate is disputable; an odd statement name shows the merchant's full name", { skip }, async () => {
+  const s = await session("grace", MONDAY);
+  const dup = (await call(s, "list_transactions", { merchant: "hollow" })).data as { transactions: Record<string, string>[] };
+  assert.ok(dup.transactions.every((t) => t.status === "Settled" && t.possible_duplicate_of));
+  await call(s, "open_dispute", { transaction_id: "TX-90032", reason: "duplicate" });
+  await confirmPending(s);
+  assert.equal((await call(s, "open_dispute", { transaction_id: "TX-90032", reason: "duplicate" })).ok, true);
+  const odd = (await call(s, "list_transactions", { merchant: "NBLX" })).data as { transactions: Record<string, string>[] };
+  assert.match(odd.transactions[0].merchant, /Nimble Bikes/);
+});
+
+test("cards: a replacement needs the stronger check, charges the rule's fee, and happens once", { skip }, async () => {
+  const standard = await session("david", MONDAY);
+  assert.match((await call(standard, "order_replacement", { reason: "damaged" })).reason!, /stronger identity check/);
+  const s = await session("david", MONDAY, true);
+  await call(s, "order_replacement", { reason: "damaged" });
+  await confirmPending(s);
+  const out = await call(s, "order_replacement", { reason: "damaged" });
+  assert.equal(out.ok, true);
+  assert.equal((out.data as { fee: string }).fee, "$5.00");
+  assert.equal((await sql!`select status from cards where id = 'CARD-9902'`)[0].status, "replaced");
+});
+
+test("switches: an action switched off on the Rules screen is refused before it runs", { skip }, async () => {
+  await sql!`update rules set value = 'off' where id = 'action_freeze_card'`;
+  const s = await session("amara", MONDAY);
+  const out = await call(s, "freeze_card", {});
+  assert.match(out.reason!, /switched off/);
+  await sql!`update rules set value = 'on' where id = 'action_freeze_card'`;
+});

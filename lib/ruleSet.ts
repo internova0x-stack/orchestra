@@ -118,6 +118,17 @@ export const RULE_SET: RuleSeed[] = [
   a("fee_conversion", "Fees and FX", "Currency conversion", "Rate shown at the time of conversion, with a 0.5% conversion fee", "sample"),
   a("fee_monthly", "Fees and FX", "Monthly account fee", "None", "sample"),
 
+  // Cards and disputes (sample, use cases 1 and 2)
+  a("card_replacement_fee", "Cards", "Replacement card fee", "$5.00, £5.00 or ₦1,000 per card", "sample"),
+  a("card_delivery", "Cards", "Replacement card delivery", "Sent to the address on file; usually arrives in 5 to 7 business days", "sample"),
+  a("card_pin_help", "Cards", "PIN or activation help", "Activate the card and set or reset the PIN in the app under Cards; the PIN is never shared in chat", "sample"),
+  a("card_holds", "Cards", "Pending holds", "A pending card payment is a hold, not a charge; if the merchant doesn't collect it, it drops off within 7 days", "sample"),
+  a("dispute_process", "Cards", "How a dispute works", "The bank investigates with the merchant through the card scheme; the customer gets a reference and an update within 10 business days; the outcome isn't decided in chat", "sample"),
+  l("dispute_window", "Cards", "Disputes can be opened up to", "120", "days after the transaction"),
+  l("replacement_fee_usd", "Cards", "Replacement card fee (USD)", "5", "$"),
+  l("replacement_fee_gbp", "Cards", "Replacement card fee (GBP)", "5", "£"),
+  l("replacement_fee_ngn", "Cards", "Replacement card fee (NGN)", "1000", "₦"),
+
   // Limits and approvals
   l("action_initiate_recall", "Limits and approvals", "Recalls switched on", "on"),
   l("action_generate_proof_of_payment", "Limits and approvals", "Proof of payment switched on", "on"),
@@ -127,6 +138,16 @@ export const RULE_SET: RuleSeed[] = [
   l("recall_limit", "Limits and approvals", "Recalls per customer before a human reviews", "3", "per 30 days"),
   l("identity_attempts", "Limits and approvals", "Failed identity checks before the check ends", "2", "per conversation"),
   l("reset_link_limit", "Limits and approvals", "Password reset links per customer", "3", "per 24 hours"),
+  l("dispute_cap_usd", "Limits and approvals", "Dispute cap before human approval (USD)", "500", "$"),
+  l("dispute_cap_gbp", "Limits and approvals", "Dispute cap before human approval (GBP)", "400", "£"),
+  l("dispute_cap_ngn", "Limits and approvals", "Dispute cap before human approval (NGN)", "250000", "₦"),
+  l("dispute_limit", "Limits and approvals", "Disputes per customer before a human reviews", "3", "per 90 days"),
+  l("replacement_limit", "Limits and approvals", "Replacement cards per customer", "2", "per 12 months"),
+  l("action_freeze_card", "Limits and approvals", "Card freezing switched on", "on"),
+  l("action_order_replacement", "Limits and approvals", "Replacement cards switched on", "on"),
+  l("action_open_dispute", "Limits and approvals", "Disputes switched on", "on"),
+  l("action_send_reset_link", "Limits and approvals", "Reset links switched on", "on"),
+  l("action_unlock_account", "Limits and approvals", "Unlocking switched on", "on"),
 
   // Response targets (owner, Nov 23) and the business-hours calendar
   l("response_urgent", "Response targets", "Urgent: first human response within", "1", "hours"),
