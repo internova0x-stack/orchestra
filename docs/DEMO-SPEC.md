@@ -241,8 +241,5 @@ invoice-fraud warning); case 4's over-cap recall goes to a human.
 
 - The demo fintech's display name (the pitch is to Nuvion; the prototype is labelled as one).
 - Languages: English only for now.
-- The Rules screen has a "Response targets" category (the handoff card's "when to expect a response"),
-  but the Knowledge Base has no entries for it. Proposed sample values: Urgent 1 hour, High 4 business
-  hours, Normal 1 business day.
-- Docs 5, 7, 9 and 10 aren't written (Behaviour Guide, Escalation Playbook, Conversation Design, Test
-  Plan, Build Plan); more are on their way before building starts.
+- Docs 5, 7, 9 and 10 aren't written (Behaviour Guide, Escalation Playbook, Test Plan, Build Plan);
+  more are on their way before building starts.

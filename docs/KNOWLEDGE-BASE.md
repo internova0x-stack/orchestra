@@ -139,6 +139,19 @@ A fee question: the fee, what triggered it and the date, from the customer's own
 question: rate applied, time, amounts in both currencies; no predictions or advice on when to convert.
 "What are your fees?" in general: the sample values (a live version uses Nuvion's real schedule).
 
+## Response targets (sample)
+
+How soon a person on the support team picks up a case after Alexis hands it off: what the handoff
+card's "when to expect a response" shows. Not Alexis's own reply time (that's seconds). Set by the
+owner on Nov 23; clock time, not business hours. Alexis states them as the team's target, never a
+promise.
+
+| Urgency | Target |
+|---|---|
+| Urgent | 30 minutes |
+| High | 1 hour |
+| Normal | 4 hours |
+
 ## Not editable
 
 The Guardrails' fixed rules are not rules in this table and can't be changed on the Rules screen:
