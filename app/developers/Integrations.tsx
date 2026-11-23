@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // The API page (Tomi, Nov 23: "use it for the whole api page"): every connection in one list, grouped like an app's
 // plugin list: Needs attention, Active, Not active. A row shows what it is and its state in one line, a fix button when
@@ -53,20 +53,30 @@ export default function Integrations() {
   const [secret, setSecret] = useState<{ label: string; value: string } | null>(null);
   const [note, setNote] = useState<{ text: string; tone: "ok" | "stop" } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const seq = useRef(0);
 
+  // Every load is numbered and only the newest one is applied, so a slow background refresh that started
+  // before a click can't put the old state back. An answer that fails keeps what's on screen.
   const load = useCallback(async () => {
-    const get = (u: string) => fetch(u, { cache: "no-store" }).then((r) => r.json()).catch(() => ({}));
+    const mine = ++seq.current;
+    const get = (u: string) => fetch(u, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     const [c, k, w, b, me] = await Promise.all([get("/api/admin/connectors"), get("/api/admin/keys"), get("/api/admin/webhooks"), get("/api/admin/bank"), get("/api/staff/users")]);
-    setConns(c.connectors ?? []);
-    setKeys(k.keys ?? []);
-    setEndpoints(w.endpoints ?? []);
-    setDeliveries(w.deliveries ?? []);
-    setEvents(w.events ?? []);
-    setBankInfo(b.mode ? b : null);
-    setCanManage((me.permissions ?? []).includes("api_manage"));
+    if (mine !== seq.current) return false;
+    if (c) setConns(c.connectors ?? []);
+    if (k) setKeys(k.keys ?? []);
+    if (w) { setEndpoints(w.endpoints ?? []); setDeliveries(w.deliveries ?? []); setEvents(w.events ?? []); }
+    if (b) setBankInfo(b.mode ? b : null);
+    if (me) setCanManage((me.permissions ?? []).includes("api_manage"));
+    const ok = Boolean(c || b);
+    setLoadFailed(!ok);
+    if (ok) setLoaded(true);
+    return ok;
   }, []);
   useEffect(() => {
-    load();
+    // The first load retries once on its own (a server waking up can miss the first answer).
+    load().then((ok) => { if (!ok) setTimeout(load, 2500); });
     const t = setInterval(() => document.visibilityState === "visible" && load(), 15_000);
     return () => clearInterval(t);
   }, [load]);
@@ -91,7 +101,12 @@ export default function Integrations() {
       setBusy(false);
     }
   }
-  const crm = (kind: string, body: object, ok?: (j: Record<string, unknown>) => string | null) => call("/api/admin/connectors", { ...body, kind }, "POST", ok);
+  const crm = async (kind: string, body: { mode?: string; [k: string]: unknown }, ok?: (j: Record<string, unknown>) => string | null) => {
+    const j = await call("/api/admin/connectors", { ...body, kind }, "POST", ok);
+    // Move it at once; the reload that follows confirms it.
+    if (j && body.mode) setConns((cs) => cs.map((c) => (c.kind === kind ? { ...c, mode: body.mode as Conn["mode"], health: body.mode === "off" ? { ...c.health, state: "off" } : c.health.state === "off" ? { ...c.health, state: "active" } : c.health } : c)));
+    return j;
+  };
   const open = (id: string) => { setSelected(id); setAdding(null); setNote(null); };
 
   // Every connection as a row.
@@ -119,16 +134,15 @@ export default function Integrations() {
           : h.fix === "reconnect" ? { label: "Reconnect", run: () => crm(c.kind, { action: "reconnect" }, () => `${c.name} is working again.`) }
           : h.fix === "errors" ? { label: "See errors", run: () => open(`crm:${c.kind}`) }
           : h.fix === "setup" ? { label: "Set up", run: () => open(`crm:${c.kind}`) }
-          : c.mode === "off" ? { label: "Connect", run: () => crm(c.kind, { mode: "sandbox" }, () => `${c.name} is on, in the sandbox. Try it with a test ticket.`).then(() => open(`crm:${c.kind}`)) }
-          : c.mode === "sandbox" && c.envReady ? { label: "Go live", run: () => crm(c.kind, { mode: "live" }, () => `${c.name} is live.`) }
-          : null,
+          : c.mode === "off" ? { label: "Connect", run: () => open(`crm:${c.kind}`) }
+          : { label: "Disconnect", run: () => crm(c.kind, { mode: "off" }, () => `${c.name} is disconnected. Nothing is read from it or written to it.`) },
         menu: [
           { label: "Settings", run: () => open(`crm:${c.kind}`) },
           ...(canManage && c.mode !== "off" ? [{ label: "Send a test ticket", run: () => crm(c.kind, { action: "test" }, (j) => j.written_back ? "Test ticket read, analysed and written back." : "Received: nothing new to analyse.") }] : []),
           ...(canManage && c.mode === "live" ? [{ label: "Switch to sandbox", run: () => crm(c.kind, { mode: "sandbox" }, () => "Switched to the sandbox.") }] : []),
           ...(canManage && c.mode === "sandbox" && c.envReady ? [{ label: "Go live", run: () => crm(c.kind, { mode: "live" }, () => "Live.") }] : []),
           { label: "Copy webhook address", run: () => { navigator.clipboard?.writeText(`${window.location.origin}/api/v1/connectors/${c.kind}/webhook`).catch(() => {}); setNote({ text: "Webhook address copied.", tone: "ok" }); } },
-          ...(canManage && c.mode !== "off" ? [{ label: "Turn off", run: () => crm(c.kind, { mode: "off" }, () => `${c.name} is off.`), danger: true }] : []),
+          ...(canManage && c.mode !== "off" ? [{ label: "Disconnect", run: () => crm(c.kind, { mode: "off" }, () => `${c.name} is disconnected.`), danger: true }] : []),
         ],
       });
     }
@@ -181,15 +195,21 @@ export default function Integrations() {
               </button>
             ))}
           </div>
-          {canManage && (
+          {canManage && tab !== "connectors" && (
             <div className="int-add">
-              <button className="btn btn-primary" onClick={() => { setAdding("key"); setSelected(""); }}>+ API key</button>
-              <button className="btn" onClick={() => { setAdding("webhook"); setSelected(""); }}>+ Webhook</button>
+              {(tab === "all" || tab === "keys") && <button className="btn btn-primary" onClick={() => { setAdding("key"); setSelected(""); }}>Create an API key</button>}
+              {(tab === "all" || tab === "webhooks") && <button className="btn" onClick={() => { setAdding("webhook"); setSelected(""); }}>Add a webhook</button>}
             </div>
           )}
         </div>
         {note && <div className={`int-note ${note.tone}`} role="status">{note.text}</div>}
-        {groups.map(([title, list]) => (
+        {loadFailed && (
+          <div className="int-note stop" role="alert">
+            The connections didn&apos;t load. <button className="copy" onClick={() => load()}>Try again</button>
+          </div>
+        )}
+        {!loaded && !loadFailed && <p className="label int-empty">Loading connections…</p>}
+        {loaded && groups.map(([title, list]) => (
           <section key={title} aria-label={title}>
             <h3 className="int-h">{title} <span className="int-count">{list.length}</span></h3>
             {list.length === 0 && <p className="label int-empty">{title === "Needs attention" ? "Nothing needs attention." : title === "Not active" ? "Turned-off connections appear here, with a way to turn them back on." : "Nothing active yet."}</p>}
@@ -229,7 +249,7 @@ export default function Integrations() {
         {!adding && selected === "bank" && bankInfo && <BankPanel b={bankInfo} />}
         {!adding && selected.startsWith("crm:") && (() => {
           const c = conns.find((x) => `crm:${x.kind}` === selected);
-          return c ? <CrmPanel c={c} canManage={canManage} busy={busy} act={(body, ok) => crm(c.kind, body, ok)} /> : null;
+          return c ? <CrmPanel c={c} canManage={canManage} busy={busy} act={(body, ok) => crm(c.kind, body as { mode?: string }, ok)} /> : null;
         })()}
         {!adding && selected.startsWith("hook:") && (() => {
           const e = endpoints.find((x) => `hook:${x.id}` === selected);
@@ -287,16 +307,39 @@ function CrmPanel({ c, canManage, busy, act }: { c: Conn; canManage: boolean; bu
           {c.health.failures > 0 && ` ${c.health.failures} of the last 20 calls failed.`}
         </div>
       )}
+      {c.mode === "off" ? (
+        <div className="int-connect">
+          <h4 className="int-lbl">Connect {c.name}</h4>
+          <div className="int-option">
+            <b>Try it in the sandbox</b>
+            <p className="label">A stand-in {c.name.split(" ")[0]} inside Orchestra, so you can try the whole flow with test tickets. Nothing reaches a real {c.name.split(" ")[0]} account.</p>
+            <button className="btn btn-primary" disabled={!canManage || busy} onClick={() => act({ mode: "sandbox" }, () => `${c.name} is connected to the sandbox. Send a test ticket from the ··· menu.`)}>Use the sandbox</button>
+          </div>
+          <div className="int-option">
+            <b>Connect your own {c.name.split(" ")[0]}</b>
+            <p className="label">{c.name.split(" ")[0]} doesn&apos;t open a sign-in window here: Orchestra connects with an API credential that your {c.name.split(" ")[0]} admin creates, kept only in Vercel&apos;s settings, never on this screen.</p>
+            <ol className="label int-steps">
+              <li>{c.kind === "zendesk" ? "In Zendesk: Admin Center → Apps and integrations → Zendesk API → add an API token." : c.kind === "freshdesk" ? "In Freshdesk: Profile settings → View API key." : c.kind === "salesforce" ? "In Salesforce: create a Connected App with the client-credentials flow." : "In HubSpot: Settings → Integrations → Private apps → create an app with the tickets scope."}</li>
+              <li>In Vercel: Settings → Environment Variables, add {c.envNeeded.join(", ")}, then redeploy.</li>
+              <li>Come back here and press Go live.</li>
+              <li>Point {c.name.split(" ")[0]}&apos;s webhook at Orchestra (Set it up in {c.name.split(" ")[0]}, below).</li>
+            </ol>
+            <button className="btn" disabled={!canManage || busy || !c.envReady} title={c.envReady ? "" : `Needs ${c.envNeeded.join(", ")} in Vercel first`}
+              onClick={() => act({ mode: "live" }, () => `${c.name} is live.`)}>{c.envReady ? "Go live" : "Go live (credentials not set yet)"}</button>
+          </div>
+        </div>
+      ) : <>
       <div className="int-seg wide" role="radiogroup" aria-label="Mode">
         {(["off", "sandbox", "live"] as const).map((m) => (
           <button key={m} role="radio" aria-checked={c.mode === m} className={c.mode === m ? "on" : ""} disabled={!canManage || busy || (m === "live" && !c.envReady)}
             title={m === "live" && !c.envReady ? `Needs ${c.envNeeded.join(", ")} in Vercel` : ""} onClick={() => act({ mode: m }, () => `${c.name}: ${m === "off" ? "off" : m === "sandbox" ? "sandbox" : "live"}.`)}>
-            {m === "off" ? "Off" : m === "sandbox" ? "Sandbox" : "Live"}
+            {m === "off" ? "Disconnected" : m === "sandbox" ? "Sandbox" : "Live"}
           </button>
         ))}
       </div>
       <Toggle on={c.write_back} label="Write the result into the ticket" hint="tags, priority, team, internal note" disabled={!canManage || busy} onChange={(v) => act({ write_back: v })} />
       <Toggle on={c.data_entry} label="Data entry" hint="record Orchestra's own conversations as tickets" disabled={!canManage || busy} onChange={(v) => act({ data_entry: v })} />
+      </>}
       <h4 className="int-lbl">Teams → {c.name.split(" ")[0]} {unit}</h4>
       <textarea className="reply-box" rows={4} value={groups} onChange={(e) => setGroups(e.target.value)} disabled={!canManage} aria-label={`Teams to ${unit}`} placeholder="Payments team = 360001234" />
       {canManage && <button className="btn" disabled={busy} onClick={() => act({ groups: fromLines(groups) }, () => "Teams saved.")}>Save teams</button>}

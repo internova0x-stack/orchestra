@@ -1497,11 +1497,11 @@ test("bank connector: the OpenAPI file and the reference server list the same en
 test("Orchestra API: keys are shown once, stored as a hash, and stop working when revoked", { skip }, async () => {
   const { createApiKey, checkApiKey, revokeApiKey } = await import("../lib/api/keys.ts");
   await seed(sql!, MONDAY);
-  const k = await createApiKey(sql!, "Nuvion app", "Bayo Martins");
+  const k = await createApiKey(sql!, "Bank app", "Bayo Martins");
   assert.match(k.key, /^orc_[A-Za-z0-9]{8}_/);
   const [row] = await sql!`select hash, prefix from api_keys where id = ${k.id}`;
   assert.ok(!JSON.stringify(row).includes(k.key.split("_")[2]), "the key itself isn't stored");
-  assert.deepEqual(await checkApiKey(sql!, `Bearer ${k.key}`), { id: k.id, name: "Nuvion app" });
+  assert.deepEqual(await checkApiKey(sql!, `Bearer ${k.key}`), { id: k.id, name: "Bank app" });
   assert.equal(await checkApiKey(sql!, `Bearer ${k.key}x`), null);
   assert.equal(await checkApiKey(sql!, "Bearer nonsense"), null);
   assert.ok(await revokeApiKey(sql!, k.id));
