@@ -54,6 +54,16 @@ staff), the urgency of any handoff, and opens the full chat history and activity
 Staff queue for handoffs. Filters by status, category and urgency, a search, and counts at the top (all
 worked out from the data already stored: no new tables).
 
+## First runs with the real model (Nov 23)
+
+The live site's first real turns failed after any tool call: the session context (time, identity) was
+rebuilt inside the top-level system prompt, which invalidates Claude's earlier thinking blocks (a 400,
+"bound to a different conversation"). Fixed: the system prompt is frozen and each turn's session facts are
+appended as a `role: "system"` message kept in the history; requests also send
+`thinking.block_binding.prefix_mismatch_behavior: "drop_block"`. Errors now show their reason in the
+console's activity log. Checked on the live site: a screenshot, the identity check, lookups, a handoff and
+a follow-up turn.
+
 ## What has been checked, and how
 
 - `npm test` (43 tests) runs every tool against a real Postgres with the seeded bank: each scripted test's
