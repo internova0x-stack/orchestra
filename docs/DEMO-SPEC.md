@@ -198,7 +198,7 @@ about 30 days of activity, in all three currencies.
 | 7 | Incoming payment that never arrived | 20 | Say so; ask for the payer's proof |
 | 8 | Proof of payment for a completed payout | 21 | Generate it |
 | 9 | Proof requested for a payout still in progress | 21 | Decline; offer a status note |
-| 10 | Verification rejected: missing ownership document | 6 | Explain; say what to submit |
+| 10 | Verification Incomplete: ownership document missing (decided Nov 23: Incomplete, not Failed) | 6 | Say what's missing and how to submit it |
 | 11 | Payout on a review hold | 15 | No-tipping-off script; hand off |
 | 12 | Fee and conversion-rate question | 5 | Show the fee, rate and amounts |
 | 13 | Payout sent in error, between $2,000 and $10,000, payment-rights user | 3 | Recall it (under the cap); after the cap is lowered to $2,000, prepare it for approval |
