@@ -582,6 +582,77 @@ test("planted 1: Chioma's lost card is frozen after her yes, then the two charge
   assert.equal(again.reference, "DSP-7001", "a second dispute returns the first");
 });
 
+test("card controls: unfreezing follows the institution's rules; a bank freeze and a 'not mine' dispute stay frozen", { skip }, async () => {
+  // Chioma froze her card and disputed two charges as not hers (planted 1).
+  const weak = await session("chioma", MONDAY);
+  assert.match((await call(weak, "unfreeze_card", {})).reason!, /stronger identity check/, "the code first, by default");
+  const s = await session("chioma", MONDAY, true);
+  assert.match((await call(s, "unfreeze_card", {})).reason!, /weren't theirs \(DSP-7001\)/, "an open 'not mine' dispute keeps it frozen");
+  await sql!`update rules set value = 'off' where id = 'card_unfreeze_block_dispute'`;
+  assert.match((await call(s, "unfreeze_card", {})).reason!, /CONFIRMATION_NEEDED/);
+  assert.equal((await sql!`select status from cards where id = 'CARD-4421'`)[0].status, "frozen", "nothing before the yes");
+  await confirmPending(s);
+  const done = await call(s, "unfreeze_card", {});
+  assert.ok(done.ok, JSON.stringify(done));
+  assert.match(done.reference!, /^CHG-/);
+  assert.equal((await sql!`select status from cards where id = 'CARD-4421'`)[0].status, "active");
+  // An institution that switches unfreezing off: Alexis hands off instead.
+  await sql!`update cards set status = 'frozen', frozen_by = 'customer' where id = 'CARD-4421'`;
+  await sql!`update rules set value = 'off' where id = 'action_unfreeze_card'`;
+  assert.match((await call(s, "unfreeze_card", {})).reason!, /switched off/);
+  // An institution that doesn't ask for the code.
+  await sql!`update rules set value = 'on' where id = 'action_unfreeze_card'`;
+  await sql!`update rules set value = 'off' where id = 'card_unfreeze_stronger'`;
+  assert.match((await call(weak, "unfreeze_card", {})).reason!, /CONFIRMATION_NEEDED/);
+  await sql!`update conversations set pending_action = null where id = ${weak.conv.id}`;
+  await sql!`update rules set value = 'on' where id in ('card_unfreeze_stronger', 'card_unfreeze_block_dispute')`;
+
+  // A freeze the bank placed is never lifted or worked around.
+  await sql!`update cards set status = 'frozen', frozen_by = 'bank' where id = 'CARD-7710'`;
+  const emeka = await session("emeka", MONDAY, true);
+  assert.equal(((await call(emeka, "get_card", {})).data as { status: string }).status, "Frozen by the bank");
+  assert.match((await call(emeka, "unfreeze_card", {})).reason!, /bank froze this card/);
+  assert.match((await call(emeka, "change_card_settings", { contactless: false })).reason!, /bank froze this card/);
+  await sql!`update cards set status = 'active', frozen_by = null where id = 'CARD-7710'`;
+});
+
+test("card controls: a setting that caused a decline is switched on; limit changes follow the caps and the code rules", { skip }, async () => {
+  // Grace's online payment was declined because online payments are off on her card.
+  const grace = await session("grace", MONDAY);
+  const card = (await call(grace, "get_card", {})).data as { settings: Record<string, string>; recent_declines: { reason: string }[] };
+  assert.equal(card.settings.online_payments, "Off");
+  assert.match(card.recent_declines[0].reason, /Online payments are switched off/);
+  assert.match((await call(grace, "change_card_settings", { online_payments: true })).reason!, /CONFIRMATION_NEEDED/, "no code needed by default to switch a setting on");
+  await confirmPending(grace);
+  const on = await call(grace, "change_card_settings", { online_payments: true });
+  assert.ok(on.ok, JSON.stringify(on));
+  assert.equal((await sql!`select online_payments from cards where id = 'CARD-3307'`)[0].online_payments, true);
+  assert.equal(((await call(grace, "change_card_settings", { online_payments: true })).data as { nothing_changed: boolean }).nothing_changed, true, "no second change");
+  await sql!`update rules set value = 'on' where id = 'card_settings_stronger'`;
+  assert.match((await call(grace, "change_card_settings", { international_payments: false })).reason!, /CONFIRMATION_NEEDED/, "switching off never needs the code");
+  await sql!`update conversations set pending_action = null where id = ${grace.conv.id}`;
+  await sql!`update cards set international_payments = false where id = 'CARD-3307'`;
+  assert.match((await call(grace, "change_card_settings", { international_payments: true })).reason!, /stronger identity check/, "an institution can require the code to switch one on");
+  await sql!`update rules set value = 'off' where id = 'card_settings_stronger'`;
+  await sql!`update cards set online_payments = false, international_payments = true where id = 'CARD-3307'`;
+
+  // Emeka hit his ₦200,000 daily limit.
+  const weak = await session("emeka", MONDAY);
+  assert.match((await call(weak, "change_card_settings", { daily_limit: 400000 })).reason!, /stronger identity check/, "raising needs the code by default");
+  assert.match((await call(weak, "change_card_settings", { daily_limit: 150000 })).reason!, /CONFIRMATION_NEEDED/, "lowering doesn't");
+  await sql!`update conversations set pending_action = null where id = ${weak.conv.id}`;
+  const s = await session("emeka", MONDAY, true);
+  assert.match((await call(s, "change_card_settings", { daily_limit: 2000000 })).reason!, /above the ₦1,000,000/);
+  await call(s, "change_card_settings", { daily_limit: 400000 });
+  await confirmPending(s);
+  assert.ok((await call(s, "change_card_settings", { daily_limit: 400000 })).ok);
+  assert.equal(Number((await sql!`select daily_limit from cards where id = 'CARD-7710'`)[0].daily_limit), 400000);
+  await sql!`update rules set value = 'off' where id = 'card_limit_change'`;
+  assert.match((await call(s, "change_card_settings", { daily_limit: 500000 })).reason!, /isn't something you can do/);
+  await sql!`update rules set value = 'on' where id = 'card_limit_change'`;
+  await sql!`update cards set daily_limit = 200000 where id = 'CARD-7710'`;
+});
+
 test("planted 2: Emeka's decline is explained from the record", { skip }, async () => {
   const s = await session("emeka", MONDAY);
   const card = (await call(s, "get_card", {})).data as { recent_declines: { reason: string }[] };
@@ -1313,6 +1384,15 @@ test("bank connector: the tools give the same answers over HTTP as from the simu
     assert.ok(calls.some((c) => c === "POST /v1/holders/emeka/cards/CARD-7710/freeze"));
     const [card] = await sql!<{ status: string }[]>`select status from cards where id = 'CARD-7710'`;
     assert.equal(card.status, "frozen", "the bank froze the card");
+    await call(emeka, "unfreeze_card", {});
+    await confirmPending(emeka);
+    assert.ok((await call(emeka, "unfreeze_card", {})).ok);
+    assert.ok(calls.some((c) => c === "POST /v1/holders/emeka/cards/CARD-7710/unfreeze"));
+    await call(emeka, "change_card_settings", { contactless: false });
+    await confirmPending(emeka);
+    assert.ok((await call(emeka, "change_card_settings", { contactless: false })).ok);
+    assert.ok(calls.some((c) => c === "POST /v1/holders/emeka/cards/CARD-7710/settings"));
+    assert.equal((await sql!`select contactless from cards where id = 'CARD-7710'`)[0].contactless, false, "the bank changed the setting");
     await call(emeka, "unlock_account", {});
     await confirmPending(emeka);
     assert.ok((await call(emeka, "unlock_account", {})).ok);
@@ -1341,7 +1421,7 @@ test("bank connector: the OpenAPI file and the reference server list the same en
   assert.deepEqual(paths, [
     "/holders/{holderId}/balances", "/holders/{holderId}/bill-payments", "/holders/{holderId}/bill-payments/{billPaymentId}/refund",
     "/holders/{holderId}/card-transactions", "/holders/{holderId}/cards", "/holders/{holderId}/cards/{cardId}/freeze",
-    "/holders/{holderId}/cards/{cardId}/replace", "/holders/{holderId}/fees", "/holders/{holderId}/fees/{feeId}/refund",
+    "/holders/{holderId}/cards/{cardId}/replace", "/holders/{holderId}/cards/{cardId}/settings", "/holders/{holderId}/cards/{cardId}/unfreeze", "/holders/{holderId}/fees", "/holders/{holderId}/fees/{feeId}/refund",
     "/holders/{holderId}/incoming-payments", "/holders/{holderId}/loans", "/holders/{holderId}/merchant-holds",
     "/holders/{holderId}/merchant-payouts", "/holders/{holderId}/payments", "/holders/{holderId}/payments/{paymentId}",
     "/holders/{holderId}/payments/{paymentId}/events", "/holders/{holderId}/recalls", "/holders/{holderId}/restrictions",

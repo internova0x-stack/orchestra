@@ -1,4 +1,4 @@
-import type { ActionRequest, ActionResult, BankConnector, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, RecallRequest, RecallResult, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
+import type { ActionRequest, ActionResult, BankConnector, CardSettings, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, RecallRequest, RecallResult, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
 
 // The Bank Connector API over HTTPS: Orchestra calls any bank that implements the contract
 // (public/openapi/bank-connector-v1.yaml). Set BANK_API_URL (e.g. https://bank.example/orchestra/v1) and
@@ -75,6 +75,9 @@ export function httpBank(baseUrl: string, apiKey: string, fetcher: typeof fetch 
     listCards: (h, q) => list(call<{ data: Card[] }>("GET", `${holder(h)}/cards`, { query: q })),
     freezeCard: (h, id, req, key) => act(`${holder(h)}/cards/${seg(id)}/freeze`, req, key),
     replaceCard: (h, id, req, key) => act(`${holder(h)}/cards/${seg(id)}/replace`, req, key),
+    unfreezeCard: (h, id, req, key) => act(`${holder(h)}/cards/${seg(id)}/unfreeze`, req, key),
+    updateCardSettings: (h, id, settings: CardSettings, req, key) =>
+      call<ActionResult>("POST", `${holder(h)}/cards/${seg(id)}/settings`, { body: { ...req, settings }, idempotencyKey: key }).then((r) => r ?? { accepted: false, bank_reference: null, status: "not_found" }),
     searchCardTransactions: (h, q) => list(call<{ data: CardTransaction[] }>("GET", `${holder(h)}/card-transactions`, { query: q })),
     searchPayments: (h, q) => list(call<{ data: Payment[] }>("GET", `${holder(h)}/payments`, { query: q })),
     getPayment: (h, id) => call<{ payment: Payment | null; elsewhere: boolean }>("GET", `${holder(h)}/payments/${seg(id)}`).then((r) => r ?? { payment: null, elsewhere: false }),

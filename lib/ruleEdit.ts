@@ -13,7 +13,8 @@ export function validateRule(r: RuleRow, raw: string): { ok: true; value: string
   if (!value) return { ok: false, error: "A value is needed." };
   if (value.length > 500) return { ok: false, error: "Keep it under 500 characters." };
   if (r.kind !== "limit") return { ok: true, value };
-  if (r.id.startsWith("action_") || r.id === "alexis_enabled" || r.id === "outage_mode" || r.id === "kyc_tiers_used") {
+  // A switch: the named ones, and any limit whose value is on or off (e.g. the card controls).
+  if (r.id.startsWith("action_") || r.id === "alexis_enabled" || r.id === "outage_mode" || r.id === "kyc_tiers_used" || /^(on|off)$/i.test(r.value.trim())) {
     const v = value.toLowerCase();
     if (v !== "on" && v !== "off") return { ok: false, error: "Use on or off." };
     return { ok: true, value: v };

@@ -230,6 +230,13 @@ create table if not exists card_replacements (
 create sequence if not exists dispute_seq start 7001;
 create sequence if not exists replacement_seq start 3301;
 
+-- Card controls (Tomi, Nov 23: "build 1 but give configuration ability"): the card's settings and who froze it.
+alter table cards add column if not exists online_payments boolean not null default true;
+alter table cards add column if not exists international_payments boolean not null default true;
+alter table cards add column if not exists contactless boolean not null default true;
+alter table cards add column if not exists frozen_by text;
+create sequence if not exists card_change_seq start 4401;
+
 -- Use cases 12, 9 and 11: card, POS, ATM and web payments, their reversals and (later) their timelines.
 create table if not exists payments (
   id text primary key,

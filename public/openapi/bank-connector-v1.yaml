@@ -23,7 +23,8 @@ info:
 
     **Version 1 covers** every record the agent reads and every action it takes at the bank: the identity check,
     the customer and their contact details, payouts and the recall request, incoming payments, verification,
-    balances, fees and currency conversions (and a goodwill fee refund), restrictions, cards (freeze, replace) and
+    balances, fees and currency conversions (and a goodwill fee refund), restrictions, cards (freeze, unfreeze, settings,
+    replace) and
     card transactions, card, POS, ATM and web payments with their stage-by-stage timeline, loans, merchant payouts
     and holds, bill and airtime payments (refund), USSD and agent sessions, and unlocking online access.
 
@@ -341,6 +342,60 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/ActionRequest" }
             example: { reference: "CRD-7001", requested_by: "Alexis", reason: "lost" }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /holders/{holderId}/cards/{cardId}/unfreeze:
+    post:
+      tags: [Cards, Actions]
+      summary: Unfreeze a card the customer froze
+      description: "A freeze the bank placed is refused (accepted: false, status frozen_by_bank). Sent after Orchestra's checks: the institution's switch, the one-time code if it requires one, no open 'not mine' dispute on the card if it blocks those, and the customer's yes."
+      operationId: unfreezeCard
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: cardId, in: path, required: true, schema: { type: string }, example: "CARD-4421" }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionRequest" }
+            example: { reference: "CHG-4401", requested_by: "Alexis" }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /holders/{holderId}/cards/{cardId}/settings:
+    post:
+      tags: [Cards, Actions]
+      summary: Change a card's settings
+      description: "Only the settings given change: online, international and contactless payments on or off, and the daily limit. Orchestra checks the institution's rules first (which changes need the one-time code, the highest limit it may set) and the customer's yes. Refused on a card the bank froze."
+      operationId: updateCardSettings
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: cardId, in: path, required: true, schema: { type: string }, example: "CARD-3307" }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/ActionRequest" }
+                - type: object
+                  required: [settings]
+                  properties:
+                    settings: { $ref: "#/components/schemas/CardSettings" }
+            example: { reference: "CHG-4402", requested_by: "Alexis", settings: { online_payments: true } }
       responses:
         "200":
           description: The bank's answer
@@ -757,7 +812,7 @@ components:
         login_locked: { type: [string, "null"], description: "failed_logins, any other value for a lock the bank placed, or null" }
     Card:
       type: object
-      required: [id, last4, status, currency, created_at]
+      required: [id, last4, status, currency, online_payments, international_payments, contactless, frozen_by, created_at]
       properties:
         id: { type: string }
         last4: { type: string }
@@ -765,6 +820,10 @@ components:
         currency: { type: string }
         daily_limit: { oneOf: [{ $ref: "#/components/schemas/Money" }, { type: "null" }] }
         delivery_address: { type: [string, "null"], description: "Orchestra shortens it before the AI sees it" }
+        online_payments: { type: boolean }
+        international_payments: { type: boolean }
+        contactless: { type: boolean }
+        frozen_by: { type: [string, "null"], enum: [customer, bank, null], description: "A freeze the bank placed is never lifted through Orchestra" }
         created_at: { type: string, format: date-time }
     CardTransaction:
       type: object
@@ -880,3 +939,11 @@ components:
         outcome: { type: string }
         linked_ref: { type: [string, "null"] }
         at: { type: string, format: date-time }
+    CardSettings:
+      type: object
+      description: Only the settings given change
+      properties:
+        online_payments: { type: boolean }
+        international_payments: { type: boolean }
+        contactless: { type: boolean }
+        daily_limit: { $ref: "#/components/schemas/Money" }

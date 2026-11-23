@@ -8,7 +8,7 @@ import type { BankConnector } from "./contract.ts";
 //   GET  /holders/{id}/fees                     GET /holders/{id}/restrictions
 //   POST /holders/{id}/recalls (Idempotency-Key)
 //   GET  /users/{userId}/contact                POST /users/{userId}/unlock
-//   GET  /holders/{id}/cards                    POST /holders/{id}/cards/{cardId}/freeze | /replace
+//   GET  /holders/{id}/cards                    POST /holders/{id}/cards/{cardId}/freeze | /replace | /unfreeze | /settings
 //   GET  /holders/{id}/card-transactions        GET  /holders/{id}/payments
 //   GET  /holders/{id}/payments/{paymentId}     GET  /holders/{id}/payments/{paymentId}/events
 //   GET  /holders/{id}/loans                    GET  /holders/{id}/merchant-payouts
@@ -65,6 +65,16 @@ export async function serveBank(b: BankConnector, method: string, path: string[]
       if (!req) return { status: 400, body: { error: "bad_request" } };
       if (sub === "cards" && verb === "freeze") return { status: 200, body: await b.freezeCard(id, rec, req, idempotencyKey) };
       if (sub === "cards" && verb === "replace") return { status: 200, body: await b.replaceCard(id, rec, req, idempotencyKey) };
+      if (sub === "cards" && verb === "unfreeze") return { status: 200, body: await b.unfreezeCard(id, rec, req, idempotencyKey) };
+      if (sub === "cards" && verb === "settings") {
+        const st = (body as { settings?: Record<string, unknown> } | null)?.settings;
+        if (!st || typeof st !== "object") return { status: 400, body: { error: "bad_request" } };
+        const bool = (v: unknown) => (typeof v === "boolean" ? v : undefined);
+        return { status: 200, body: await b.updateCardSettings(id, rec, {
+          online_payments: bool(st.online_payments), international_payments: bool(st.international_payments), contactless: bool(st.contactless),
+          daily_limit: typeof st.daily_limit === "string" && /^\d+(\.\d+)?$/.test(st.daily_limit) ? st.daily_limit : undefined,
+        }, req, idempotencyKey) };
+      }
       if (sub === "bill-payments" && verb === "refund") return { status: 200, body: await b.refundBillPayment(id, rec, req, idempotencyKey) };
       if (sub === "fees" && verb === "refund") return { status: 200, body: await b.refundFee(id, rec, req, idempotencyKey) };
     }

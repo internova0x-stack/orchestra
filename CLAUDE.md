@@ -63,6 +63,9 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
+- Card controls: `unfreeze_card`, `change_card_settings` (lib/tools/cards.ts), configured by the `card_*` rules and
+  the `action_unfreeze_card` / `action_change_card_settings` switches; loosening may need the code, tightening never;
+  a bank freeze (`frozen_by: bank`) is never lifted. Rules whose value is on/off are switches (`validateRule`).
 - Bank Connector API (`lib/bank/`): tools reach every bank record and action (customer, contact, payouts, incoming
   payments, verification, balances, fees, restrictions, cards, card transactions, payments and timelines, loans,
   merchant payouts and holds, bills, USSD) through `bank(sql)`, never with their own SQL for those records; Orchestra's

@@ -33,6 +33,8 @@ const BANK_ENDPOINTS: [string, string, string][] = [
   ["GET", "/holders/{holderId}/cards", "The holder's cards: last 4, status, daily limit, delivery address"],
   ["POST", "/holders/{holderId}/cards/{cardId}/freeze", "Freeze a card"],
   ["POST", "/holders/{holderId}/cards/{cardId}/replace", "Order a replacement to the address on file"],
+  ["POST", "/holders/{holderId}/cards/{cardId}/unfreeze", "Unfreeze a card the customer froze; a bank freeze is refused"],
+  ["POST", "/holders/{holderId}/cards/{cardId}/settings", "Switch online, international or contactless payments on or off, or change the daily limit"],
   ["GET", "/holders/{holderId}/card-transactions", "Card transactions by merchant, amount, card, status or date, with decline reasons"],
   ["GET", "/holders/{holderId}/payments", "Card, POS, ATM and web payments, including failed-but-debited ones"],
   ["GET", "/holders/{holderId}/payments/{paymentId}", "One payment by id; says only \"elsewhere\" if it's another holder's"],

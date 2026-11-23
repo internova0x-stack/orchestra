@@ -130,6 +130,19 @@ export const RULE_SET: RuleSeed[] = [
   l("replacement_fee_gbp", "Cards", "Replacement card fee (GBP)", "5", "£"),
   l("replacement_fee_ngn", "Cards", "Replacement card fee (NGN)", "1000", "₦"),
 
+  // Card controls (Tomi, Nov 23: "give configuration ability where applicable"). Each institution decides
+  // whether Alexis may unfreeze cards and change settings, what needs the one-time code, and the highest
+  // daily limit she may set; per market on the Rules screen. Making a card safer never needs the code.
+  a("card_settings_help", "Cards", "Card settings in the app", "Customers can switch online, international and contactless payments on or off, change the daily limit and unfreeze a card they froze themselves, in the app under Cards", "sample"),
+  l("card_unfreeze_stronger", "Cards", "Unfreezing a card needs the one-time code", "on"),
+  l("card_unfreeze_block_dispute", "Cards", "No unfreezing while a 'not mine' dispute is open on the card", "on"),
+  l("card_settings_stronger", "Cards", "Switching a card setting on needs the one-time code (switching off never does)", "off"),
+  l("card_limit_change", "Cards", "Alexis can change a card's daily limit", "on"),
+  l("card_limit_raise_stronger", "Cards", "Raising the daily limit needs the one-time code (lowering never does)", "on"),
+  l("card_limit_max_usd", "Cards", "Highest daily card limit Alexis can set (USD)", "10000", "$"),
+  l("card_limit_max_gbp", "Cards", "Highest daily card limit Alexis can set (GBP)", "8000", "£"),
+  l("card_limit_max_ngn", "Cards", "Highest daily card limit Alexis can set (NGN)", "1000000", "₦"),
+
   // Failed payments and reversals (Nigeria, from the Guardrails' market pack; to verify against current CBN rules)
   a("reversal_atm_own", "Reversals", "Failed ATM withdrawal at the customer's own bank", "Reversal should be instant; if that fails, a manual reversal within 24 hours", "sample"),
   a("reversal_atm_other", "Reversals", "Failed ATM withdrawal at another bank's machine", "Refund within 48 hours", "sample"),
@@ -207,6 +220,8 @@ export const RULE_SET: RuleSeed[] = [
   l("action_request_deferral", "Limits and approvals", "Loan deferral requests switched on", "on"),
   l("action_freeze_card", "Limits and approvals", "Card freezing switched on", "on"),
   l("action_order_replacement", "Limits and approvals", "Replacement cards switched on", "on"),
+  l("action_unfreeze_card", "Limits and approvals", "Card unfreezing switched on", "on"),
+  l("action_change_card_settings", "Limits and approvals", "Card settings changes switched on", "on"),
   l("action_open_dispute", "Limits and approvals", "Disputes switched on", "on"),
   l("action_send_reset_link", "Limits and approvals", "Reset links switched on", "on"),
   l("action_unlock_account", "Limits and approvals", "Unlocking switched on", "on"),

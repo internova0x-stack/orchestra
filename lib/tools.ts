@@ -24,7 +24,7 @@ import { findCase } from "./tools/resume.ts";
 import { draftClaimPack } from "./tools/claims.ts";
 import { draftCaseNotes, draftReply, summariseCase } from "./tools/staffmode.ts";
 import { getBillPaymentStatus, getUssdSession, refundBillPayment } from "./tools/nigeria.ts";
-import { freezeCard, getCard, orderReplacement } from "./tools/cards.ts";
+import { freezeCard, getCard, orderReplacement, unfreezeCard, changeCardSettings } from "./tools/cards.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
 import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
 import { getAccountLimits, waiveFee } from "./tools/fees.ts";
@@ -141,7 +141,7 @@ const TRIGGERS = {
   reversal_past_window: { urgency: "high", label: "Failed payment not reversed within its window" },
   reversal_not_arrived: { urgency: "high", label: "A requested reversal hasn't arrived" },
   dispute_over_cap: { urgency: "normal", label: "Dispute above the cap, past the window or over the limit" },
-  card_problem: { urgency: "normal", label: "Card problem Alexis can't fix (address, use after loss, freeze failed)" },
+  card_problem: { urgency: "normal", label: "Card problem Alexis can't fix (address, use after loss, a bank freeze, a limit above what she may set)" },
   account_takeover_suspected: { urgency: "urgent", label: "Several fraudulent transactions: possible account takeover" },
   contact_change_requested: { urgency: "normal", label: "Customer wants contact details changed" },
   loan_hardship: { urgency: "normal", label: "Loan payment difficulty or deferral request" },
@@ -852,7 +852,7 @@ const getFees = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees,
   sendOneTimeCode, sendResetLink, unlockAccount,
-  getCard, freezeCard, orderReplacement, listTransactions, openDispute,
+  getCard, freezeCard, unfreezeCard, changeCardSettings, orderReplacement, listTransactions, openDispute,
   findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits,
   getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds,
   watchCase, findCase, draftClaimPack, summariseCase, draftReply, draftCaseNotes,

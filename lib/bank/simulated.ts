@@ -1,5 +1,5 @@
 import type { Sql } from "../db.ts";
-import type { ActionResult, BankConnector, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
+import type { ActionResult, BankConnector, CardSettings, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
 
 // The simulated bank behind the Bank Connector API: the seeded tables in this app's own database.
 // It is the reference implementation of the contract (also served over HTTP at /api/bank/v1).
@@ -143,7 +143,7 @@ export function simulatedBank(sql: Sql): BankConnector {
 
     async listCards(holderId, q): Promise<Card[]> {
       const rows = await sql<Record<string, unknown>[]>`
-        select id, last4, status, currency, daily_limit, delivery_address, created_at from cards
+        select id, last4, status, currency, daily_limit, delivery_address, online_payments, international_payments, contactless, frozen_by, created_at from cards
         where holder_id = ${holderId} ${q.last4 ? sql`and last4 = ${q.last4}` : sql``}
         order by created_at desc`;
       return rows.map((r) => wire<Card>(r, ["created_at"], ["daily_limit"]));
@@ -154,8 +154,31 @@ export function simulatedBank(sql: Sql): BankConnector {
       if (!c) return refused("not_found");
       if (c.status === "frozen") return done("frozen");
       if (c.status !== "active") return refused(c.status);
-      await sql`update cards set status = 'frozen' where id = ${cardId}`;
+      await sql`update cards set status = 'frozen', frozen_by = 'customer' where id = ${cardId}`;
       return done("frozen");
+    },
+
+    async unfreezeCard(holderId, cardId) {
+      const [c] = await sql<{ status: string; frozen_by: string | null }[]>`select status, frozen_by from cards where id = ${cardId} and holder_id = ${holderId}`;
+      if (!c) return refused("not_found");
+      if (c.status === "active") return done("active");
+      if (c.status !== "frozen") return refused(c.status);
+      if (c.frozen_by === "bank") return refused("frozen_by_bank");
+      await sql`update cards set status = 'active', frozen_by = null where id = ${cardId}`;
+      return done("active");
+    },
+
+    async updateCardSettings(holderId, cardId, st: CardSettings) {
+      const [c] = await sql<{ status: string; frozen_by: string | null }[]>`select status, frozen_by from cards where id = ${cardId} and holder_id = ${holderId}`;
+      if (!c) return refused("not_found");
+      if (c.status !== "active" && c.status !== "frozen") return refused(c.status);
+      if (c.frozen_by === "bank") return refused("frozen_by_bank");
+      const set: Record<string, unknown> = {};
+      for (const k of ["online_payments", "international_payments", "contactless"] as const) if (typeof st[k] === "boolean") set[k] = st[k];
+      if (st.daily_limit != null && Number.isFinite(Number(st.daily_limit)) && Number(st.daily_limit) >= 0) set.daily_limit = Number(st.daily_limit);
+      if (!Object.keys(set).length) return refused("nothing_to_change");
+      await sql`update cards set ${sql(set)} where id = ${cardId}`;
+      return done("updated");
     },
 
     async replaceCard(holderId, cardId) {

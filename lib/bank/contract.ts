@@ -143,7 +143,21 @@ export interface Card {
   daily_limit: string | null;
   /** The delivery address on file: Orchestra shortens it before Alexis sees it. */
   delivery_address: string | null;
+  online_payments: boolean;
+  international_payments: boolean;
+  contactless: boolean;
+  /** Who froze it: "customer" (in the app or through Alexis), "bank" (a freeze Alexis must never lift), or null. */
+  frozen_by: "customer" | "bank" | null;
   created_at: string;
+}
+
+/** The card settings Orchestra can ask the bank to change (only the ones given change). */
+export interface CardSettings {
+  online_payments?: boolean;
+  international_payments?: boolean;
+  contactless?: boolean;
+  /** The new daily spending limit, a decimal string in the card's currency. */
+  daily_limit?: string;
 }
 
 export interface CardTransaction {
@@ -289,6 +303,9 @@ export interface BankConnector {
   freezeCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
   /** Stops the card and sends a new one to the delivery address on file. */
   replaceCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+  /** Lifts a freeze the customer placed; a freeze the bank placed is refused (accepted: false, status frozen_by_bank). */
+  unfreezeCard(holderId: string, cardId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+  updateCardSettings(holderId: string, cardId: string, settings: CardSettings, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
   searchCardTransactions(holderId: string, q: { id?: string; card?: string; status?: CardTransaction["status"]; since?: string; merchant?: string; amount?: number }): Promise<CardTransaction[]>;
 
   searchPayments(holderId: string, q: { amount?: number; channel?: string; card_last4?: string; merchant?: string }): Promise<Payment[]>;

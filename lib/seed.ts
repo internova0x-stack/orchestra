@@ -359,13 +359,14 @@ async function seedCards(tx: any, now: Date) {
   const cards = [
     { id: "CARD-4421", holder_id: "chioma", last4: "4421", currency: "NGN", daily_limit: 500000, delivery_address: "14 Admiralty Way, Lekki Phase 1, Lagos" },
     { id: "CARD-7710", holder_id: "emeka", last4: "7710", currency: "NGN", daily_limit: 200000, delivery_address: "3 Aminu Kano Crescent, Wuse 2, Abuja" },
-    { id: "CARD-3307", holder_id: "grace", last4: "3307", currency: "GBP", daily_limit: 1500, delivery_address: "Flat 4, 22 Pratt Street, Camden, London" },
+    { id: "CARD-3307", holder_id: "grace", last4: "3307", currency: "GBP", daily_limit: 1500, delivery_address: "Flat 4, 22 Pratt Street, Camden, London", online_payments: false },
     { id: "CARD-9902", holder_id: "david", last4: "9902", currency: "USD", daily_limit: 2500, delivery_address: "418 Elm Street, Arlington, Virginia" },
     { id: "CARD-5150", holder_id: "amara", last4: "5150", currency: "NGN", daily_limit: 300000, delivery_address: "9 Ogui Road, Enugu" },
   ];
   for (const c of cards) {
-    await tx`insert into cards (id, holder_id, last4, status, currency, daily_limit, delivery_address, created_at)
-      values (${c.id}, ${c.holder_id}, ${c.last4}, 'active', ${c.currency}, ${c.daily_limit}, ${c.delivery_address}, ${new Date(now.getTime() - 300 * 86_400_000)})`;
+    // Grace's card has online payments switched off (planted: why her online payment was declined).
+    await tx`insert into cards (id, holder_id, last4, status, currency, daily_limit, delivery_address, online_payments, created_at)
+      values (${c.id}, ${c.holder_id}, ${c.last4}, 'active', ${c.currency}, ${c.daily_limit}, ${c.delivery_address}, ${"online_payments" in c ? c.online_payments : true}, ${new Date(now.getTime() - 300 * 86_400_000)})`;
   }
   const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * H);
   const rows: [string, string, string, string, string | null, string | null, string, number, string, string, string | null, Date][] = [
@@ -387,6 +388,8 @@ async function seedCards(tx: any, now: Date) {
     // Planted 5: an unrecognised statement name that is a known merchant under another name.
     ["TX-90033", "grace", "CARD-3307", "PP*NBLX 0294 LONDON", "Nimble Bikes Ltd (bike hire, paid through a payment processor)", "Online, London", "web", 29.0, "GBP", "settled", null, at(26)],
     ["TX-90034", "grace", "CARD-3307", "TFL TRAVEL CH", "Transport for London (contactless travel)", "London", "card", 7.8, "GBP", "settled", null, at(20)],
+    // Planted: an online payment declined because online payments are switched off on her card.
+    ["TX-90035", "grace", "CARD-3307", "RIVERSIDE FLORIST", "Riverside Florist", "Online, London", "web", 64, "GBP", "declined", "Online payments are switched off on this card", at(50)],
     ["TX-90041", "david", "CARD-9902", "GROCERY OUTLET", "Grocery Outlet", "Arlington, VA", "card", 63.12, "USD", "settled", null, at(30)],
     ["TX-90051", "amara", "CARD-5150", "SPAR ENUGU", "Spar, Enugu", "Enugu", "POS", 15200, "NGN", "settled", null, at(28)],
   ];

@@ -117,6 +117,19 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## Card controls (Nov 23, Tomi: "build 1 but give configuration ability where applicable")
+
+Alexis can unfreeze a card the customer froze (`unfreeze_card`) and change its settings (`change_card_settings`:
+online, international and contactless payments on or off, the daily limit); `get_card` now shows the settings and
+who froze it. Each institution configures it on the Rules screen, per market if it wants: the switches "Card
+unfreezing switched on" and "Card settings changes switched on" (off: Alexis hands off), whether unfreezing needs
+the one-time code (on), whether an open "not mine" dispute keeps the card frozen (on), whether switching a setting
+on needs the code (off), whether Alexis may change the limit at all (on), whether raising it needs the code (on),
+and the highest daily limit she may set ($10,000, £8,000, ₦1,000,000). Making a card safer (switching off,
+lowering) never needs the code. A freeze the bank placed is never lifted or worked around. Both go to the bank
+through the connector (`POST /cards/{id}/unfreeze`, `/settings`; 27 endpoints). Planted: Grace's online payment
+was declined because online payments are off on her card; Emeka hit his ₦200,000 daily limit. Two new tests.
+
 ## First runs with the real model (Nov 23)
 
 The live site's first real turns failed after any tool call: the session context (time, identity) was

@@ -17,7 +17,7 @@ const CATEGORY_BY_TOOL: Record<string, string> = {
   get_balance: "Balances",
   get_fees: "Fees and limits", waive_fee: "Fees and limits", get_account_limits: "Fees and limits",
   send_one_time_code: "Account access", send_reset_link: "Account access", unlock_account: "Account access",
-  get_card: "Cards", freeze_card: "Cards", order_replacement: "Cards",
+  get_card: "Cards", freeze_card: "Cards", unfreeze_card: "Cards", change_card_settings: "Cards", order_replacement: "Cards",
   list_transactions: "Transactions and disputes", open_dispute: "Transactions and disputes",
   find_payments: "Failed payments and reversals", get_reversal_status: "Failed payments and reversals", request_reversal: "Failed payments and reversals",
   get_payment_by_id: "Payment tracing", get_payment_timeline: "Payment tracing",
