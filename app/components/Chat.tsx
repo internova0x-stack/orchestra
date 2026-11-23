@@ -573,7 +573,7 @@ export default function Chat() {
                 {(["app", "whatsapp", "email"] as Channel[]).map((c) => (
                   <button key={c} className="btn" role="radio" aria-checked={channel === c} disabled={busy}
                     onClick={() => { if (c !== channel) { setChannel(c); startOver(c); } }}>
-                    {c === "app" ? "App chat" : c === "whatsapp" ? "WhatsApp" : "Email"}
+                    <ChannelIcon channel={c} />{c === "app" ? "App chat" : c === "whatsapp" ? "WhatsApp" : "Email"}
                   </button>
                 ))}
               </div>
@@ -750,3 +750,27 @@ export default function Chat() {
     </div>
   );
 }
+
+/** The channel switcher's icons: a chat bubble, WhatsApp's phone-in-a-bubble mark, an envelope. */
+function ChannelIcon({ channel }: { channel: Channel }) {
+  const common = { width: 16, height: 16, viewBox: "0 0 16 16", "aria-hidden": true, className: "channel-icon" } as const;
+  if (channel === "app") return (
+    <svg {...common} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+      <path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" />
+      <path d="M4.75 7.5h.01M8 7.5h.01M11.25 7.5h.01" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+  if (channel === "whatsapp") return (
+    <svg {...common} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+      <path d="M8 1.75a6.25 6.25 0 0 0-5.4 9.4L1.75 14.25l3.2-.83A6.25 6.25 0 1 0 8 1.75z" />
+      <path d="M5.9 4.9c.25 0 .45.05.6.4l.5 1.2c.05.15.05.3-.05.45l-.4.5c.4.8 1 1.4 1.85 1.85l.5-.45c.15-.1.3-.1.45-.05l1.2.55c.3.15.35.35.35.6-.05.8-.75 1.35-1.5 1.35C7.45 11.3 4.7 8.6 4.6 6.4c0-.75.55-1.45 1.3-1.5z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+  return (
+    <svg {...common} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+      <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.25" />
+      <path d="M2.25 4l5.75 4.5L13.75 4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
