@@ -330,10 +330,10 @@ function CrmPanel({ c, canManage, busy, act }: { c: Conn; canManage: boolean; bu
         </div>
       ) : <>
       <div className="int-seg wide" role="radiogroup" aria-label="Mode">
-        {(["off", "sandbox", "live"] as const).map((m) => (
+        {(["sandbox", "live"] as const).map((m) => (
           <button key={m} role="radio" aria-checked={c.mode === m} className={c.mode === m ? "on" : ""} disabled={!canManage || busy || (m === "live" && !c.envReady)}
-            title={m === "live" && !c.envReady ? `Needs ${c.envNeeded.join(", ")} in Vercel` : ""} onClick={() => act({ mode: m }, () => `${c.name}: ${m === "off" ? "off" : m === "sandbox" ? "sandbox" : "live"}.`)}>
-            {m === "off" ? "Disconnected" : m === "sandbox" ? "Sandbox" : "Live"}
+            title={m === "live" && !c.envReady ? `Needs ${c.envNeeded.join(", ")} in Vercel` : ""} onClick={() => act({ mode: m }, () => `${c.name}: ${m === "sandbox" ? "sandbox" : "live"}.`)}>
+            {m === "sandbox" ? "Sandbox" : "Live"}
           </button>
         ))}
       </div>
