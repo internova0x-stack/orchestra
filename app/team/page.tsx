@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 interface Member { id: string; name: string; email: string | null; role: string; active: boolean; has_password: boolean; must_change: boolean; last_login_at: string | null }
 interface RoleInfo { id: string; name: string; about: string }
 
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never");
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Never");
 
 export default function TeamPage() {
   const [team, setTeam] = useState<Member[]>([]);
