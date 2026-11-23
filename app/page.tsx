@@ -12,12 +12,19 @@ import { RESET_EVENT } from "./components/events";
 interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: string; urgency: string | null; references: string[]; takenOverBy: string | null;
-  channel: "app" | "whatsapp" | "email"; subject: string | null;
+  channel: "app" | "whatsapp" | "email" | "helpdesk"; subject: string | null;
   language: string; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null; startedBy?: "alexis" | null;
+  listen?: { source: string; externalId: string; team: string | null; urgency: string | null } | null;
 }
 interface Counts { total: number; open: number; resolvedByAlexis: number; handedOff: number; urgentOpen: number; withoutPerson: number | null }
+interface ListenDetail {
+  source: string; externalId: string;
+  match: { user_id: string; name: string; holder: string; how: string } | null;
+  analysis: { category: string; urgency: string; team: string; summary: string; wants: string; sentiment: string; fraud_signal: boolean; references: string[]; findings: string[]; draft: string | null; by: string } | null;
+}
 interface Detail {
+  listen?: ListenDetail | null;
   transcript: { who: string; text: string; staff?: string }[];
   activity: { id: number; kind: string; summary: string; staff: string | null; created_at: string }[];
   handoffs: { reference: string; urgency: string; status: string; trigger: string; created_at: string }[];
@@ -30,7 +37,8 @@ interface Staff { id: string; name: string; role: "support_agent" | "supervisor"
 
 const ALL = "all";
 const LANGUAGE_NAME: Record<string, string> = { en: "English", fr: "French", pcm: "Pidgin" };
-const CHANNEL_NAME = { app: "App chat", whatsapp: "WhatsApp", email: "Email" } as const;
+const CHANNEL_NAME = { app: "App chat", whatsapp: "WhatsApp", email: "Email", helpdesk: "Helpdesk" } as const;
+const SOURCE_NAME: Record<string, string> = { zendesk: "Zendesk", freshdesk: "Freshdesk", salesforce: "Salesforce", hubspot: "HubSpot", email: "Support mailbox", other: "Helpdesk" };
 
 /** Where the customer wrote from, as a small labelled chip. */
 function ChannelChip({ channel }: { channel: keyof typeof CHANNEL_NAME }) {
@@ -156,7 +164,7 @@ export default function InboxPage() {
   const mine = Boolean(staff && takenBy === staff.name);
   const last = detail?.transcript[detail.transcript.length - 1];
   const waiting = detail?.awaitingTeam ?? null;
-  const alexisWorking = Boolean(c && !takenBy && !waiting && last?.who === "Customer" && Date.now() - new Date(c.lastActivity).getTime() < 90_000);
+  const alexisWorking = Boolean(c && c.channel !== "helpdesk" && !takenBy && !waiting && last?.who === "Customer" && Date.now() - new Date(c.lastActivity).getTime() < 90_000);
 
   async function act(action: "take_over" | "hand_back" | "reply" | "review" | "translate", text?: string, rating?: "good" | "needs_work") {
     if (!selected) return;
@@ -198,10 +206,11 @@ export default function InboxPage() {
               <Filter label="Status" value={status} onChange={setStatus} options={[[ALL, "Status"], ["open", "All open"], ...STATUS_ORDER.map((s) => [s, s] as [string, string])]} />
               <Filter label="Category" value={category} onChange={setCategory} options={[[ALL, "Category"], ...categories.map((s) => [s, `${s} (${inCategory.get(s) ?? 0})`] as [string, string])]} />
               <Filter label="Urgency" value={urgency} onChange={setUrgency} options={[[ALL, "Urgency"], ["urgent", "Urgent"], ["high", "High"], ["normal", "Normal"], ["none", "Not handed off"]]} />
-              <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["whatsapp", "WhatsApp"], ["email", "Email"]]} />
+              <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["whatsapp", "WhatsApp"], ["email", "Email"], ["helpdesk", "Helpdesk (listening)"]]} />
               <Filter label="Review" value={reviewed} onChange={setReviewed} options={[[ALL, "Review"], ["none", "Not reviewed"], ["good", "Good"], ["needs_work", "Needs work"]]} />
             </div>
             <span className="label">{shown.length} of {cases?.length ?? 0} conversations · updates live</span>
+            <SampleTicket onSent={load} />
           </div>
           <div className="case-list">
             {problem && <div className="empty">{problem}</div>}
@@ -217,10 +226,11 @@ export default function InboxPage() {
                   {k.urgency && <UrgencyChip urgency={k.urgency} />}
                   <ChannelChip channel={k.channel} />
                   {k.startedBy === "alexis" && <span className="chip chip-info" title="Alexis messaged the customer about a failed payment">Started by Alexis</span>}
+                  {k.listen && <span className="chip chip-info" title="A ticket in the bank's own helpdesk that Orchestra is listening to">{SOURCE_NAME[k.listen.source] ?? "Helpdesk"} · {k.listen.externalId}</span>}
                   <span className="label" style={{ marginLeft: "auto" }}>{ago(k.lastActivity)}</span>
                 </span>
                 <span className="case-business">{k.business ?? "Customer not identified"}{k.customer ? ` · ${k.customer}` : ""}</span>
-                <span className="label">{k.category}{k.verified ? "" : " · identity not verified"}{k.takenOverBy ? ` · ${k.takenOverBy} is handling it` : ""}</span>
+                <span className="label">{k.category}{k.listen?.team ? ` · ${k.listen.team}` : ""}{k.verified || k.listen ? "" : " · identity not verified"}{k.takenOverBy ? ` · ${k.takenOverBy} is handling it` : ""}</span>
                 {k.subject && <span className="case-snippet"><b>{k.subject}</b></span>}
                 {k.firstMessage && <span className="case-snippet">“{k.firstMessage}”</span>}
               </button>
@@ -247,6 +257,7 @@ export default function InboxPage() {
                 </span>
               </div>
 
+              {c.listen && detail?.listen ? <ListenPanel l={detail.listen} /> : (
               <div className="takeover-bar">
                 <label className="picker">
                   <span className="label">Signed in as</span>
@@ -263,6 +274,7 @@ export default function InboxPage() {
                 {!takenBy && <button className="btn btn-primary" disabled={!staff || acting || !detail} onClick={() => act("take_over")} title={staff ? "" : "Sign in first"}>Take over</button>}
                 {mine && <button className="btn" disabled={acting} onClick={() => act("hand_back")}>Hand back to Alexis</button>}
               </div>
+              )}
               <div className="takeover-bar review-bar">
                 <span className="label">Review</span>
                 {detail?.review && <span className={`tag tag-${detail.review.rating === "good" ? "live" : "pending"}`}>{detail.review.rating === "good" ? "Good" : "Needs work"} · {detail.review.by}{detail.review.note ? `: ${detail.review.note}` : ""}</span>}
@@ -354,6 +366,59 @@ function Filter({ label, value, onChange, options }: { label: string; value: str
       <span className="sr-only">{label}</span>
       <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
         {options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/** Listen mode: what Orchestra made of a ticket in the bank's own helpdesk. The team works it there. */
+function ListenPanel({ l }: { l: ListenDetail }) {
+  const a = l.analysis;
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="listen-panel">
+      <div className="label">Listening to {SOURCE_NAME[l.source] ?? "the helpdesk"} ticket <span className="ref">{l.externalId}</span>. The team works it in the helpdesk; Orchestra never replies or acts on a listened ticket.</div>
+      {!a ? <div className="label">Waiting for the customer&apos;s message to analyse.</div> : (
+        <>
+          <dl className="summary listen-summary">
+            <div><dt>Summary</dt><dd>{a.summary}</dd></div>
+            <div><dt>Wants</dt><dd>{a.wants}</dd></div>
+            <div><dt>Routed to</dt><dd><b>{a.team}</b> · {a.category} · {a.urgency}{a.fraud_signal ? " · fraud signal" : ""} · {a.sentiment}</dd></div>
+            <div><dt>Customer</dt><dd>{l.match ? `${l.match.name}, ${l.match.holder} (matched by ${l.match.how.replace("_", " ")}; not verified)` : "Not matched to a customer"}</dd></div>
+            {a.findings.length > 0 && <div><dt>In the records</dt><dd><ul className="claim-list">{a.findings.map((f) => <li key={f}>{f}</li>)}</ul></dd></div>}
+          </dl>
+          {a.draft && (
+            <div className="listen-draft">
+              <div className="dev-row"><b>Draft reply for the agent</b><button className="copy" onClick={() => navigator.clipboard?.writeText(a.draft!).then(() => setCopied(true)).catch(() => {})}>{copied ? "Copied" : "Copy"}</button></div>
+              <p>{a.draft}</p>
+            </div>
+          )}
+          {a.by === "rules" && <div className="label">Categorised by keywords (the AI service wasn&apos;t available).</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Testing: play the bank's helpdesk sending Orchestra a ticket. */
+function SampleTicket({ onSent }: { onSent: () => void }) {
+  const [samples, setSamples] = useState<{ index: number; label: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { fetch("/api/listen/sample", { cache: "no-store" }).then((r) => r.json()).then((j) => setSamples(j.samples ?? [])).catch(() => {}); }, []);
+  if (!samples.length) return null;
+  return (
+    <label className="picker">
+      <span className="label">{busy ? "Analysing…" : "Listen mode test"}</span>
+      <select value="" disabled={busy} aria-label="Send a sample helpdesk ticket" onChange={async (e) => {
+        const index = Number(e.target.value);
+        if (Number.isNaN(index) || e.target.value === "") return;
+        setBusy(true);
+        await fetch("/api/listen/sample", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ index }) }).catch(() => {});
+        setBusy(false);
+        onSent();
+      }}>
+        <option value="">Send a sample helpdesk ticket…</option>
+        {samples.map((x) => <option key={x.index} value={x.index}>{x.label}</option>)}
       </select>
     </label>
   );

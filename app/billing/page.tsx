@@ -67,6 +67,7 @@ export default function BillingPage() {
                 <tr><th scope="row">Platform fee</th><td className="label">Console, Rules, routing, drafted replies, APIs; {b.plan.included.toLocaleString("en-GB")} resolved conversations included</td><td>{fmt(b.invoice.platformFee, c)}</td></tr>
                 <tr><th scope="row">Resolved by Alexis</th><td className="label">{b.usage.resolvedByAlexis} in all, {b.usage.billableResolved} beyond those included, at {fmt(b.plan.perResolved, c)}</td><td>{fmt(b.invoice.resolvedCharge, c)}</td></tr>
                 <tr><th scope="row">Handed to the team</th><td className="label">{b.usage.handedOff} at {fmt(b.plan.perHandoff, c)} (summary and routing)</td><td>{fmt(b.invoice.handoffCharge, c)}</td></tr>
+                <tr><th scope="row">Helpdesk tickets analysed</th><td className="label">{b.usage.listened} in listen mode at {fmt(b.plan.perListened, c)}</td><td>{fmt(b.invoice.listenCharge, c)}</td></tr>
                 <tr><th scope="row">Total</th><td className="label">{b.usage.other ? `${b.usage.other} other conversations (open, or answered with nothing to resolve) aren't charged` : ""}</td><td><b>{fmt(b.invoice.total, c)}</b></td></tr>
               </tbody>
             </table>

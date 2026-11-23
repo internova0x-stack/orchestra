@@ -5,7 +5,7 @@ import { SESSION_IDLE_MINUTES } from "./config.ts";
 // status and urgency are worked out from what is already recorded (the audit log, the handoffs and
 // the conversation's own state), so nothing new is stored and nothing can drift out of step.
 
-export type CaseStatus = "In progress" | "Taken over" | "Waiting for the team" | "Waiting on customer" | "Resolved by Alexis" | "Handed off" | "Needs approval" | "Resolved by staff";
+export type CaseStatus = "Listening" | "In progress" | "Taken over" | "Waiting for the team" | "Waiting on customer" | "Resolved by Alexis" | "Handed off" | "Needs approval" | "Resolved by staff";
 export const STATUSES: CaseStatus[] = ["In progress", "Taken over", "Waiting for the team", "Waiting on customer", "Resolved by Alexis", "Handed off", "Needs approval", "Resolved by staff"];
 const OPEN: CaseStatus[] = ["In progress", "Taken over", "Waiting for the team", "Waiting on customer", "Handed off", "Needs approval"];
 
@@ -144,26 +144,29 @@ export function transcriptOf(messages: Message[] | null): { who: string; text: s
 export interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: CaseStatus; urgency: string | null; references: string[]; takenOverBy: string | null;
-  channel: "app" | "whatsapp" | "email"; subject: string | null;
+  channel: "app" | "whatsapp" | "email" | "helpdesk"; subject: string | null;
   language: string; awaitingTeam: string | null; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
   /** Set when Alexis started the conversation with a proactive failure message (lib/proactive.ts). */
   startedBy: "alexis" | null;
+  /** Listen mode: the helpdesk it came from, and Orchestra's routing. */
+  listen: { source: string; externalId: string; team: string | null; urgency: string | null } | null;
 }
 
 interface ConvRow {
   id: string; created_at: Date; last_activity: Date; messages: Message[];
   pending_action: { confirmed?: boolean } | null; pending_identity_tool_id: string | null; pending_code: unknown; taken_over_by: string | null;
-  channel: "app" | "whatsapp" | "email"; email_subject: string | null;
+  channel: "app" | "whatsapp" | "email" | "helpdesk"; email_subject: string | null;
   language: string; awaiting_team: string | null; review_rating: "good" | "needs_work" | null; review_note: string | null; reviewed_by: string | null;
   verified: boolean; customer: string | null; business: string | null; tools: string[] | null;
   origin: string | null; proactive: { text: string; delivered?: boolean } | null;
+  listen: { source: string; external_id: string; subject: string | null; customer: { name: string | null }; analysis?: { category: string; urgency: string; team: string } } | null;
 }
 
 /** Every customer conversation, newest activity first. */
 export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> {
   const convs = await sql<ConvRow[]>`
-    select c.id, c.created_at, c.last_activity, c.messages, c.origin, c.proactive, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by, c.channel, c.email_subject, c.language, c.awaiting_team,
+    select c.id, c.created_at, c.last_activity, c.messages, c.origin, c.proactive, c.listen, c.pending_action, c.pending_identity_tool_id, c.pending_code, c.taken_over_by, c.channel, c.email_subject, c.language, c.awaiting_team,
       rv.rating as review_rating, rv.note as review_note, rv.reviewed_by,
       c.verified_user_id is not null as verified,
       coalesce(v.full_name, t.full_name) as customer, coalesce(vb.name, tb.name) as business,
@@ -187,25 +190,27 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
     const waiting = Boolean((c.pending_action && !c.pending_action.confirmed) || c.pending_identity_tool_id || c.pending_code);
     return {
       id: c.id,
-      customer: c.customer,
+      customer: c.customer ?? c.listen?.customer.name ?? null,
       business: c.business,
       verified: c.verified,
-      category: categoryOf(c.tools ?? [], hs.map((h) => h.trigger), [c.email_subject, ...transcript.filter((m) => m.who === "Customer").map((m) => m.text)].filter(Boolean).join("\n")),
+      category: c.listen?.analysis?.category ?? categoryOf(c.tools ?? [], hs.map((h) => h.trigger), [c.email_subject, ...transcript.filter((m) => m.who === "Customer").map((m) => m.text)].filter(Boolean).join("\n")),
       // A proactive message nobody has replied to yet is waiting on the customer, never resolved (or billed).
-      status: c.origin === "alexis" && transcript.length === 0 ? "Waiting on customer" : statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team }, now),
+      // A ticket Orchestra listens to is the team's in their helpdesk: never resolved by Alexis (or billed as such).
+      status: c.origin === "listen" ? "Listening" : c.origin === "alexis" && transcript.length === 0 ? "Waiting on customer" : statusOf({ handoffs: hs, waiting, lastActivity: c.last_activity, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team }, now),
       language: c.language ?? "en",
       awaitingTeam: c.awaiting_team,
       review: c.review_rating ? { rating: c.review_rating, note: c.review_note, by: c.reviewed_by! } : null,
       takenOverBy: c.taken_over_by,
       channel: c.channel ?? "app",
-      subject: c.email_subject,
-      urgency: urgencyOf(hs),
+      subject: c.email_subject ?? c.listen?.subject ?? null,
+      urgency: c.listen?.analysis?.urgency ?? urgencyOf(hs),
       references: hs.map((h) => h.reference),
       started: new Date(c.created_at).toISOString(),
       lastActivity: new Date(c.last_activity).toISOString(),
       messages: transcript.length,
       firstMessage: transcript.find((m) => m.who === "Customer")?.text.slice(0, 140) ?? (c.proactive ? `Alexis: ${c.proactive.text.slice(0, 130)}` : null),
       startedBy: c.origin === "alexis" ? "alexis" : null,
+      listen: c.listen ? { source: c.listen.source, externalId: c.listen.external_id, team: c.listen.analysis?.team ?? null, urgency: c.listen.analysis?.urgency ?? null } : null,
     };
   });
 }

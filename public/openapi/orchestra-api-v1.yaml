@@ -13,6 +13,9 @@ info:
     verification approved) and Alexis's proactive updates to the customer follow. Each event carries your own id:
     the same id twice is applied once.
 
+    **Listen mode**: your helpdesk sends its tickets to `/interactions`; Orchestra categorises, routes, looks up and
+    drafts for your team, without taking over the conversation.
+
     **Team replies**: an agent working in your CRM or helpdesk answers the customer there; send the reply to
     `/conversations/{id}/team-replies` and it reaches the customer through Orchestra on their channel.
 
@@ -159,6 +162,65 @@ paths:
         "404": { description: No such conversation }
         "409": { description: Another member of the team is handling it in the console }
 
+  /interactions:
+    post:
+      tags: [Listen]
+      summary: Send a helpdesk ticket or message for Orchestra to listen to
+      description: |
+        Listen mode: your helpdesk, CRM or support mailbox sends each ticket or message as it happens (a trigger or
+        webhook on ticket created and on each customer reply). Send the whole thread or only the new messages: each
+        message is stored once (by its `id`). Orchestra matches the customer by the phone or email on file (a match,
+        never a verification), categorises the ticket, sets its urgency, spots fraud signals, routes it to a team,
+        looks up the references in the bank's records for the team, and drafts a reply for the agent. The result is in
+        the response and is posted as the `interaction.analyzed` webhook. Orchestra never acts on the account or
+        replies to the sender from a listened ticket.
+      operationId: ingestInteraction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source, external_id, messages]
+              properties:
+                source: { type: string, enum: [zendesk, freshdesk, salesforce, hubspot, email, other] }
+                external_id: { type: string, description: "Your ticket or thread id" }
+                subject: { type: string }
+                customer:
+                  type: object
+                  properties:
+                    name: { type: string }
+                    email: { type: string }
+                    phone: { type: string }
+                    user_id: { type: string, description: "The bank's id for the customer, if your helpdesk knows it" }
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    required: [from, text]
+                    properties:
+                      id: { type: string }
+                      from: { type: string, enum: [customer, agent] }
+                      name: { type: string }
+                      text: { type: string }
+                      at: { type: string, format: date-time }
+            example: { source: zendesk, external_id: "ZD-48211", subject: "Payment still not received", customer: { email: "ada@brightline.example.com" }, messages: [{ id: "m1", from: customer, text: "We sent $4,200 (PO-88190) two days ago and it hasn't arrived." }] }
+      responses:
+        "202":
+          description: Stored and analysed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  conversation_id: { type: string }
+                  analysis:
+                    type: [object, "null"]
+                    description: "category, urgency, team, summary, wants, sentiment, fraud_signal, references, findings (what the records say, for the team), draft (a reply for the agent to edit)"
+        "400": { description: Missing source, external_id or messages }
+        "409": { description: Listen mode is switched off on the Rules screen }
+
   /events:
     post:
       tags: [Events]
@@ -232,6 +294,13 @@ webhooks:
     post:
       summary: A reply to the customer from Alexis or the team
       description: "`data`: conversation_id, from (alexis | team), name (for the team), text. Deliver it on your channel."
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+      responses: { "200": { description: Received } }
+  interaction.analyzed:
+    post:
+      summary: "Listen mode: a helpdesk ticket was categorised, routed and looked up, and a reply drafted"
+      description: "`data`: conversation_id, source, external_id, category, urgency, team, summary, wants, sentiment, fraud_signal, references, customer (matched user and how), findings, draft. Use it to tag, assign and prioritise the ticket in your helpdesk and to show the draft to the agent."
       requestBody:
         content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
       responses: { "200": { description: Received } }

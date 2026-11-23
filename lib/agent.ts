@@ -93,6 +93,7 @@ const CHANNEL_NOTE: Record<Channel, (c: Conversation) => string> = {
   app: () => "- Channel: the bank's app chat.",
   whatsapp: () =>
     "- Channel: WhatsApp. Write as WhatsApp messages: short, plain text, no headings or tables, one idea per message. The identity form, Yes/Cancel and the code form reach the customer as secure links they tap; never ask for those details in the chat itself.",
+  helpdesk: () => "- Channel: a helpdesk ticket Orchestra is listening to. You don't reply on it; the team does.",
   email: (c) =>
     `- Channel: email${c.email_subject ? `, subject "${c.email_subject}"` : ""}. Reply as an email: a short greeting (their first name once verified), short paragraphs, everything they need in one reply, and sign off "Alexis, AI support assistant". The identity form, Yes/Cancel and the code form reach them as secure links in the email; never ask for those details in a reply email.`,
 };

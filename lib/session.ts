@@ -32,7 +32,8 @@ export interface Conversation {
 /** The languages the customer app offers; Alexis replies in the one chosen. */
 export const LANGUAGES: Record<string, string> = { en: "English", fr: "French", pcm: "Nigerian Pidgin" };
 
-export type Channel = "app" | "whatsapp" | "email";
+/** "helpdesk": a ticket or mailbox thread Orchestra listens to (listen mode); never a channel Alexis answers on. */
+export type Channel = "app" | "whatsapp" | "email" | "helpdesk";
 export const CHANNELS: Channel[] = ["app", "whatsapp", "email"];
 
 /** An action Alexis has asked the customer to confirm. Only the customer's own yes confirms it. */

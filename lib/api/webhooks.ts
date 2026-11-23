@@ -14,6 +14,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.reviewed", // the team reviewed a conversation (good / needs work)
   "message.created",       // a reply to the customer from Alexis or the team (for channels that deliver it)
   "customer.notified",     // a proactive status update was sent to the customer's phone on file
+  "interaction.analyzed",  // listen mode: a helpdesk ticket or email was categorised, routed, looked up and a reply drafted
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

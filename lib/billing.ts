@@ -14,9 +14,9 @@ export interface Billing {
   month: string;
   months: string[];
   currency: string;
-  plan: { platformFee: number; included: number; perResolved: number; perHandoff: number; bankPaysAi: boolean };
-  usage: { conversations: number; resolvedByAlexis: number; handedOff: number; other: number; billableResolved: number };
-  invoice: { platformFee: number; resolvedCharge: number; handoffCharge: number; total: number };
+  plan: { platformFee: number; included: number; perResolved: number; perHandoff: number; perListened: number; bankPaysAi: boolean };
+  usage: { conversations: number; resolvedByAlexis: number; handedOff: number; listened: number; other: number; billableResolved: number };
+  invoice: { platformFee: number; resolvedCharge: number; handoffCharge: number; listenCharge: number; total: number };
   value: { staffCostSaved: number; hoursSaved: number; returnMultiple: number | null };
   ai: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cost: number; perConversation: number | null };
   orchestra: { revenue: number; aiCost: number; margin: number; marginPct: number | null };
@@ -32,14 +32,17 @@ export function priceMonth(rows: CaseRow[], rules: Rules, ai: Omit<Billing["ai"]
     included: rules.num("billing_included", 0),
     perResolved: rules.num("billing_price_resolved", 0),
     perHandoff: rules.num("billing_price_handoff", 0),
+    perListened: rules.num("billing_price_listened", 0),
     bankPaysAi: rules.get("billing_bank_pays_ai")?.value.trim().toLowerCase() === "on",
   };
   const resolvedByAlexis = rows.filter((r) => r.status === "Resolved by Alexis").length;
   const handedOff = rows.filter((r) => r.references.length > 0).length;
+  const listened = rows.filter((r) => r.status === "Listening").length;
   const billableResolved = Math.max(0, resolvedByAlexis - plan.included);
   const resolvedCharge = r2(billableResolved * plan.perResolved);
   const handoffCharge = r2(handedOff * plan.perHandoff);
-  const total = r2(plan.platformFee + resolvedCharge + handoffCharge);
+  const listenCharge = r2(listened * plan.perListened);
+  const total = r2(plan.platformFee + resolvedCharge + handoffCharge + listenCharge);
   const d = buildDashboard(rows, rules, now);
   const cost = r2(
     (ai.inputTokens * rules.num("ai_price_input", 0) + ai.outputTokens * rules.num("ai_price_output", 0)
@@ -50,8 +53,8 @@ export function priceMonth(rows: CaseRow[], rules: Rules, ai: Omit<Billing["ai"]
     month,
     currency: rules.get("billing_platform_fee")?.unit ?? "$",
     plan,
-    usage: { conversations: rows.length, resolvedByAlexis, handedOff, other: rows.length - resolvedByAlexis - handedOff, billableResolved },
-    invoice: { platformFee: plan.platformFee, resolvedCharge, handoffCharge, total },
+    usage: { conversations: rows.length, resolvedByAlexis, handedOff, listened, other: rows.length - resolvedByAlexis - handedOff - listened, billableResolved },
+    invoice: { platformFee: plan.platformFee, resolvedCharge, handoffCharge, listenCharge, total },
     value: { staffCostSaved: d.totals.costSaved, hoursSaved: Math.round((d.totals.minutesSaved / 60) * 10) / 10, returnMultiple: total > 0 ? Math.round((d.totals.costSaved / total) * 10) / 10 : null },
     ai: { ...ai, cost, perConversation: rows.length ? r2(cost / rows.length) : null },
     orchestra: { revenue: total, aiCost: aiCostToOrchestra, margin: r2(total - aiCostToOrchestra), marginPct: total > 0 ? Math.round(((total - aiCostToOrchestra) / total) * 100) : null },

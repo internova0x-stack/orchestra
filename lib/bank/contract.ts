@@ -298,6 +298,8 @@ export interface BankConnector {
   requestRecall(holderId: string, req: RecallRequest, idempotencyKey: string): Promise<RecallResult>;
 
   getContact(userId: string): Promise<Contact | null>;
+  /** The customer whose phone or email on file matches (listen mode: matching a helpdesk ticket to a customer). Matching is not verifying. */
+  findUserByContact(q: { email?: string; phone?: string }): Promise<BankUser | null>;
   /** Lifts a lock from failed sign-in attempts only; a lock the bank placed is refused (accepted: false). */
   unlockLogin(userId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
 

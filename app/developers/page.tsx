@@ -29,6 +29,7 @@ const BANK_ENDPOINTS: [string, string, string][] = [
   ["GET", "/holders/{holderId}/fees", "Fees charged and currency conversions"],
   ["GET", "/holders/{holderId}/restrictions", "Restrictions; a review hold is a flag with no reason"],
   ["POST", "/holders/{holderId}/recalls", "Request a recall (with an Idempotency-Key), after Orchestra's checks and the customer's yes"],
+  ["GET", "/users?email=&phone=", "Find the customer by the phone or email on file (listen mode matches tickets; a match is not verification)"],
   ["GET", "/users/{userId}/contact", "The phone and email on file (codes and reset links go only there) and any sign-in lock"],
   ["POST", "/users/{userId}/unlock", "Unlock online access after failed sign-ins; a lock the bank placed is refused"],
   ["GET", "/holders/{holderId}/cards", "The holder's cards: last 4, status, daily limit, delivery address"],

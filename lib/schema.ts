@@ -252,6 +252,9 @@ create table if not exists ai_usage (
 create index if not exists ai_usage_created on ai_usage (created_at);
 alter table conversations add column if not exists origin text;
 alter table conversations add column if not exists proactive jsonb;
+-- Listen mode (Nov 23): a helpdesk ticket or mailbox thread Orchestra listens to (lib/listen.ts).
+alter table conversations add column if not exists listen jsonb;
+create index if not exists conversations_listen on conversations ((listen->>'source'), (listen->>'external_id'));
 
 -- Smart routing (Nov 23): the team a handoff is routed to, who picked it up, and when it went overdue unattended.
 alter table escalations add column if not exists team text;

@@ -132,6 +132,15 @@ export function simulatedBank(sql: Sql): BankConnector {
       return c ?? null;
     },
 
+    async findUserByContact(q) {
+      const email = q.email?.trim().toLowerCase() || null;
+      const digits = q.phone?.replace(/\D/g, "") || null;
+      if (!email && (!digits || digits.length < 7)) return null;
+      const rows = await sql<{ id: string; email: string | null; phone: string | null }[]>`select id, email, phone from business_users`;
+      const hit = rows.find((u) => (email && u.email?.toLowerCase() === email) || (digits && digits.length >= 7 && u.phone?.replace(/\D/g, "").endsWith(digits.slice(-10))));
+      return hit ? this.getUser(hit.id) : null;
+    },
+
     async unlockLogin(userId) {
       const [c] = await sql<{ login_locked: string | null }[]>`select login_locked from business_users where id = ${userId}`;
       if (!c) return refused("not_found");

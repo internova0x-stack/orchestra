@@ -80,6 +80,23 @@ paths:
               example: { user_id: "ada" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /users:
+    get:
+      tags: [Identity]
+      summary: Find the customer by the phone or email on file
+      description: "Listen mode: matches a helpdesk ticket or email to a customer. A match is not identity verification: Orchestra uses it only to look things up for the team, never to act or to tell the sender anything."
+      operationId: findUserByContact
+      parameters:
+        - { name: email, in: query, schema: { type: string } }
+        - { name: phone, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The customer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /users/{userId}:
     get:
       tags: [Identity]

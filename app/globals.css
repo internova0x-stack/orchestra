@@ -624,3 +624,7 @@ a { color: var(--brand-accent); }
 .orchestra-view > summary { cursor: pointer; list-style: none; }
 .alert-banner { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-3); padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-raised, var(--surface-sunk)); border: 1px solid var(--edge-strong); font-size: var(--size-sm); }
 .outbox-msg .btn { align-self: flex-start; margin-top: var(--space-2); }
+/* Listen mode (Nov 23) */
+.listen-panel { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--edge); font-size: var(--size-sm); }
+.listen-draft { padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--edge-strong); }
+.listen-draft p { margin: var(--space-2) 0 0; white-space: pre-wrap; }

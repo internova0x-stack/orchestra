@@ -1426,7 +1426,7 @@ test("bank connector: the OpenAPI file and the reference server list the same en
     "/holders/{holderId}/merchant-payouts", "/holders/{holderId}/payments", "/holders/{holderId}/payments/{paymentId}",
     "/holders/{holderId}/payments/{paymentId}/events", "/holders/{holderId}/recalls", "/holders/{holderId}/restrictions",
     "/holders/{holderId}/transfers", "/holders/{holderId}/ussd-sessions", "/holders/{holderId}/verification", "/identity/verify",
-    "/users/{userId}", "/users/{userId}/contact", "/users/{userId}/unlock",
+    "/users", "/users/{userId}", "/users/{userId}/contact", "/users/{userId}/unlock",
   ]);
   const served = fs.readFileSync(new URL("../lib/bank/serve.ts", import.meta.url), "utf8");
   for (const p of paths) {
@@ -1746,7 +1746,7 @@ test("billing: platform fee plus usage, from the month's conversations and the p
   const { usage, plan, invoice } = b;
   assert.equal(plan.platformFee, 1500);
   assert.equal(usage.billableResolved, Math.max(0, usage.resolvedByAlexis - plan.included));
-  assert.equal(invoice.total, Math.round((1500 + usage.billableResolved * 0.8 + usage.handedOff * 0.2) * 100) / 100);
+  assert.equal(invoice.total, Math.round((1500 + usage.billableResolved * 0.8 + usage.handedOff * 0.2 + usage.listened * 0.1) * 100) / 100);
   assert.ok(b.ai.inputTokens >= 1_000_000 && b.ai.cost >= 4.5, "1M input at $3 and 100k output at $15 is $4.50");
   assert.equal(b.orchestra.aiCost, b.ai.cost, "Orchestra's AI account by default");
   await sql!`update rules set value = 'on' where id = 'billing_bank_pays_ai'`;
@@ -1756,4 +1756,46 @@ test("billing: platform fee plus usage, from the month's conversations and the p
   const b2 = await billing(sql!, null, now);
   assert.equal(b2.usage.billableResolved, b2.usage.resolvedByAlexis, "nothing included: every resolved conversation is charged");
   await sql!`update rules set value = '500' where id = 'billing_included'`;
+});
+
+// ---------------------------------------------------------------- listen mode (Nov 23)
+
+test("listen mode: a helpdesk ticket is matched, categorised, routed and looked up for the team, never answered", { skip }, async () => {
+  const { ingestInteraction, ruleClassify } = await import("../lib/listen.ts");
+  const { listCases } = await import("../lib/cases.ts");
+  await seed(sql!, MONDAY);
+  const classify = async (text: string) => ({ analysis: { ...ruleClassify(text), category: "Payouts", urgency: "high" as const, summary: "Ada asks where PO-88190 is", wants: "Find the payout" } });
+  const ticket = {
+    source: "zendesk" as const, external_id: "ZD-1", subject: "Payment not received",
+    customer: { name: "Ada Okafor", email: "ADA@brightline.example.com" },
+    messages: [{ id: "m1", from: "customer" as const, text: "We sent $4,200 (PO-88190) and it hasn't arrived. My password is hunter2" }],
+  };
+  const out = await ingestInteraction(sql!, ticket, { classify, draft: false });
+  assert.ok(out.ok, JSON.stringify(out));
+  const a = (out as { analysis: { team: string; findings: string[]; category: string } }).analysis;
+  assert.equal(a.team, "Payments team");
+  assert.match(a.findings[0], /^PO-88190: \$4,200\.00 to Lumen Print \(•••• \d{4}\) by SWIFT, Processing/);
+  const id = (out as { conversation_id: string }).conversation_id;
+  const [c] = await sql!`select listen, messages, verified_user_id, channel from conversations where id = ${id}`;
+  assert.equal(c.listen.match.user_id, "ada", "matched by the email on file");
+  assert.equal(c.verified_user_id, null, "a match is never a verification");
+  assert.equal(c.channel, "helpdesk");
+  assert.ok(!JSON.stringify(c.messages).includes("hunter2"), "secrets masked before storing");
+  // The same ticket again: each message once; an agent's reply in the helpdesk is recorded, not re-analysed.
+  await ingestInteraction(sql!, { ...ticket, messages: [...ticket.messages, { id: "m2", from: "agent", name: "Tolu", text: "Looking into it." }] }, { classify, draft: false });
+  const [c2] = await sql!`select messages from conversations where id = ${id}`;
+  assert.equal(c2.messages.length, 2);
+  assert.equal((await sql!`select count(*)::int as n from conversations where listen->>'external_id' = 'ZD-1'`)[0].n, 1);
+  // Listed as Listening, with its team; never resolved by Alexis.
+  const row = (await listCases(sql!)).find((r) => r.id === id)!;
+  assert.equal(row.status, "Listening");
+  assert.equal(row.listen?.team, "Payments team");
+  // Fraud always goes to the fraud team, urgently; an unknown sender gets no lookups.
+  const fraud = await ingestInteraction(sql!, { source: "freshdesk", external_id: "FD-9", customer: { email: "nobody@unknown.example" }, messages: [{ from: "customer", text: "There's a payment PAY-61001 that wasn't me, I think I was scammed" }] }, { draft: false });
+  const fa = (fraud as { analysis: { team: string; urgency: string; findings: string[] } }).analysis;
+  assert.deepEqual([fa.team, fa.urgency, fa.findings.length], ["Fraud team", "urgent", 0]);
+  // Switched off on the Rules screen.
+  await sql!`update rules set value = 'off' where id = 'listen_enabled'`;
+  assert.equal((await ingestInteraction(sql!, ticket, { classify }) as { error: string }).error, "switched_off");
+  await sql!`update rules set value = 'on' where id = 'listen_enabled'`;
 });

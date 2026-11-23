@@ -70,6 +70,7 @@ export function httpBank(baseUrl: string, apiKey: string, fetcher: typeof fetch 
     listRestrictions: (h, q) => list(call<{ data: Restriction[] }>("GET", `${holder(h)}/restrictions`, { query: q })),
     requestRecall: (h, req: RecallRequest, key: string) => call<RecallResult>("POST", `${holder(h)}/recalls`, { body: req, idempotencyKey: key }),
 
+    findUserByContact: (q) => call<BankUser | null>("GET", "/users", { query: { email: q.email, phone: q.phone } }),
     getContact: (userId) => call<Contact | null>("GET", `/users/${seg(userId)}/contact`),
     unlockLogin: (userId, req, key) => act(`/users/${seg(userId)}/unlock`, req, key),
     listCards: (h, q) => list(call<{ data: Card[] }>("GET", `${holder(h)}/cards`, { query: q })),

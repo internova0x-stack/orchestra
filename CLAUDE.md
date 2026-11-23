@@ -63,6 +63,8 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
+- Listen mode: `lib/listen.ts` (`ingestInteraction` from `/api/v1/interactions` and the CRM connectors; conversations
+  with `origin = 'listen'`, channel 'helpdesk', `listen` jsonb with the match and analysis; never replies or acts).
 - Proactive failure messages: `lib/proactive.ts` (`notifyFailure` from the Events API's failure types; `proactive_*`
   rules; conversations with `origin = 'alexis'` and `proactive`; `deliverDue` for quiet hours). CRM team replies:
   `lib/api/teamReply.ts`. Billing: `lib/billing.ts` + `/billing` (`billing_*`, `ai_price_*` rules; `ai_usage` from

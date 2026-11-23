@@ -39,6 +39,10 @@ export async function serveBank(b: BankConnector, method: string, path: string[]
     if (!c || typeof c.full_name !== "string" || typeof c.date_of_birth !== "string" || typeof c.registration_number !== "string") return { status: 400, body: { error: "bad_request" } };
     return { status: 200, body: await b.verifyIdentity({ full_name: c.full_name, date_of_birth: c.date_of_birth, registration_number: c.registration_number }) };
   }
+  if (method === "GET" && a === "users" && path.length === 1) {
+    const u = await b.findUserByContact({ email: str(query.get("email")), phone: str(query.get("phone")) });
+    return u ? { status: 200, body: u } : notFound;
+  }
   if (method === "GET" && a === "users" && id && path.length === 2) {
     const u = await b.getUser(id);
     return u ? { status: 200, body: u } : notFound;

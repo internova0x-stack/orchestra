@@ -265,6 +265,12 @@ export const RULE_SET: RuleSeed[] = [
   l("staff_dual_limit_gbp", "Staff actions", "Above this, a second supervisor must approve (GBP)", "8000", "£"),
   l("staff_dual_limit_ngn", "Staff actions", "Above this, a second supervisor must approve (NGN)", "5000000", "₦"),
 
+  // Listen mode (Nov 23, lib/listen.ts): tickets and emails from the bank's own helpdesk, categorised, routed,
+  // looked up and answered in draft for the team. Never acts on the account or tells the sender anything (fixed).
+  l("listen_enabled", "Listen mode", "Listen to tickets and emails from the bank's helpdesk", "on"),
+  l("listen_lookups", "Listen mode", "Look up the references in a ticket for the team (customer matched by the phone or email on file)", "on"),
+  l("listen_draft_replies", "Listen mode", "Draft a reply for the agent on each new customer message", "on"),
+
   // Proactive failure messages (Nov 23, Tomi: "build #2"; lib/proactive.ts). Never on a review hold or for fraud (fixed).
   l("proactive_enabled", "Proactive messages", "Message customers when a payment fails", "on"),
   l("proactive_card_declined", "Proactive messages", "Declined card payments (a setting, the limit, a frozen card, funds)", "on"),
@@ -283,6 +289,7 @@ export const RULE_SET: RuleSeed[] = [
   l("billing_included", "Billing", "Conversations resolved by Alexis included each month", "500", "conversations"),
   l("billing_price_resolved", "Billing", "Price per conversation resolved by Alexis, beyond those included", "0.80", "$"),
   l("billing_price_handoff", "Billing", "Price per conversation handed to the team (summary and routing)", "0.20", "$"),
+  l("billing_price_listened", "Billing", "Price per helpdesk ticket analysed in listen mode", "0.10", "$"),
   l("billing_bank_pays_ai", "Billing", "The institution pays its AI provider directly (off: Orchestra's AI account)", "off"),
   l("ai_price_input", "Billing", "AI price per million input tokens (sample)", "3", "$"),
   l("ai_price_output", "Billing", "AI price per million output tokens (sample)", "15", "$"),

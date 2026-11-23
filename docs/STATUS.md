@@ -117,6 +117,20 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## Listen mode (Nov 23, Tomi: "build the listen mode first")
+
+Orchestra listens to tickets and emails already in the bank's own helpdesk (`lib/listen.ts`,
+`POST /api/v1/interactions`, source zendesk | freshdesk | salesforce | hubspot | email | other). For each new customer
+message it matches the customer by the phone or email on file (Bank Connector `GET /users?email=&phone=`; a match,
+never a verification), categorises it with Claude (structured output; keywords if the AI service is down), sets the
+urgency, spots fraud signals (always the Fraud team, urgent), routes it by the routing rules, looks up the references
+in the bank's records for the team (read-only, masked) and drafts a reply for the agent. It never replies to the
+sender or acts on the account from a listened ticket. Results: the Inbox (channel "Helpdesk", status "Listening", the
+analysis panel with the draft), the activity log, and the `interaction.analyzed` webhook so the helpdesk can tag,
+assign and prioritise. Each message is stored once; secrets are masked. Rules screen, "Listen mode": on or off,
+lookups, drafts. Billing: "Price per helpdesk ticket analysed" ($0.10 sample). Inbox: "Send a sample helpdesk ticket"
+for testing. One new test.
+
 ## Proactive failure messages, CRM team replies, plan and usage (Nov 23, Tomi: "build #2, the crm team-reply api and the platform fee plus usage")
 
 Proactive failure messages (`lib/proactive.ts`): the bank reports `card.declined` (with a reason code),

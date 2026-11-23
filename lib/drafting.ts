@@ -33,6 +33,7 @@ export async function draftReply(
   staff: StaffUser,
   purpose: string | null,
   create: Create = (body) => new Anthropic({ maxRetries: 4 }).messages.create(body),
+  opts: { customerName?: string | null } = {},
 ): Promise<{ draft: string } | { error: DraftError }> {
   const [c] = await sql<{ messages: never; verified_user_id: string | null; language: string | null; channel: string | null }[]>`
     select messages, verified_user_id, language, channel from conversations where id = ${conversationId} and mode = 'customer'`;
@@ -49,7 +50,7 @@ export async function draftReply(
 
   const materials = [
     `Team member: ${staff.name}`,
-    `Customer: ${user ? user.first_name : "not verified (don't use a name)"}`,
+    `Customer: ${user ? user.first_name : opts.customerName ? `${opts.customerName} (the name they gave; not verified)` : "not verified (don't use a name)"}`,
     `Channel: ${c.channel ?? "app"}${c.channel === "email" ? " (write it as an email body with a greeting and sign-off)" : ""}`,
     ...(language ? [`Write in ${language}, the language the customer has been using.`] : []),
     purpose?.trim() ? `What the reply should do: ${purpose.trim().slice(0, 300)}` : "What the reply should do: answer the customer's latest message and update them on their case.",
