@@ -707,3 +707,35 @@ test("use case 9: an ID on another customer's account reveals nothing", { skip }
   const mine = await call(s, "get_payment_by_id", { transaction_id: "pay-61003" });
   assert.equal((mine.data as { merchant: string }).merchant, "Konga (online store)");
 });
+
+// ---------------------------------------------------------------- use cases 7 and 8: loans and merchant payouts
+
+test("planted 14: Emeka can't pay: a deferral request is logged once, with a decision date", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("emeka", MONDAY, true);
+  const loan = (await call(s, "get_loan", {})).data as Record<string, string>;
+  assert.equal(loan.next_payment, "₦79,300.00");
+  const quote = (await call(s, "payoff_quote", {})).data as { payoff_amount: string; valid_until: string };
+  assert.match(quote.payoff_amount, /^₦9\d\d,\d{3}\.\d\d$/);
+  await call(s, "request_deferral", {});
+  await confirmPending(s);
+  const out = await call(s, "request_deferral", {});
+  assert.equal(out.reference, "DEF-4401");
+  assert.match((out.data as { note: string }).note, /not an approval/);
+  assert.equal((await call(s, "request_deferral", {})).reference, "DEF-4401", "once");
+});
+
+test("planted 15: Okapi's payout rejected by its bank: cause from the record, totals reconcile", { skip }, async () => {
+  const s = await session("chidi", MONDAY);
+  const d = (await call(s, "get_payout_status", { payout_id: "PY-21007" })).data as { payouts: Record<string, unknown>[] };
+  assert.match(String(d.payouts[0].cause), /account name/);
+  assert.equal(d.payouts[0].reconciles, true);
+});
+
+test("merchant review hold: On hold, no reason, anywhere", { skip }, async () => {
+  const s = await session("kemi", MONDAY);
+  const payout = await call(s, "get_payout_status", {});
+  const holds = await call(s, "list_holds", {});
+  assert.match(JSON.stringify(payout), /On hold/);
+  assert.doesNotMatch(JSON.stringify(payout) + JSON.stringify(holds), /chargeback|risk review/i);
+});

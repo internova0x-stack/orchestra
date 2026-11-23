@@ -20,6 +20,7 @@ import { listTransactions, openDispute } from "./tools/transactions.ts";
 import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
 import { getAccountLimits, waiveFee } from "./tools/fees.ts";
 import { getPaymentById, getPaymentTimeline } from "./tools/tracing.ts";
+import { getLoan, getPayoutStatus, listHolds, payoffQuote, requestDeferral } from "./tools/lending.ts";
 import {
   AWAITING_CODE,
   AWAITING_IDENTITY,
@@ -134,6 +135,8 @@ const TRIGGERS = {
   card_problem: { urgency: "normal", label: "Card problem Alexis can't fix (address, use after loss, freeze failed)" },
   account_takeover_suspected: { urgency: "urgent", label: "Several fraudulent transactions: possible account takeover" },
   contact_change_requested: { urgency: "normal", label: "Customer wants contact details changed" },
+  loan_hardship: { urgency: "normal", label: "Loan payment difficulty or deferral request" },
+  merchant_payout_problem: { urgency: "high", label: "Merchant payout rejected, unreconciled or held" },
 } as const;
 
 type Trigger = keyof typeof TRIGGERS;
@@ -827,7 +830,7 @@ const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHu
   sendOneTimeCode, sendResetLink, unlockAccount,
   getCard, freezeCard, orderReplacement, listTransactions, openDispute,
   findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits,
-  getPaymentById, getPaymentTimeline];
+  getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

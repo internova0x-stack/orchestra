@@ -285,6 +285,60 @@ create table if not exists payment_events (
   at timestamptz not null
 );
 
+-- Use case 7: loans and deferral requests.
+create table if not exists loans (
+  id text primary key,
+  holder_id text not null references businesses(id) on delete cascade,
+  product text not null,
+  currency text not null,
+  principal numeric(18,2) not null,
+  balance numeric(18,2) not null,
+  annual_rate numeric(6,3) not null,
+  monthly_payment numeric(18,2) not null,
+  next_due_at timestamptz not null,
+  arrears numeric(18,2) not null default 0,
+  status text not null check (status in ('current','in_arrears','default')),
+  started_at timestamptz not null
+);
+create table if not exists deferral_requests (
+  reference text primary key,
+  loan_id text not null references loans(id) on delete cascade,
+  holder_id text not null references businesses(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete set null,
+  months int not null,
+  status text not null default 'requested',
+  decision_by timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create sequence if not exists deferral_seq start 4401;
+
+-- Use case 8: merchant payouts and holds.
+create table if not exists merchant_payouts (
+  id text primary key,
+  business_id text not null references businesses(id) on delete cascade,
+  amount numeric(18,2) not null,
+  currency text not null,
+  scheduled_for timestamptz not null,
+  status text not null check (status in ('scheduled','paid','delayed','rejected','on_hold')),
+  delay_reason text,
+  sales numeric(18,2) not null,
+  fees numeric(18,2) not null,
+  refunds numeric(18,2) not null,
+  disputes numeric(18,2) not null,
+  paid_at timestamptz
+);
+create table if not exists merchant_holds (
+  id text primary key,
+  business_id text not null references businesses(id) on delete cascade,
+  payout_id text references merchant_payouts(id) on delete cascade,
+  amount numeric(18,2) not null,
+  currency text not null,
+  kind text not null check (kind in ('customer_fixable','review_hold')),
+  customer_reason text,
+  internal_reason text,
+  created_at timestamptz not null
+);
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -311,6 +365,10 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "deferral_requests",
+  "loans",
+  "merchant_holds",
+  "merchant_payouts",
   "payment_events",
   "waivers",
   "reversals",

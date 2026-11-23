@@ -210,7 +210,7 @@ export async function seed(sql: Sql, now = new Date()) {
 async function seedInto(tx: any, now: Date) {
   {
     await tx.unsafe(`truncate ${TABLES_TO_WIPE.join(", ")} restart identity cascade`);
-    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101; alter sequence waiver_seq restart with 9201;`);
+    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101; alter sequence waiver_seq restart with 9201; alter sequence deferral_seq restart with 4401;`);
 
     for (const b of BUSINESSES) {
       await tx`insert into businesses (id, name, country, registration_number, verification_status, verification_reason, verification_missing, verification_submitted_at)
@@ -231,6 +231,7 @@ async function seedInto(tx: any, now: Date) {
     await seedPayments(tx, now);
     await seedFeesAndLimits(tx, now);
     await seedTimelines(tx, now);
+    await seedLoansAndPayouts(tx, now);
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
     await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;
@@ -437,4 +438,30 @@ async function seedTimelines(tx: any, now: Date) {
   await ev("PAY-61003", "capture", "ok", "Merchant (Konga)", 6 * 24 - 0.1);
   await ev("PAY-61003", "settlement", "ok", "Card processor", 5 * 24);
   await ev("PAY-61003", "payout", "ok", "Card processor", 4 * 24);
+}
+
+// ---------------------------------------------------------------- use cases 7 and 8
+
+/** Loans (planted 14) and merchant payouts (planted 15, plus a review hold and a reconciliation). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedLoansAndPayouts(tx: any, now: Date) {
+  const day = 86_400_000;
+  const loans = [
+    // Planted 14: Emeka can't pay this month.
+    { id: "LN-30021", holder_id: "emeka", product: "Personal loan", currency: "NGN", principal: 1500000, balance: 912400, annual_rate: 24, monthly_payment: 79300, next_due_at: new Date(now.getTime() + 4 * day), arrears: 0, status: "current", started_at: new Date(now.getTime() - 300 * day) },
+    { id: "LN-30022", holder_id: "david", product: "Car loan", currency: "USD", principal: 18000, balance: 11240.55, annual_rate: 6.9, monthly_payment: 412.2, next_due_at: new Date(now.getTime() + 12 * day), arrears: 0, status: "current", started_at: new Date(now.getTime() - 820 * day) },
+  ];
+  for (const l of loans) await tx`insert into loans ${tx(l)}`;
+  const payouts = [
+    // Planted 15: Okapi's payout delayed because the settlement bank rejected it.
+    { id: "PY-21007", business_id: "okapi", amount: 2847500, currency: "NGN", scheduled_for: new Date(now.getTime() - 1 * day), status: "rejected", delay_reason: "The settlement bank rejected the payout: the account name on file doesn't match the bank's records", sales: 3125000, fees: 46875, refunds: 180625, disputes: 50000, paid_at: null },
+    { id: "PY-21006", business_id: "okapi", amount: 2310000, currency: "NGN", scheduled_for: new Date(now.getTime() - 8 * day), status: "paid", delay_reason: null, sales: 2400000, fees: 36000, refunds: 54000, disputes: 0, paid_at: new Date(now.getTime() - 8 * day) },
+    // Ember's payout is held for review: the reason is never shown.
+    { id: "PY-21011", business_id: "ember", amount: 1188000, currency: "NGN", scheduled_for: new Date(now.getTime() - 2 * day), status: "on_hold", delay_reason: null, sales: 1220000, fees: 18300, refunds: 13700, disputes: 0, paid_at: null },
+    { id: "PY-21012", business_id: "tidewater", amount: 18420.4, currency: "USD", scheduled_for: new Date(now.getTime() + 2 * day), status: "scheduled", delay_reason: null, sales: 19210, fees: 422.6, refunds: 367, disputes: 0, paid_at: null },
+  ];
+  for (const p of payouts) await tx`insert into merchant_payouts ${tx(p)}`;
+  await tx`insert into merchant_holds (id, business_id, payout_id, amount, currency, kind, customer_reason, internal_reason, created_at) values
+    ('MH-501', 'ember', 'PY-21011', 1188000, 'NGN', 'review_hold', null, 'Chargeback ratio spike under risk review', ${new Date(now.getTime() - 2 * day)}),
+    ('MH-502', 'okapi', null, 50000, 'NGN', 'customer_fixable', 'Reserve for an open card dispute (DSP on 12 November); released when the dispute closes', null, ${new Date(now.getTime() - 10 * day)})`;
 }

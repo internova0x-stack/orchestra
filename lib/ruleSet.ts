@@ -151,6 +151,17 @@ export const RULE_SET: RuleSeed[] = [
   l("tier_2_daily", "Account limits", "Tier 2 daily transfer limit", "500000", "₦"),
   l("tier_3_daily", "Account limits", "Tier 3 daily transfer limit", "25000000", "₦"),
 
+  // Loans (sample)
+  a("loan_deferral", "Loans", "Payment deferral", "A request to move one month's payment to the end of the loan. Interest keeps running for the deferred month. A request is not an approval: the lending team decides within 3 business days", "sample"),
+  a("loan_payoff", "Loans", "Payoff quote", "The balance plus interest to the payoff date; a quote is valid for 7 days", "sample"),
+  a("loan_hardship", "Loans", "Financial difficulty", "Customers in financial difficulty are passed to the specialist team, who can discuss options; Alexis doesn't give advice on borrowing", "sample"),
+  l("deferral_decision_days", "Loans", "Deferral decision within", "3", "business days"),
+  l("payoff_valid_days", "Loans", "Payoff quote valid for", "7", "days"),
+
+  // Merchant payouts (sample)
+  a("payout_schedule", "Merchant payouts", "Payout schedule", "Card sales are paid out daily, the next business day, net of fees, refunds and dispute reserves", "sample"),
+  a("payout_rejected", "Merchant payouts", "A payout the merchant's bank rejected", "The merchant corrects the settlement account in the dashboard; the payout is resent within 1 business day after", "sample"),
+
   // Limits and approvals
   l("action_initiate_recall", "Limits and approvals", "Recalls switched on", "on"),
   l("action_generate_proof_of_payment", "Limits and approvals", "Proof of payment switched on", "on"),
@@ -174,6 +185,7 @@ export const RULE_SET: RuleSeed[] = [
   l("waiver_cap_ngn", "Limits and approvals", "Fee waiver cap (NGN)", "2000", "₦"),
   l("waiver_limit", "Limits and approvals", "Goodwill fee waivers per customer", "1", "per 12 months"),
   l("action_waive_fee", "Limits and approvals", "Fee waivers switched on", "on"),
+  l("action_request_deferral", "Limits and approvals", "Loan deferral requests switched on", "on"),
   l("action_freeze_card", "Limits and approvals", "Card freezing switched on", "on"),
   l("action_order_replacement", "Limits and approvals", "Replacement cards switched on", "on"),
   l("action_open_dispute", "Limits and approvals", "Disputes switched on", "on"),
