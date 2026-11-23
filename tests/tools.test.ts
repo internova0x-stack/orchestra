@@ -943,6 +943,8 @@ test("cases: category, status and urgency are worked out from what's recorded", 
   assert.equal(categoryOf([], [], "My card payment failed and hasn't been working"), "Failed payments and reversals", "the customer's words before any lookup");
   assert.equal(categoryOf([], [], "Where is my payment to Lumen Print?"), "Payouts");
   assert.equal(categoryOf([], [], "I can't log in to the dashboard"), "Account access");
+  assert.equal(categoryOf(["get_kyc_status"], []), "Verification (KYC)");
+  assert.equal(categoryOf([], [], "Where is my KYC at?"), "Verification (KYC)");
   assert.equal(categoryOf(["get_card"], [], "My payment to Lumen Print failed"), "Cards", "a lookup outranks the words");
   assert.equal(categoryOf(["verify_identity"], ["payout_past_window"]), "Payouts", "a handoff with no lookups takes its reason's area");
   assert.equal(categoryOf(["find_incoming_payment"], ["payout_past_window"]), "Incoming payments", "what Alexis looked into comes first");
@@ -1052,7 +1054,7 @@ test("take over: Alexis pauses, the customer's messages wait for the team, and h
 
 test("dashboard: every category has a handling time, and time saved follows the rules", { skip }, async () => {
   const ids = new Set(RULE_SET.map((r) => r.id));
-  for (const c of ["Payouts", "Incoming payments", "Verification", "Balances", "Fees and limits", "Account access", "Cards", "Transactions and disputes", "Failed payments and reversals", "Payment tracing", "Loans", "Merchant payouts", "Airtime and bills", "USSD and agent banking", "Complaint", "Fraud and scams", "General question"]) {
+  for (const c of ["Payouts", "Incoming payments", "Verification (KYC)", "Balances", "Fees and limits", "Account access", "Cards", "Transactions and disputes", "Failed payments and reversals", "Payment tracing", "Loans", "Merchant payouts", "Airtime and bills", "USSD and agent banking", "Complaint", "Fraud and scams", "General question"]) {
     assert.ok(ids.has(timeRuleId(c)), `no handling time for ${c}`);
   }
   await seed(sql!, MONDAY);

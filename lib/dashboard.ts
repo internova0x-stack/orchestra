@@ -7,7 +7,8 @@ import { Rules } from "./rules.ts";
 // supplies its own). A conversation Alexis resolved saves the category's whole handling time; one handed
 // to a person saves only what the handoff summary saves.
 
-export const timeRuleId = (category: string) => `time_${category.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`;
+// The handling-time rule's id comes from the category's name without any bracketed note ("Verification (KYC)").
+export const timeRuleId = (category: string) => `time_${category.replace(/\s*\(.*\)\s*$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`;
 
 export interface Dashboard {
   totals: { conversations: number; resolvedByAlexis: number; handedOff: number; open: number; minutesSaved: number; costSaved: number; costUnit: string; resolutionRate: number | null };
