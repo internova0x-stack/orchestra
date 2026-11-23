@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { UrgencyChip, StatusChip } from "../components/Chat";
 import { RESET_EVENT } from "../components/events";
+import DraftButton from "../components/DraftButton";
 
 interface CaseItem {
   reference: string; urgency: string; status: string; created_at: string; trigger: string | null; business: string | null;
   action: { type: string; reference: string; payout: string; amount: string } | null;
+  team: string | null; assigned_to: string | null; respond_by: string | null; overdue: boolean;
 }
 interface Summary {
   reference: string; urgency: string;
@@ -18,7 +20,7 @@ interface ClaimDraft {
   draft: { to: string; subject: string; facts: [string, string][]; timeline: { stage: string; status: string; time: string; reported_by: string }[]; evidence: string[]; missing: string[]; request: string };
 }
 interface CaseDetail {
-  case: CaseItem & { summary: Summary; respond_by: string | null; resolution: string | null; decided_at: string | null };
+  case: CaseItem & { summary: Summary; respond_by: string | null; resolution: string | null; decided_at: string | null; conversation_id: string | null; overdue_at: string | null };
   transcript: { who: string; text: string }[];
   activity: { id: number; kind: string; summary: string; created_at: string }[];
   claim: ClaimDraft | null;
@@ -113,7 +115,12 @@ export default function StaffPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [actError, setActError] = useState<string | null>(null);
-  const [show, setShow] = useState<"summary" | "claim" | "assist" | "transcript" | "activity">("summary");
+  const [show, setShow] = useState<"summary" | "claim" | "reply" | "assist" | "transcript" | "activity">("summary");
+  const [teams, setTeams] = useState<string[]>([]);
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [view, setView] = useState<"open" | "mine" | "unassigned" | "overdue" | "all">("open");
+  const [reply, setReply] = useState("");
+  const [replyMsg, setReplyMsg] = useState<string | null>(null);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [staffId, setStaffId] = useState<string>("");
   const staff = staffList.find((x) => x.id === staffId) ?? null;
@@ -130,6 +137,7 @@ export default function StaffPage() {
       if (!res.ok) { setProblem("The database isn't connected yet."); setCases([]); return; }
       setProblem(null);
       setCases(json.cases);
+      setTeams(json.teams ?? []);
     } catch {
       setProblem("Couldn't reach the app's server.");
       setCases([]);
@@ -141,6 +149,8 @@ export default function StaffPage() {
     setActError(null);
     setArming(null);
     setShow("summary");
+    setReply("");
+    setReplyMsg(null);
     const res = await fetch(`/api/staff/${ref}`, { cache: "no-store" });
     if (res.ok) setDetail(await res.json());
   }, []);
@@ -184,6 +194,50 @@ export default function StaffPage() {
     }
   }
 
+  async function route(body: { route: "pick_up" | "move"; team?: string }) {
+    if (!selected) return;
+    setBusy(true);
+    setActError(null);
+    try {
+      const res = await fetch(`/api/staff/${selected}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, staffId }) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) setActError(json.error === "sign_in" ? "Sign in as a staff member first." : json.message ?? "That didn't go through. Try again.");
+      await Promise.all([load(), open(selected)]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Send the reply to the customer: the conversation is taken over from Alexis first (hand it back in the Inbox). */
+  async function sendReply() {
+    const conv = detail?.case.conversation_id;
+    if (!conv || !reply.trim()) return;
+    setBusy(true);
+    setReplyMsg(null);
+    try {
+      const post = (body: object) => fetch(`/api/cases/${conv}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, staffId }) }).then(async (r) => ({ ok: r.ok, json: await r.json().catch(() => ({})) }));
+      const took = await post({ action: "take_over" });
+      if (!took.ok) { setReplyMsg(took.json.message ?? "Couldn't take the conversation over."); return; }
+      const sent = await post({ action: "reply", text: reply });
+      if (!sent.ok) { setReplyMsg(sent.json.message ?? "The reply didn't go through."); return; }
+      setReply("");
+      setReplyMsg("Sent. You're now handling this conversation: hand it back to Alexis from the Inbox when you're done.");
+      if (selected) await open(selected).then(() => setShow("reply"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const shown = (cases ?? []).filter((k) => {
+    if (teamFilter !== "all" && k.team !== teamFilter) return false;
+    if (view === "all") return true;
+    if (k.status !== "open") return false;
+    if (view === "mine") return k.assigned_to === staff?.name;
+    if (view === "unassigned") return !k.assigned_to;
+    if (view === "overdue") return k.overdue && !k.assigned_to;
+    return true;
+  });
+
   const c = detail?.case;
   const s = c?.summary;
   const pendingRecall = c?.status === "open" && c.action?.type === "recall";
@@ -201,11 +255,31 @@ export default function StaffPage() {
             </select>
           </label>
         </div>
+        <div className="route-filters">
+          <label className="picker">
+            <span className="label">Team</span>
+            <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} aria-label="Filter by team">
+              <option value="all">All teams</option>
+              {teams.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="picker">
+            <span className="label">Show</span>
+            <select value={view} onChange={(e) => setView(e.target.value as typeof view)} aria-label="Which cases">
+              <option value="open">Open</option>
+              <option value="mine">Mine</option>
+              <option value="unassigned">Nobody on it</option>
+              <option value="overdue">Overdue, nobody on it</option>
+              <option value="all">All, closed too</option>
+            </select>
+          </label>
+        </div>
         <div className="case-list">
           {problem && <div className="empty">{problem}</div>}
           {cases === null && <div className="empty">Loading cases…</div>}
           {cases && cases.length === 0 && !problem && <div className="empty">No open cases. Handoffs from Alexis will appear here.</div>}
-          {cases?.map((k) => (
+          {cases && cases.length > 0 && shown.length === 0 && <div className="empty">No cases match these filters.</div>}
+          {shown.map((k) => (
             <button key={k.reference} className="case-row" aria-current={selected === k.reference ? "true" : undefined} onClick={() => open(k.reference)}>
               <span className="case-top">
                 <UrgencyChip urgency={k.urgency} />
@@ -214,6 +288,11 @@ export default function StaffPage() {
               </span>
               <span className="case-business">{k.business ?? "Identity not verified"}</span>
               <span className="label">{k.trigger}{k.status !== "open" ? ` · ${STATUS_WORD[k.status]}` : ""}</span>
+              <span className="route-line">
+                {k.team && <span className="tag">{k.team}</span>}
+                {k.status === "open" && (k.assigned_to ? <span className="label">{k.assigned_to}</span> : <span className="label">Nobody on it</span>)}
+                {k.status === "open" && k.overdue && !k.assigned_to && <span className="tag tag-declined">Overdue</span>}
+              </span>
             </button>
           ))}
         </div>
@@ -231,10 +310,24 @@ export default function StaffPage() {
                 <StatusChip status={c.status === "open" ? (pendingRecall ? "Needs approval" : "In review") : STATUS_WORD[c.status]} />
               </span>
             </div>
+            <div className="route-bar">
+              <span className="label">Team</span> <b>{c.team ?? "Not routed"}</b>
+              <span className="label">· {c.assigned_to ? `with ${c.assigned_to}` : "nobody on it yet"}</span>
+              {c.respond_by && c.status === "open" && <span className={`label${c.overdue_at && !c.assigned_to ? " overdue-text" : ""}`}>· respond by {new Date(c.respond_by).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}{c.overdue_at && !c.assigned_to ? " (overdue)" : ""}</span>}
+              {c.status === "open" && (
+                <span className="route-actions">
+                  {!c.assigned_to && <button className="btn btn-primary" disabled={busy || !staff} onClick={() => route({ route: "pick_up" })}>Pick up</button>}
+                  <select aria-label="Move to another team" value="" disabled={busy || !staff} onChange={(e) => e.target.value && route({ route: "move", team: e.target.value })}>
+                    <option value="">Move to…</option>
+                    {teams.filter((t) => t !== c.team).map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </span>
+              )}
+            </div>
             <div className="case-tabs">
-              {(["summary", ...(detail.claim ? (["claim"] as const) : []), "assist", "transcript", "activity"] as const).map((v) => (
+              {(["summary", ...(detail.claim ? (["claim"] as const) : []), ...(c.conversation_id ? (["reply"] as const) : []), "assist", "transcript", "activity"] as const).map((v) => (
                 <button key={v} className="tab" aria-current={show === v ? "page" : undefined} onClick={() => setShow(v)}>
-                  {v === "summary" ? "Handoff summary" : v === "claim" ? "Claim draft" : v === "assist" ? "Ask Alexis" : v === "transcript" ? "Transcript" : "Activity log"}
+                  {v === "summary" ? "Handoff summary" : v === "claim" ? "Claim draft" : v === "reply" ? "Reply to customer" : v === "assist" ? "Ask Alexis" : v === "transcript" ? "Transcript" : "Activity log"}
                 </button>
               ))}
             </div>
@@ -279,6 +372,20 @@ export default function StaffPage() {
                   <h3 className="claim-h">Evidence from the case</h3>
                   <ul className="claim-list">{detail.claim.draft.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>
                 </div>
+              )}
+              {show === "reply" && (
+                staff ? (
+                  <div className="reply-pane">
+                    <p className="label">Alexis drafts the reply from the conversation and this case; you edit it and send it. Sending takes the conversation over from Alexis, so the customer sees it came from you.</p>
+                    <label className="sr-only" htmlFor="case-reply">Reply to the customer</label>
+                    <textarea id="case-reply" className="reply-box" rows={7} value={reply} placeholder={`Reply as ${staff.name}`} onChange={(e) => setReply(e.target.value)} />
+                    <div className="dev-row">
+                      <DraftButton conversationId={c.conversation_id} staffId={staffId} onDraft={setReply} disabled={busy} />
+                      <button className="btn btn-primary" disabled={busy || !reply.trim()} onClick={sendReply}>Send to customer</button>
+                    </div>
+                    {replyMsg && <p className="label" role="status">{replyMsg}</p>}
+                  </div>
+                ) : <div className="empty">Sign in as a staff member (top left) to reply to the customer.</div>
               )}
               {show === "assist" && (staff ? <AskAlexis caseRef={c.reference} staff={staff} /> : <div className="empty">Sign in as a staff member (top left) to ask Alexis about this case.</div>)}
               {show === "transcript" && (

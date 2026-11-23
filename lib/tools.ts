@@ -25,6 +25,7 @@ import { draftClaimPack } from "./tools/claims.ts";
 import { draftCaseNotes, draftReply, summariseCase } from "./tools/staffmode.ts";
 import { getBillPaymentStatus, getUssdSession, refundBillPayment } from "./tools/nigeria.ts";
 import { freezeCard, getCard, orderReplacement, unfreezeCard, changeCardSettings } from "./tools/cards.ts";
+import { routeCase } from "./routing.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
 import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
 import { getAccountLimits, waiveFee } from "./tools/fees.ts";
@@ -247,11 +248,12 @@ const escalateToHuman = {
         await sql`update recalls set escalation_reference = ${reference} where reference = ${r[0].reference}`;
       }
     }
-    await sql`insert into escalations (reference, conversation_id, business_id, user_id, urgency, trigger, summary, respond_by, action)
+    const route = await routeCase(sql, ctx.conv.id, input.trigger, rules);
+    await sql`insert into escalations (reference, conversation_id, business_id, user_id, urgency, trigger, summary, respond_by, action, team)
       values (${reference}, ${ctx.conv.id}, ${ctx.user?.business_id ?? null}, ${ctx.user?.id ?? null}, ${urgency},
-              ${input.trigger}, ${sql.json(summary)}, ${due.at}, ${action ? sql.json(action) : null})`;
-    await audit(ctx, { kind: "handoff", tool: "escalate_to_human", summary: `escalate_to_human · ${reference} · ${urgency}`, input, result: summary });
-    await emitEvent(sql, "case.created", { reference, conversation_id: ctx.conv.id, urgency, trigger: input.trigger, respond_by: due.at.toISOString(), customer: ctx.user ? { user_id: ctx.user.id, holder_id: ctx.user.business_id } : null, summary, action });
+              ${input.trigger}, ${sql.json(summary)}, ${due.at}, ${action ? sql.json(action) : null}, ${route.team})`;
+    await audit(ctx, { kind: "handoff", tool: "escalate_to_human", summary: `escalate_to_human · ${reference} · ${urgency} · to ${route.team}`, input, result: summary });
+    await emitEvent(sql, "case.created", { reference, conversation_id: ctx.conv.id, urgency, team: route.team, category: route.category, trigger: input.trigger, respond_by: due.at.toISOString(), customer: ctx.user ? { user_id: ctx.user.id, holder_id: ctx.user.business_id } : null, summary, action });
     if (ctx.user) {
       await watch(sql, { conversationId: ctx.conv.id, holderId: ctx.user.business_id, userId: ctx.user.id, kind: "case", reference, label: `case with our team (${TRIGGERS[input.trigger].label.toLowerCase()})`, status: "open", expectedBy: due.at });
     }

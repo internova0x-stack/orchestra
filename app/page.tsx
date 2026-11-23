@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DraftButton from "./components/DraftButton";
 import { StatusChip, UrgencyChip } from "./components/Chat";
 import { RESET_EVENT } from "./components/events";
 
@@ -295,8 +296,9 @@ export default function InboxPage() {
                     {mine ? (
                       <form className="composer" onSubmit={(e) => { e.preventDefault(); if (reply.trim()) act("reply", reply); }}>
                         <label className="sr-only" htmlFor="staff-reply">Reply to the customer</label>
-                        <textarea id="staff-reply" rows={1} value={reply} placeholder={`Reply as ${staff!.name}`} onChange={(e) => setReply(e.target.value)}
+                        <textarea id="staff-reply" rows={reply.length > 90 || reply.includes("\n") ? 5 : 1} value={reply} placeholder={`Reply as ${staff!.name}`} onChange={(e) => setReply(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (reply.trim()) act("reply", reply); } }} />
+                        <DraftButton conversationId={selected} staffId={staffId} onDraft={setReply} disabled={acting} />
                         <button className="btn btn-primary" type="submit" disabled={acting || !reply.trim()}>Send</button>
                       </form>
                     ) : (

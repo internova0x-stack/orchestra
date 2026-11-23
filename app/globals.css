@@ -589,3 +589,19 @@ a { color: var(--brand-accent); }
 /* Small buttons beside values (ds-btn--sm). */
 .copy { min-height: var(--control-sm); padding: 0 6px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-0); color: var(--ink-800); font: 600 13px/20px var(--font-sans); }
 .copy:hover { background: var(--surface-100); }
+
+/* Smart routing and drafted replies (Nov 23) */
+.route-filters { display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--edge); }
+.route-filters select, .route-actions select {
+  min-height: 36px; padding: 0 var(--space-2); border-radius: var(--radius-md);
+  background: var(--surface-sunk); border: 1px solid var(--edge-strong); color: var(--text-1); font-size: var(--size-sm);
+}
+.route-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.route-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--edge); font-size: var(--size-sm); }
+.route-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+.overdue-text { color: var(--stop); }
+.reply-pane { display: flex; flex-direction: column; gap: var(--space-3); }
+.reply-box {
+  width: 100%; padding: var(--space-3); border-radius: var(--radius-md); resize: vertical;
+  background: var(--surface-sunk); border: 1px solid var(--edge-strong); color: var(--text-1); font: inherit; font-size: var(--size-sm);
+}

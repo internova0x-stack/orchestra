@@ -237,6 +237,12 @@ alter table cards add column if not exists contactless boolean not null default 
 alter table cards add column if not exists frozen_by text;
 create sequence if not exists card_change_seq start 4401;
 
+-- Smart routing (Nov 23): the team a handoff is routed to, who picked it up, and when it went overdue unattended.
+alter table escalations add column if not exists team text;
+alter table escalations add column if not exists assigned_to text;
+alter table escalations add column if not exists assigned_at timestamptz;
+alter table escalations add column if not exists overdue_at timestamptz;
+
 -- Use cases 12, 9 and 11: card, POS, ATM and web payments, their reversals and (later) their timelines.
 create table if not exists payments (
   id text primary key,

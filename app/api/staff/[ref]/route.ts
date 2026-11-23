@@ -1,6 +1,7 @@
 import { db } from "@/lib/db.ts";
 import { decide, staffUser, type Decision } from "@/lib/staff.ts";
 import { transcriptOf } from "@/lib/cases.ts";
+import { moveTeam, pickUp } from "@/lib/routing.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,10 +26,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ref: st
   return Response.json({ case: rest, transcript, activity, claim }, { headers: { "Cache-Control": "no-store" } });
 }
 
-/** Approve or decline a prepared action, or mark the case resolved. */
+const ROUTING_ERRORS: Record<string, string> = {
+  not_found: "That case isn't there any more.", closed: "This case is already closed.",
+  unknown_team: "Choose one of the teams in the list.", already_assigned: "Someone else has already picked this case up.",
+};
+
+/** Approve or decline a prepared action, mark the case resolved, pick it up, or move it to another team. */
 export async function POST(req: Request, { params }: { params: Promise<{ ref: string }> }) {
   const { ref } = await params;
-  const body = (await req.json().catch(() => null)) as { decision?: Decision; note?: string; staffId?: string } | null;
+  const body = (await req.json().catch(() => null)) as { decision?: Decision; note?: string; staffId?: string; route?: "pick_up" | "move"; team?: string } | null;
+  if (body?.route === "pick_up" || body?.route === "move") {
+    if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
+    const sql = db();
+    const staff = await staffUser(sql, body.staffId);
+    if (!staff) return Response.json({ ok: false, error: "sign_in" }, { status: 401 });
+    const err = body.route === "pick_up" ? await pickUp(sql, ref.toUpperCase(), staff) : await moveTeam(sql, ref.toUpperCase(), String(body.team ?? ""), staff);
+    if (err) return Response.json({ ok: false, error: err, message: ROUTING_ERRORS[err] }, { status: err === "not_found" ? 404 : 409 });
+    return Response.json({ ok: true });
+  }
   if (!body?.decision || !["approve", "decline", "resolve", "claim_sent"].includes(body.decision)) return Response.json({ error: "bad_request" }, { status: 400 });
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   const sql = db();

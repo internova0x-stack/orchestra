@@ -6,6 +6,7 @@ import { dateTime, longDate } from "../time.ts";
 import { watch } from "../updates.ts";
 import { emitEvent } from "../api/webhooks.ts";
 import { bank } from "../bank/index.ts";
+import { routeCase } from "../routing.ts";
 
 // Use case 18: back-office claim and evidence drafting. Alexis gathers the facts from the records
 // and the case history into a draft for another bank, a processor or a card scheme, marks anything
@@ -132,9 +133,10 @@ export const draftClaimPack = {
       did: `Drafted claim pack ${reference}; not sent.`, why: "Claim pack ready for review", needed: "Review, edit and send the claim pack; Alexis can't contact other parties.",
       told: "The team will pursue it with the other party and the customer will be updated.", flags: draft!.missing.length ? ["Draft has missing or uncertain items"] : ["None"],
     };
-    await ctx.sql`insert into escalations (reference, conversation_id, business_id, user_id, urgency, trigger, summary, respond_by, action)
-      values (${escalation}, ${ctx.conv.id}, ${user.business_id}, ${user.id}, ${summary.urgency}, 'claim_draft', ${ctx.sql.json(summary)}, ${deadline}, ${ctx.sql.json({ type: "claim", reference } as never)})`;
-    await emitEvent(ctx.sql, "case.created", { reference: escalation, conversation_id: ctx.conv.id, urgency: summary.urgency, trigger: "claim_draft", respond_by: deadline?.toISOString() ?? null, customer: { user_id: user.id, holder_id: user.business_id }, summary, action: { type: "claim", reference } });
+    const route = await routeCase(ctx.sql, ctx.conv.id, "claim_draft", rules);
+    await ctx.sql`insert into escalations (reference, conversation_id, business_id, user_id, urgency, trigger, summary, respond_by, action, team)
+      values (${escalation}, ${ctx.conv.id}, ${user.business_id}, ${user.id}, ${summary.urgency}, 'claim_draft', ${ctx.sql.json(summary)}, ${deadline}, ${ctx.sql.json({ type: "claim", reference } as never)}, ${route.team})`;
+    await emitEvent(ctx.sql, "case.created", { reference: escalation, conversation_id: ctx.conv.id, urgency: summary.urgency, team: route.team, category: route.category, trigger: "claim_draft", respond_by: deadline?.toISOString() ?? null, customer: { user_id: user.id, holder_id: user.business_id }, summary, action: { type: "claim", reference } });
     await watch(ctx.sql, { conversationId: ctx.conv.id, holderId: user.business_id, userId: user.id, kind: "case", reference: escalation, label: `claim with ${draft!.to.split(",")[0]}`, status: "open", expectedBy: deadline });
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${subject} · ${reference} in the staff queue (${escalation})`, input: i, result: { reference, missing: draft!.missing } });
     return {

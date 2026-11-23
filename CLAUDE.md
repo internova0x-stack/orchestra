@@ -63,6 +63,9 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
+- Routing and drafts: `lib/routing.ts` (team from the category via the `route_*` rules; `pickUp`, `moveTeam`,
+  `flagOverdue` run by the Staff queue's list; escalations.team/assigned_to/overdue_at); `lib/drafting.ts` +
+  `/api/drafts` ("Draft with Alexis" in the Inbox and the Staff queue; a draft is never sent by itself).
 - Card controls: `unfreeze_card`, `change_card_settings` (lib/tools/cards.ts), configured by the `card_*` rules and
   the `action_unfreeze_card` / `action_change_card_settings` switches; loosening may need the code, tightening never;
   a bank freeze (`frozen_by: bank`) is never lifted. Rules whose value is on/off are switches (`validateRule`).

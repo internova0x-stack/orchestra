@@ -234,6 +234,26 @@ export const RULE_SET: RuleSeed[] = [
   l("business_open", "Response targets", "Business hours start", "09:00"),
   l("business_close", "Response targets", "Business hours end", "17:00"),
 
+  // Routing (Nov 23): the team each kind of handoff goes to (lib/routing.ts). Sample teams; edit to match the institution.
+  a("route_account_access", "Routing", "Team for: Account access", "Customer support", "sample"),
+  a("route_airtime_and_bills", "Routing", "Team for: Airtime and bills", "Payments team", "sample"),
+  a("route_balances", "Routing", "Team for: Balances", "Customer support", "sample"),
+  a("route_cards", "Routing", "Team for: Cards", "Cards team", "sample"),
+  a("route_complaint", "Routing", "Team for: Complaint", "Complaints team", "sample"),
+  a("route_failed_payments_and_reversals", "Routing", "Team for: Failed payments and reversals", "Payments team", "sample"),
+  a("route_fees_and_limits", "Routing", "Team for: Fees and limits", "Customer support", "sample"),
+  a("route_fraud_and_scams", "Routing", "Team for: Fraud and scams", "Fraud team", "sample"),
+  a("route_general_question", "Routing", "Team for: General question", "Customer support", "sample"),
+  a("route_incoming_payments", "Routing", "Team for: Incoming payments", "Payments team", "sample"),
+  a("route_loans", "Routing", "Team for: Loans", "Lending team", "sample"),
+  a("route_merchant_payouts", "Routing", "Team for: Merchant payouts", "Merchant team", "sample"),
+  a("route_payment_tracing", "Routing", "Team for: Payment tracing", "Payments team", "sample"),
+  a("route_payouts", "Routing", "Team for: Payouts", "Payments team", "sample"),
+  a("route_transactions_and_disputes", "Routing", "Team for: Transactions and disputes", "Cards team", "sample"),
+  a("route_ussd_and_agent_banking", "Routing", "Team for: USSD and agent banking", "Payments team", "sample"),
+  a("route_verification", "Routing", "Team for: Verification (KYC)", "Compliance team", "sample"),
+  l("route_overdue_raise", "Routing", "Raise a case's urgency one step when it passes its response target with nobody on it", "on"),
+
   // Operations (Nov 23): the switch for Alexis herself, and outage mode with the notice customers see.
   l("alexis_enabled", "Operations", "Alexis answers customers (off: every message goes to the team)", "on"),
   l("outage_mode", "Operations", "Outage mode (Alexis and the customer app show the notice below)", "off"),

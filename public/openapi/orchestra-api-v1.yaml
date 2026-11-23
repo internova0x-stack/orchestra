@@ -150,7 +150,7 @@ webhooks:
   case.created:
     post:
       summary: Alexis handed a conversation to the team
-      description: The handoff summary (who, what was asked, what Alexis checked and did, why, what's needed, what the customer was told), urgency and response target. Open a ticket from it.
+      description: "The handoff summary (who, what was asked, what Alexis checked and did, why, what's needed, what the customer was told), urgency, response target, category and the team it's routed to (the institution's routing rules). Open a ticket in that team's queue from it."
       requestBody:
         content:
           application/json:
@@ -159,11 +159,12 @@ webhooks:
               id: evt_3f1c
               type: case.created
               created: "2026-11-23T11:02:00Z"
-              data: { reference: ESC-1042, conversation_id: "6c2e…", urgency: high, trigger: payout_past_window, respond_by: "2026-11-23T15:02:00Z", customer: { user_id: ada, holder_id: brightline }, summary: { request: "…", checked: "…", did: "…", needed: "…", told: "…" } }
+              data: { reference: ESC-1042, conversation_id: "6c2e…", urgency: high, team: "Payments team", category: Payouts, trigger: payout_past_window, respond_by: "2026-11-23T15:02:00Z", customer: { user_id: ada, holder_id: brightline }, summary: { request: "…", checked: "…", did: "…", needed: "…", told: "…" } }
       responses: { "200": { description: Received } }
   case.updated:
     post:
-      summary: A supervisor approved or declined, or the team resolved a case
+      summary: A supervisor approved or declined, the team resolved a case, someone picked it up or moved it, or it went overdue
+      description: "`data` carries the reference and status, plus whichever changed: decision and by, assigned_to (picked up), team and moved_by (moved), or overdue true with the new urgency (it passed its response target with nobody on it)."
       requestBody:
         content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
       responses: { "200": { description: Received } }

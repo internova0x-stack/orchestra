@@ -117,6 +117,23 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## Smart routing and drafted replies (Nov 23, Tomi: "3 build")
+
+Routing (`lib/routing.ts`): every handoff is routed to a team from its category, by the institution's routing
+rules on the Rules screen ("Team for: Cards" → Cards team, and so on, one per category; edit to rename or merge
+teams). The Staff queue shows each case's team, who has it and its response target, filters by team and by
+Mine / Nobody on it / Overdue, and has Pick up and Move to. A case that passes its response target with nobody on it
+is flagged overdue (logged, `case.updated` webhook with `overdue: true`) and, while "Raise a case's urgency…" is on,
+goes up one urgency step; overdue cases sort first. `case.created` webhooks carry the team and category, so a CRM or
+helpdesk can drop the ticket in the right queue.
+
+Drafted replies (`lib/drafting.ts`, `POST /api/drafts`): "Draft with Alexis" in the Inbox's reply box (after taking
+over) and in the Staff queue's new "Reply to customer" tab. Alexis drafts from the conversation, the handoff summaries
+and the team's decisions, in the customer's language and the channel's style, with the review-hold wording when a
+case is held. It only fills the box: the person edits and sends. Sending from the Staff queue takes the conversation
+over first, so the customer sees it came from a person. Each draft is in the activity log. Two new tests (a stand-in
+replaces the model in the drafting test).
+
 ## Card controls (Nov 23, Tomi: "build 1 but give configuration ability where applicable")
 
 Alexis can unfreeze a card the customer froze (`unfreeze_card`) and change its settings (`change_card_settings`:

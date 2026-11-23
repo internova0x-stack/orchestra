@@ -1523,3 +1523,62 @@ test("Orchestra API: the OpenAPI file's paths and webhook events match the route
   const events = [...hooks.matchAll(/^  ([a-z_]+\.[a-z_]+):$/gm)].map((m) => m[1]).sort();
   assert.deepEqual(events, [...WEBHOOK_EVENTS].sort(), "every event Orchestra sends is documented");
 });
+
+// ---------------------------------------------------------------- smart routing and drafted replies (Nov 23)
+
+test("routing: a handoff goes to the team its category is routed to; picking up, moving and overdue cases", { skip }, async () => {
+  const { pickUp, moveTeam, flagOverdue, teams } = await import("../lib/routing.ts");
+  await seed(sql!, MONDAY);
+  const base = { request: "Card won't work", checked: "get_card", did: "None", needed: "Look at the card", told: "The team will pick it up" };
+  const s = await session("emeka", MONDAY);
+  await call(s, "get_card", {});
+  const esc = await call(s, "escalate_to_human", { ...base, trigger: "card_problem", urgency: "normal" });
+  const [e] = await sql!<{ team: string }[]>`select team from escalations where reference = ${esc.reference!}`;
+  assert.equal(e.team, "Cards team", "a card problem goes to the Cards team");
+  // The institution routes cards elsewhere: new handoffs follow.
+  await sql!`update rules set value = 'Card operations' where id = 'route_cards'`;
+  const grace = await session("grace", MONDAY);
+  await call(grace, "get_card", {});
+  const esc2 = await call(grace, "escalate_to_human", { ...base, trigger: "card_problem", urgency: "normal" });
+  assert.equal((await sql!<{ team: string }[]>`select team from escalations where reference = ${esc2.reference!}`)[0].team, "Card operations");
+  assert.ok((await teams(sql!)).includes("Card operations"));
+  await sql!`update rules set value = 'Cards team' where id = 'route_cards'`;
+
+  const ife = { id: "ife", name: "Ife Adeyemi", role: "support_agent" as const };
+  const bayo = { id: "bayo", name: "Bayo Martins", role: "supervisor" as const };
+  assert.equal(await pickUp(sql!, esc.reference!, ife), null);
+  assert.equal(await pickUp(sql!, esc.reference!, bayo), "already_assigned", "one person at a time");
+  assert.equal(await moveTeam(sql!, esc2.reference!, "Nobody's team", bayo), "unknown_team");
+  assert.equal(await moveTeam(sql!, esc2.reference!, "Payments team", bayo), null);
+  assert.equal((await sql!<{ team: string }[]>`select team from escalations where reference = ${esc2.reference!}`)[0].team, "Payments team");
+
+  // Past the response target: the unattended one is flagged and raised; the picked-up one isn't.
+  await sql!`update escalations set respond_by = ${new Date(MONDAY.getTime() - 3_600_000)} where reference in (${esc.reference!}, ${esc2.reference!})`;
+  const flagged = await flagOverdue(sql!, MONDAY);
+  assert.deepEqual(flagged, [esc2.reference]);
+  const [late] = await sql!<{ urgency: string; overdue_at: Date | null }[]>`select urgency, overdue_at from escalations where reference = ${esc2.reference!}`;
+  assert.equal(late.urgency, "high", "one step more urgent");
+  assert.ok(late.overdue_at);
+  assert.deepEqual(await flagOverdue(sql!, MONDAY), [], "flagged once");
+  const logged = await sql!`select summary from audit_log where tool = 'routing' and summary like ${`${esc2.reference}%`}`;
+  assert.ok(logged.some((r) => /passed its response target/.test(r.summary)));
+});
+
+test("drafted replies: a draft from the case for the team to edit, review-hold wording when held, nothing sent", { skip }, async () => {
+  const { draftReply } = await import("../lib/drafting.ts");
+  await seed(sql!, MONDAY);
+  const s = await session("lena", MONDAY);
+  await call(s, "get_transfer_status", { recipient: "Varga" });
+  await call(s, "escalate_to_human", { trigger: "review_hold", urgency: "high", request: "Payout stuck", checked: "On hold", did: "None", needed: "Specialist review", told: "A specialist team will be in touch", flags: ["review hold"] });
+  await sql!`update conversations set messages = ${sql!.json([{ role: "user", content: "Where is my payment to Varga?" }, { role: "assistant", content: [{ type: "text", text: "It's with a specialist team." }] }] as never)} where id = ${s.conv.id}`;
+  let seen: { system?: unknown; messages: { content: unknown }[] } | null = null;
+  const fake = async (body: unknown) => { seen = body as typeof seen; return { content: [{ type: "text", text: "Hi Lena, this is Ife from the support team." }] }; };
+  const before = (await sql!`select messages from conversations where id = ${s.conv.id}`)[0].messages;
+  const out = await draftReply(sql!, s.conv.id, { id: "ife", name: "Ife Adeyemi", role: "support_agent" }, "tell her it's still being reviewed", fake);
+  assert.deepEqual(out, { draft: "Hi Lena, this is Ife from the support team." });
+  assert.match(String(seen!.system), /REVIEW HOLD: say only/, "the review-hold rule goes with a held case");
+  assert.match(String(seen!.messages[0].content), /Customer: Lena/);
+  assert.match(String(seen!.messages[0].content), /still being reviewed/);
+  assert.deepEqual((await sql!`select messages from conversations where id = ${s.conv.id}`)[0].messages, before, "a draft sends nothing");
+  assert.equal((await sql!`select count(*)::int as n from audit_log where conversation_id = ${s.conv.id} and tool = 'draft_reply'`)[0].n, 1);
+});
