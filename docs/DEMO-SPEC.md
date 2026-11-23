@@ -215,12 +215,11 @@ tests but works on any day: PO-88190 is seeded two and a half business days back
 
 ## Two-day plan
 
-- **Day 1:** simulated data, the eleven tools, the agent loop; use cases 3, 20 and 21 end to end.
-- **Day 2:** use cases 6, 15 and 5; the chat screen with the activity panel; the Rules screen; the
-  12 scripted conversations and 6 safety tests in `docs/TESTS.md`. Ready to pitch: all 6 safety tests
-  and at least 11 of 12 conversations pass, each on two runs.
-- The Staff queue and Rules screens (docs/DESIGN.md).
-- Reply time: under 10 seconds for most turns, within Vercel's per-request time limit.
+The eight steps in `docs/BUILD-PLAN.md`, in order, each with its tests. Day 1 (steps 1-3): payout
+tracing, proof of payment, incoming payments. Day 2 (steps 4-8): review hold and safety, recall and the
+Staff queue, the Rules screen, verification and fees, the full test run. Ready to pitch: all 6 safety
+tests and at least 11 of 12 conversations pass, each on two runs. Reply time: under 10 seconds for most
+turns, within Vercel's per-request time limit.
 
 ## Still open
 

@@ -12,6 +12,22 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   customer to read back a code the bank didn't just send for this purpose. Left out of the first demo
   (owner, Nov 23); the demo runs `initiate_recall` on the standard check plus payment rights.
 
+## After the demo (Build Plan order, Nov 23)
+
+The order that follows best from a successful pitch; detail in the phases below.
+
+1. Replace the dummy rule set with Nuvion's real rules (the list at the end of KNOWLEDGE-BASE.md).
+2. Password protection for the live link.
+3. Cards and card disputes.
+4. Staff time savers: proactive updates, claim and evidence drafting, staff mode with support agent and
+   supervisor roles.
+5. Rules from an uploaded policy document, with approval and version history.
+6. More channels: in-app, then WhatsApp.
+7. The retail bank pack: loans, failed ATM and POS reversals, airtime and bills, USSD, with the Nigeria
+   market rules.
+8. Operations: outage mode, resuming a case by reference, fallback when the AI service is down, the
+   hours-saved dashboard.
+
 ## Phases (PRD)
 
 1. **Core retail use cases 1-4**: cards (`get_card`, `freeze_card`, `order_replacement`), transactions

@@ -16,13 +16,29 @@ and watches Alexis change behaviour.
 - `docs/TESTS.md`: the 12 scripted conversations and 6 safety tests, the named sample users and
   payments the seed must contain, and the pass bar. A change that touches Alexis's behaviour is checked
   against it.
+- `docs/BUILD-PLAN.md`: the eight build steps in order, each with the tests that say it's done.
 - `docs/BACKLOG.md`: everything after the demo, in phase order.
 - `docs/source/`: the source documents, numbered as in the PRD's document set. The Guardrails policy
   wins over the Playbook; DEMO-SPEC wins over all of them.
 
 ## Stack
-Next.js (App Router) on Vercel, Supabase (Postgres) for the simulated bank and the audit log, the
-Anthropic API for the agent (tool use; the model id lives in one config constant).
+Next.js (App Router, TypeScript) on Vercel, Supabase (Postgres) for the simulated bank and the audit
+log, the Anthropic API through the Vercel AI SDK for the agent loop and streaming. Use the current
+Claude Sonnet model id, kept in one config constant. Check each library's current documentation before
+using it.
+
+## Working with Tomi
+Tomi owns the project, is non-technical and doesn't write or edit code.
+- One build step at a time (`docs/BUILD-PLAN.md`): do the step given, then stop.
+- If something seems missing, ask before building it. Never build backlog items or features nobody
+  asked for.
+- When Tomi needs to click, copy or paste something, give numbered plain-language instructions and wait
+  for confirmation.
+- Explain errors in one or two plain sentences, then fix them.
+- At the end of each step: what to try in the browser, and which tests in `docs/TESTS.md` should now
+  pass. Commit after each completed step with a clear message.
+- When a test fails, fix the code, the tool results or the sample data; never weaken the system prompt
+  to get a pass.
 
 ## Rules for this codebase
 - **No fixed facts in code.** Fees, timelines, windows, caps and limits live in the `rules` table (answer
@@ -40,8 +56,12 @@ Anthropic API for the agent (tool use; the model id lives in one config constant
   delete them. The activity panel is a live view of that table.
 - Every tool returns `{ ok, data | reason, reference }`. Actions carry the record they apply to; a
   second attempt on the same record is refused and returns the first reference.
-- The Anthropic key and the Supabase service key are server-only environment variables (Vercel), never
-  in code the browser can see. The browser talks only to this app's routes.
+- API keys live only in environment variables (Vercel's settings; `.env.local` for a local copy, which
+  is in `.gitignore` before anything else is committed). Never in client code, never in git. The browser
+  talks only to this app's routes.
+- Every tool call, refusal, approval and rule edit is written to the audit log.
+- Status names: payouts pending, processing, successful, failed, reversed; verification incomplete,
+  pending, approved, failed, blocked.
 - Schema changes go in new migration files; sample data is a seed script, so the simulated bank can be
   rebuilt from the repo at any time.
 - All customers, businesses and people are invented. Nothing touches a real bank, real money or real
