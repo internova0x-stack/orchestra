@@ -176,7 +176,7 @@ a { color: var(--brand-accent); }
 .card-line { color: var(--text-2); font-size: var(--size-sm); }
 .card-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-2); font-size: var(--size-sm); }
 .ref { font-family: var(--font-mono); font-size: var(--size-sm); display: inline-flex; align-items: center; gap: var(--space-1); }
-.copy { min-height: 28px; padding: 0 var(--space-2); border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; cursor: pointer; font-size: var(--size-xs); color: var(--text-2); }
+.copy { min-height: 40px; min-width: 40px; padding: 0 var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; cursor: pointer; font-size: var(--size-xs); color: var(--text-2); }
 .timeline { display: flex; align-items: flex-start; margin-top: var(--space-3); }
 .tl-step { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-1); position: relative; min-width: 0; }
 .tl-step::before { content: ''; position: absolute; top: 6px; left: -50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
@@ -263,6 +263,7 @@ a { color: var(--brand-accent); }
 .summary dt { color: var(--text-2); font-size: var(--size-sm); }
 .summary dd { margin: 0; }
 .transcript p { margin: 0 0 var(--space-3); white-space: pre-wrap; }
+.case-error { width: 100%; color: var(--stop); font-size: var(--size-sm); }
 .case-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border); }
 .note { flex: 1; min-width: 200px; min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--border-strong); }
 @media (max-width: 899px) {
@@ -290,7 +291,7 @@ a { color: var(--brand-accent); }
 .rule-name { width: 32%; }
 .rule-value-button {
   text-align: left; background: transparent; border: 1px dashed transparent; border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2); cursor: text; min-height: 32px; width: 100%;
+  padding: var(--space-1) var(--space-2); cursor: text; min-height: 40px; width: 100%;
 }
 .rule-value-button:hover { border-color: var(--border-strong); background: var(--surface-sunk); }
 .rule-edit { display: grid; gap: var(--space-2); }

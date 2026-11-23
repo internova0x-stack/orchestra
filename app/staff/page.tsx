@@ -36,6 +36,7 @@ export default function StaffPage() {
   const [arming, setArming] = useState<"approve" | "decline" | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [actError, setActError] = useState<string | null>(null);
   const [show, setShow] = useState<"summary" | "transcript" | "activity">("summary");
 
   const load = useCallback(async () => {
@@ -53,6 +54,7 @@ export default function StaffPage() {
 
   const open = useCallback(async (ref: string) => {
     setSelected(ref);
+    setActError(null);
     setArming(null);
     setShow("summary");
     const res = await fetch(`/api/staff/${ref}`, { cache: "no-store" });
@@ -70,15 +72,22 @@ export default function StaffPage() {
   async function act(decision: "approve" | "decline" | "resolve") {
     if (!selected) return;
     setBusy(true);
+    setActError(null);
     try {
-      await fetch(`/api/staff/${selected}`, {
+      const res = await fetch(`/api/staff/${selected}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision, note: note || undefined }),
       });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setActError((json as { error?: string }).error === "already_decided" ? "This case has already been decided." : "That didn't go through. Try again.");
+      }
       setNote("");
       setArming(null);
       await Promise.all([load(), open(selected)]);
+    } catch {
+      setActError("Couldn't reach the app's server. Try again.");
     } finally {
       setBusy(false);
     }
@@ -94,6 +103,7 @@ export default function StaffPage() {
         <div className="panel-head"><span className="panel-title">Cases</span></div>
         <div className="case-list">
           {problem && <div className="empty">{problem}</div>}
+          {cases === null && <div className="empty">Loading cases…</div>}
           {cases && cases.length === 0 && !problem && <div className="empty">No open cases. Handoffs from Alexis will appear here.</div>}
           {cases?.map((k) => (
             <button key={k.reference} className="case-row" aria-current={selected === k.reference ? "true" : undefined} onClick={() => open(k.reference)}>
@@ -167,6 +177,7 @@ export default function StaffPage() {
             </div>
             {c.status === "open" && (
               <div className="case-actions">
+                {actError && <div className="case-error" role="alert">{actError}</div>}
                 <input className="note" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
                 {pendingRecall && (
                   arming === "approve" ? (

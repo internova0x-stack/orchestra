@@ -21,6 +21,7 @@ and watches Alexis change behaviour.
   payments the seed must contain, and the pass bar. A change that touches Alexis's behaviour is checked
   against it.
 - `docs/BUILD-PLAN.md`: the eight build steps in order, each with the tests that say it's done.
+- `docs/STATUS.md`: which steps are built, what has been checked and how, what is still to check.
 - `docs/BACKLOG.md`: everything after the demo, in phase order.
 - `docs/source/`: the source documents, numbered as in the PRD's document set. The Guardrails policy
   wins over the Playbook; DEMO-SPEC wins over all of them.
