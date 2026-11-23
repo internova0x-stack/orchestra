@@ -16,7 +16,24 @@ the Rules screen. Everything not listed here is in `docs/BACKLOG.md`.
    A change applies to Alexis's next message and is logged (who, when, old and new value). The
    Guardrails' fixed rules aren't on it. (The Knowledge Base brings this into the demo; the PRD had a
    settings screen in phase 5.)
-3. **Escalation queue.** A simple screen showing what staff receive (no real ticketing).
+3. **Staff queue.** Handoffs with their summaries; Approve, Decline and Mark resolved (no real
+   ticketing, no staff logins: approvals show as "Supervisor"). Approving an over-cap recall carries it
+   out and writes the approval to the audit log.
+
+Layout, tokens, components and states: `docs/DESIGN.md`. A "Reset demo" button in the top bar restores
+the sample data on all three screens.
+
+How the design's components work underneath (decided Nov 23):
+- **Customer picker** chooses which sample business user is typing; it doesn't verify them. Every
+  conversation still starts unverified.
+- **Identity prompt** is a form that posts straight to the server's check, not through the model:
+  Alexis only learns verified or failed (and the role), so the answers never reach the model or the
+  transcript.
+- **Confirmation prompt** comes from a pending action stored on the server when a tier 2/3 tool is
+  first called; "Yes, go ahead" (or a typed yes) confirms that exact action, which the tool's check 8
+  requires.
+- **Streaming:** Alexis's text streams in and activity rows appear the moment a tool starts, which also
+  keeps each turn inside Vercel's per-request time limit.
 
 **The demo moment:** a viewer changes one rule and Alexis behaves differently in the same conversation.
 (a) Lower the recall cap from $10,000 to $2,000: the same recall request now goes to a human for
@@ -174,8 +191,8 @@ append-only for the agent).
 Payout routes and fees in the sample data follow `docs/KNOWLEDGE-BASE.md` (Faster Payments, ACH, wire,
 RTP, NIP, SWIFT…; local fee $1/£1/₦50, SWIFT $15, conversions 0.5%).
 
-**Dates are relative to now.** The seed writes every date as an offset from when it runs (or the demo
-has a "reset demo data" button), so "inside its window" and "past its window" stay true on whatever day
+**Dates are relative to now.** The seed (and the Reset demo button) writes every date as an offset
+from when it runs, so "inside its window" and "past its window" stay true on whatever day
 the pitch happens. Lateness is worked out at read time from the route's rule, never stored, so the
 SWIFT-window demo moment works.
 
@@ -224,5 +241,8 @@ invoice-fraud warning); case 4's over-cap recall goes to a human.
 
 - The demo fintech's display name (the pitch is to Nuvion; the prototype is labelled as one).
 - Languages: English only for now.
-- Docs 5 and 7-10 aren't written (Behaviour Guide, Escalation Playbook, Conversation Design, Test
+- The Rules screen has a "Response targets" category (the handoff card's "when to expect a response"),
+  but the Knowledge Base has no entries for it. Proposed sample values: Urgent 1 hour, High 4 business
+  hours, Normal 1 business day.
+- Docs 5, 7, 9 and 10 aren't written (Behaviour Guide, Escalation Playbook, Conversation Design, Test
   Plan, Build Plan); more are on their way before building starts.

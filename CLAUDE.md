@@ -10,6 +10,8 @@ and watches Alexis change behaviour.
 ## Read first
 - `docs/DEMO-SPEC.md`: what the 2-day demo builds (six use cases, eleven tools, thirteen planted cases,
   the Rules screen) and the decisions taken on Nov 23. **Build only what is in it.**
+- `docs/DESIGN.md`: the three screens, the CSS tokens (dark by default, indigo), components, reply
+  patterns and states. Use the tokens, never raw colours; never Nuvion's logo, colours or brand.
 - `docs/KNOWLEDGE-BASE.md`: the dummy rule set the seed loads into `rules` (sourced and sample entries).
 - `docs/BACKLOG.md`: everything after the demo, in phase order.
 - `docs/source/`: the source documents, numbered as in the PRD's document set. The Guardrails policy
