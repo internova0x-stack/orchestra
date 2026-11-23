@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Sql } from "./db.ts";
 import { SCHEMA, TABLES_TO_WIPE } from "./schema.ts";
 import { RULE_SET } from "./ruleSet.ts";
@@ -292,22 +293,40 @@ const ready = globalThis as unknown as { __orchestraReady?: Promise<void> };
  * Create and seed the database the first time it is used. Runs once per server process; a
  * Postgres advisory lock stops two first visitors from seeding at the same time.
  */
+/** A fingerprint of the schema: the database records the one it has, so unchanged schemas aren't re-run. */
+export const SCHEMA_VERSION = createHash("sha256").update(SCHEMA).digest("hex").slice(0, 16);
+
+/**
+ * Make sure the tables exist and the sample bank is loaded, once per server process. Serverless hosts
+ * start new processes all the time, and the schema's ALTERs take table locks that queue every other
+ * request behind them, so the common case is one quick read: the schema version is current and the
+ * bank is seeded, nothing to do.
+ */
 export function ensureSeeded(sql: Sql): Promise<void> {
   if (!ready.__orchestraReady) {
-    // Schema and first seed in one transaction under one lock: the schema's ALTERs and the seed's
-    // TRUNCATE take table locks in different orders, so they must never overlap between processes.
-    ready.__orchestraReady = sql
-      .begin(async (tx) => {
+    ready.__orchestraReady = (async () => {
+      try {
+        const [row] = await sql<{ value: string; n: number }[]>`
+          select value, (select count(*)::int from rules) as n from app_meta where key = 'schema_version'`;
+        if (row?.value === SCHEMA_VERSION && row.n > 0) return;
+      } catch {
+        // No app_meta table yet (a new database, or one from before it existed): set up below.
+      }
+      // Schema and first seed in one transaction under one lock: the schema's ALTERs and the seed's
+      // TRUNCATE take table locks in different orders, so they must never overlap between processes.
+      await sql.begin(async (tx) => {
         await tx`select pg_advisory_xact_lock(4207)`;
+        await tx`set local lock_timeout = '20s'`;
         await tx.unsafe(SCHEMA);
         const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from rules`;
         if (n === 0) await seedInto(tx, new Date());
-      })
-      .then(() => undefined)
-      .catch((err) => {
-        ready.__orchestraReady = undefined; // try again on the next request
-        throw err;
+        await tx`insert into app_meta (key, value) values ('schema_version', ${SCHEMA_VERSION})
+          on conflict (key) do update set value = excluded.value`;
       });
+    })().catch((err) => {
+      ready.__orchestraReady = undefined; // try again on the next request
+      throw err;
+    });
   }
   return ready.__orchestraReady;
 }

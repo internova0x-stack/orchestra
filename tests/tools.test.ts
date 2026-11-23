@@ -490,6 +490,23 @@ test("first run: two visitors at once on an empty database seed it exactly once"
   assert.equal((await sql!`select count(*)::int as n from rules where id = 'late_swift'`)[0].n, 1);
   assert.equal((await sql!`select count(*)::int as n from businesses where kind = 'business'`)[0].n, 8);
   assert.equal((await sql!`select count(*)::int as n from businesses where kind = 'personal'`)[0].n, 5);
+
+  // A later server process with the same schema runs no DDL: it holds no table locks, so a transaction
+  // already holding a table lock doesn't block it.
+  const { SCHEMA_VERSION } = await import("../lib/seed.ts");
+  assert.equal((await sql!`select value from app_meta where key = 'schema_version'`)[0].value, SCHEMA_VERSION);
+  const holder = postgres(url!, { prepare: false, onnotice: () => {} });
+  try {
+    await holder.begin(async (tx) => {
+      await tx`lock table conversations in access share mode`;
+      (globalThis as { __orchestraReady?: unknown }).__orchestraReady = undefined;
+      const started = Date.now();
+      await ensureSeeded(sql!);
+      assert.ok(Date.now() - started < 2000, "the fast path didn't wait on table locks");
+    });
+  } finally {
+    await holder.end();
+  }
   await seed(sql!, MONDAY);
 });
 

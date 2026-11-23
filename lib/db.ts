@@ -31,7 +31,7 @@ export function db(): Sql {
     const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url) || /[?&]sslmode=disable/.test(url);
     g.__orchestraSql = postgres(url, {
       prepare: false,
-      max: 5,
+      max: 3,
       idle_timeout: 20,
       connect_timeout: 15,
       ssl: local ? false : "require",

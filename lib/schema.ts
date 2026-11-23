@@ -453,6 +453,10 @@ alter table audit_log add column if not exists staff text;
 -- taken_over_by is set, Alexis doesn't answer; her next turn starts after the hand back.
 alter table conversations add column if not exists taken_over_by text;
 alter table conversations add column if not exists taken_over_at timestamptz;
+
+-- Which version of this schema the database has, so a new server process skips the DDL (and its table
+-- locks) when nothing changed. Written by ensureSeeded after the schema runs.
+create table if not exists app_meta (key text primary key, value text not null);
 `;
 
 /** Tables in dependency order, children first, for wiping on Reset demo. */
