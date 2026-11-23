@@ -154,6 +154,13 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           <header className="topbar">
             <h1 className="page-title">{current}</h1>
             <div className="topbar-right">
+              {me && (
+                <Link href="/account" className="topbar-me" title="Your account">
+                  <span className="topbar-avatar" aria-hidden="true">{me.name.charAt(0)}</span>
+                  <span>{me.name}</span>
+                  <span className="topbar-role">{me.roleName}</span>
+                </Link>
+              )}
               <button className="btn" onClick={switchTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
                 {theme === "dark" ? "Light" : "Dark"}
               </button>
