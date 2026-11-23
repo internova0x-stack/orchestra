@@ -727,3 +727,10 @@ a { color: var(--brand-accent); }
 .theme-toggle { width: 36px; padding: 0; display: inline-grid; place-items: center; }
 .theme-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .topbar-me { margin-right: 0; margin-left: var(--space-2); }
+
+/* Headers in SF Pro (Tomi, Nov 23). Apple's licence doesn't allow SF Pro as a web font, so headers use the
+   device's system font: SF Pro on Apple devices, Inter (the body font) elsewhere. */
+:root { --font-heading: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", var(--font-sans); }
+h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .int-h, .int-ref-h, .int-name,
+.claim-h, .stat-value, .case-business, .login-card .wordmark { font-family: var(--font-heading); }
+.page-title, .panel-title, .dev-h, .int-h, .int-ref-h { letter-spacing: -0.01em; }
