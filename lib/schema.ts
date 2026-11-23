@@ -384,6 +384,16 @@ create table if not exists claim_drafts (
 );
 create sequence if not exists claim_seq start 6601;
 
+-- Use case 19: staff mode. Staff sign in (simulated) as a support agent or a supervisor.
+create table if not exists staff_users (
+  id text primary key,
+  name text not null,
+  role text not null check (role in ('support_agent','supervisor'))
+);
+alter table conversations add column if not exists mode text not null default 'customer';
+alter table conversations add column if not exists staff_id text;
+alter table conversations add column if not exists case_reference text;
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -405,6 +415,7 @@ create table if not exists audit_log (
 );
 
 create index if not exists audit_log_conversation on audit_log (conversation_id, id);
+alter table audit_log add column if not exists staff text;
 `;
 
 /** Tables in dependency order, children first, for wiping on Reset demo. */
@@ -430,6 +441,7 @@ export const TABLES_TO_WIPE = [
   "escalations",
   "conversations",
   "rule_changes",
+  "staff_users",
   "rules",
   "restrictions",
   "fees",

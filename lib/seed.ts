@@ -232,6 +232,7 @@ async function seedInto(tx: any, now: Date) {
     await seedFeesAndLimits(tx, now);
     await seedTimelines(tx, now);
     await seedLoansAndPayouts(tx, now);
+    await tx`insert into staff_users (id, name, role) values ('ife', 'Ife Adeyemi', 'support_agent'), ('bayo', 'Bayo Martins', 'supervisor')`;
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
     await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;

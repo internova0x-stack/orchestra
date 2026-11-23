@@ -24,6 +24,77 @@ interface CaseDetail {
   claim: ClaimDraft | null;
 }
 
+interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
+interface AssistMsg { id: string; who: "staff" | "alexis"; text: string; thinking?: boolean }
+
+const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+
+/** Staff mode (use case 19): ask Alexis about this case. Lookups and drafts only; logged under your name. */
+function AskAlexis({ caseRef, staff }: { caseRef: string; staff: Staff }) {
+  const [sessionId, setSessionId] = useState(newId);
+  const [msgs, setMsgs] = useState<AssistMsg[]>([]);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setSessionId(newId()); setMsgs([]); }, [caseRef, staff.id]);
+
+  async function ask(text: string) {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    setMsgs((m) => [...m, { id: newId(), who: "staff", text }, { id: newId(), who: "alexis", text: "", thinking: true }]);
+    const patch = (fn: (m: AssistMsg) => AssistMsg) => setMsgs((ms) => { const c = ms.slice(); c[c.length - 1] = fn(c[c.length - 1]); return c; });
+    try {
+      const res = await fetch("/api/staff/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, caseRef, staffId: staff.id, message: text }) });
+      if (!res.ok || !res.body) { patch((m) => ({ ...m, thinking: false, text: "Alexis isn't available: check the API key and database are set up." })); return; }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          const e = JSON.parse(line);
+          if (e.type === "text") patch((m) => ({ ...m, thinking: false, text: m.text + e.delta }));
+          else if (e.type === "break") patch((m) => ({ ...m, text: m.text ? m.text + "\n\n" : m.text }));
+          else if (e.type === "error") patch((m) => ({ ...m, thinking: false, text: (m.text ? m.text + "\n\n" : "") + e.message }));
+        }
+      }
+    } finally {
+      patch((m) => ({ ...m, thinking: false }));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="assist">
+      <p className="label">Staff mode: Alexis investigates with the same lookups, and drafts replies and notes for you to edit. No actions on the account; everything is logged under {staff.name}.</p>
+      <div className="assist-quick">
+        {["Summarise this case", "What happened with this payment?", "Draft a reply to the customer", "Write the case notes"].map((q) => (
+          <button key={q} className="btn" disabled={busy} onClick={() => ask(q)}>{q}</button>
+        ))}
+      </div>
+      <div className="assist-msgs" aria-live="polite">
+        {msgs.map((m) => (
+          <div key={m.id} className={`msg ${m.who === "staff" ? "msg-customer" : "msg-alexis"}`}>
+            {m.who === "alexis" && <div className="msg-meta">Alexis · staff mode</div>}
+            {m.thinking && !m.text ? <span className="dots" aria-label="Alexis is working"><span /><span /><span /></span> : m.text}
+          </div>
+        ))}
+      </div>
+      <form className="composer" style={{ padding: 0, border: 0 }} onSubmit={(e) => { e.preventDefault(); const t = draft; setDraft(""); ask(t); }}>
+        <label className="sr-only" htmlFor="assist">Ask Alexis about this case</label>
+        <textarea id="assist" rows={1} value={draft} placeholder="Ask Alexis about this case" onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const t = draft; setDraft(""); ask(t); } }} />
+        <button className="btn btn-primary" type="submit" disabled={busy || !draft.trim()}>Ask</button>
+      </form>
+    </div>
+  );
+}
+
 const STATUS_WORD: Record<string, string> = { open: "Open", approved: "Approved", declined: "Declined", resolved: "Resolved" };
 
 function age(iso: string) {
@@ -42,7 +113,15 @@ export default function StaffPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [actError, setActError] = useState<string | null>(null);
-  const [show, setShow] = useState<"summary" | "claim" | "transcript" | "activity">("summary");
+  const [show, setShow] = useState<"summary" | "claim" | "assist" | "transcript" | "activity">("summary");
+  const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [staffId, setStaffId] = useState<string>("");
+  const staff = staffList.find((x) => x.id === staffId) ?? null;
+  useEffect(() => {
+    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => setStaffList(j.staff ?? [])).catch(() => {});
+    try { setStaffId(localStorage.getItem("orchestra-staff") ?? ""); } catch {}
+  }, []);
+  const signIn = (id: string) => { setStaffId(id); try { localStorage.setItem("orchestra-staff", id); } catch {} };
 
   const load = useCallback(async () => {
     try {
@@ -82,11 +161,12 @@ export default function StaffPage() {
       const res = await fetch(`/api/staff/${selected}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, note: note || undefined }),
+        body: JSON.stringify({ decision, note: note || undefined, staffId }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        setActError((json as { error?: string }).error === "already_decided" ? "This case has already been decided." : "That didn't go through. Try again.");
+        const err = (json as { error?: string }).error;
+        setActError(err === "already_decided" ? "This case has already been decided." : err === "supervisor_only" ? "Only a supervisor can approve or decline." : err === "sign_in" ? "Sign in as a staff member first." : "That didn't go through. Try again.");
       }
       setNote("");
       setArming(null);
@@ -105,7 +185,16 @@ export default function StaffPage() {
   return (
     <div className="staff-grid">
       <section className="panel" aria-label="Open cases">
-        <div className="panel-head"><span className="panel-title">Cases</span></div>
+        <div className="panel-head" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+          <span className="panel-title">Cases</span>
+          <label className="picker">
+            <span className="label">Signed in as</span>
+            <select value={staffId} onChange={(e) => signIn(e.target.value)} aria-label="Staff sign-in (simulated)">
+              <option value="">Choose…</option>
+              {staffList.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.role === "supervisor" ? "Supervisor" : "Support agent"}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="case-list">
           {problem && <div className="empty">{problem}</div>}
           {cases === null && <div className="empty">Loading cases…</div>}
@@ -137,9 +226,9 @@ export default function StaffPage() {
               </span>
             </div>
             <div className="case-tabs">
-              {(["summary", ...(detail.claim ? (["claim"] as const) : []), "transcript", "activity"] as const).map((v) => (
+              {(["summary", ...(detail.claim ? (["claim"] as const) : []), "assist", "transcript", "activity"] as const).map((v) => (
                 <button key={v} className="tab" aria-current={show === v ? "page" : undefined} onClick={() => setShow(v)}>
-                  {v === "summary" ? "Handoff summary" : v === "claim" ? "Claim draft" : v === "transcript" ? "Transcript" : "Activity log"}
+                  {v === "summary" ? "Handoff summary" : v === "claim" ? "Claim draft" : v === "assist" ? "Ask Alexis" : v === "transcript" ? "Transcript" : "Activity log"}
                 </button>
               ))}
             </div>
@@ -185,6 +274,7 @@ export default function StaffPage() {
                   <ul className="claim-list">{detail.claim.draft.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>
                 </div>
               )}
+              {show === "assist" && (staff ? <AskAlexis caseRef={c.reference} staff={staff} /> : <div className="empty">Sign in as a staff member (top left) to ask Alexis about this case.</div>)}
               {show === "transcript" && (
                 <div className="transcript">
                   {detail.transcript.map((m, i) => (
@@ -209,14 +299,15 @@ export default function StaffPage() {
               <div className="case-actions">
                 {actError && <div className="case-error" role="alert">{actError}</div>}
                 <input className="note" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
-                {pendingRecall && (
+                {pendingRecall && staff?.role !== "supervisor" && <span className="label">Only a supervisor can approve or decline this recall.</span>}
+                {pendingRecall && staff?.role === "supervisor" && (
                   arming === "approve" ? (
                     <button className="btn btn-primary" disabled={busy} onClick={() => act("approve")}>Confirm approval</button>
                   ) : (
                     <button className="btn btn-primary" disabled={busy} onClick={() => setArming("approve")}>Approve</button>
                   )
                 )}
-                {pendingRecall && (
+                {pendingRecall && staff?.role === "supervisor" && (
                   arming === "decline" ? (
                     <button className="btn" disabled={busy} onClick={() => act("decline")}>Confirm decline</button>
                   ) : (

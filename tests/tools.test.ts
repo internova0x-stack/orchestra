@@ -472,7 +472,7 @@ test("S2: no tool can add or change a beneficiary, contact details, or approve v
 
 test("first run: two visitors at once on an empty database seed it exactly once", { skip }, async () => {
   const { ensureSeeded } = await import("../lib/seed.ts");
-  await sql!.unsafe(`drop table if exists audit_log, recalls, proofs, escalations, conversations, rule_changes, rules, restrictions, fees, incoming_payments, transfers, balances, business_users, businesses cascade`);
+  await sql!.unsafe(`drop schema public cascade; create schema public;`);
   (globalThis as { __orchestraReady?: unknown }).__orchestraReady = undefined;
   const other = postgres(url!, { prepare: false, onnotice: () => {} });
   try {
@@ -812,4 +812,47 @@ test("use case 18: a conflicting timeline is marked uncertain in a settlement qu
   await call(s, "draft_claim_pack", { kind: "settlement_query", reference: "PAY-62005" });
   const [claim] = await sql!`select draft from claim_drafts where subject = 'PAY-62005'`;
   assert.ok(claim.draft.missing.some((m: string) => /UNCERTAIN/.test(m)));
+});
+
+// ---------------------------------------------------------------- use case 19: staff mode
+
+test("use case 19: only a supervisor approves; the approver is recorded by name", { skip }, async () => {
+  const { decide, staffUser } = await import("../lib/staff.ts");
+  await seed(sql!, MONDAY);
+  const s = await session("ada", MONDAY);
+  await call(s, "initiate_recall", { reference: "PO-88213" });
+  await confirmPending(s);
+  await call(s, "initiate_recall", { reference: "PO-88213" });
+  const esc = await call(s, "escalate_to_human", { trigger: "recall_over_cap", urgency: "high", request: "Recall", checked: "PO-88213", did: "Prepared", needed: "Approve", told: "Needs approval" });
+  const agent = await staffUser(sql!, "ife");
+  const sup = await staffUser(sql!, "bayo");
+  assert.equal((await decide(sql!, esc.reference!, "approve", null, agent)).ok, false);
+  assert.equal((await decide(sql!, esc.reference!, "approve", null, sup)).ok, true);
+  const [row] = await sql!`select summary, approver from audit_log where kind = 'approval' and conversation_id = ${s.conv.id}`;
+  assert.equal(row.summary, "approved by Supervisor · recall on PO-88213");
+  assert.equal(row.approver, "Bayo Martins (Supervisor)");
+});
+
+test("use case 19: staff mode looks up and drafts, never acts, and logs under the staff member", { skip }, async () => {
+  const { toolDefinitions } = await import("../lib/tools.ts");
+  const staffNames = toolDefinitions("staff").map((t) => (t as { name: string }).name);
+  for (const forbidden of ["initiate_recall", "request_reversal", "waive_fee", "unlock_account", "open_dispute", "freeze_card", "verify_identity", "escalate_to_human"]) {
+    assert.ok(!staffNames.includes(forbidden), forbidden);
+  }
+  const customerNames = toolDefinitions().map((t) => (t as { name: string }).name);
+  assert.ok(!customerNames.includes("draft_reply"), "staff tools aren't offered to customers");
+
+  const s = await session("lena", MONDAY);
+  const esc = await call(s, "escalate_to_human", { trigger: "review_hold", urgency: "high", request: "Payout stuck", checked: "PO-88177 on hold", did: "None", needed: "Specialist review", told: "Specialist team will be in touch", flags: ["review hold"] });
+  const staffConv = await sql!`insert into conversations (id, mode, staff_id, case_reference, verified_user_id, verified_at)
+    values (${randomUUID()}, 'staff', 'ife', ${esc.reference!}, 'lena', ${MONDAY}) returning *`;
+  const ctx = { sql: sql!, conv: staffConv[0] as Conversation, user: await verifiedUser(sql!, { ...(staffConv[0] as Conversation), last_activity: MONDAY }, MONDAY), now: MONDAY, toolUseId: randomUUID(), emit: () => {}, staff: "Ife Adeyemi (Support agent)" };
+  const blocked = await runTool("initiate_recall", { reference: "PO-88177" }, ctx, "staff");
+  assert.equal((blocked as ToolResult).ok, false);
+  const reply = (await runTool("draft_reply", {}, ctx, "staff")) as ToolResult;
+  assert.equal(reply.ok, true);
+  assert.ok((reply.data as { rules: string[] }).rules.some((r) => /REVIEW HOLD/.test(r)), "no tipping off in drafted replies");
+  const [logged] = await sql!`select staff, summary from audit_log where tool = 'draft_reply'`;
+  assert.equal(logged.staff, "Ife Adeyemi (Support agent)");
+  assert.match(logged.summary, /for Ife Adeyemi/);
 });

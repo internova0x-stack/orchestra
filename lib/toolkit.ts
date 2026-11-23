@@ -57,6 +57,8 @@ export interface ProofDoc {
 }
 
 export interface ToolCtx {
+  /** In staff mode: the staff member Alexis is working for; everything is logged under their name. */
+  staff?: string;
   sql: Sql;
   conv: Conversation;
   user: VerifiedUser | null;
@@ -84,7 +86,7 @@ export interface ToolDef<S extends z.ZodTypeAny> {
 // ---------------------------------------------------------------- audit
 
 export async function audit(
-  ctx: Pick<ToolCtx, "sql" | "conv" | "user" | "toolUseId">,
+  ctx: Pick<ToolCtx, "sql" | "conv" | "user" | "toolUseId"> & { staff?: string },
   row: {
     kind: "identity" | "lookup" | "action" | "refusal" | "handoff" | "rule" | "approval" | "error";
     tool?: string;
@@ -95,10 +97,10 @@ export async function audit(
   },
 ) {
   const { sql } = ctx;
-  await sql`insert into audit_log (conversation_id, user_id, tool_use_id, kind, tool, summary, input, result, refusal_reason)
-    values (${ctx.conv.id}, ${ctx.user?.id ?? null}, ${ctx.toolUseId}, ${row.kind}, ${row.tool ?? null}, ${row.summary},
+  await sql`insert into audit_log (conversation_id, user_id, tool_use_id, kind, tool, summary, input, result, refusal_reason, staff)
+    values (${ctx.conv.id}, ${ctx.user?.id ?? null}, ${ctx.toolUseId}, ${row.kind}, ${row.tool ?? null}, ${(ctx as { staff?: string }).staff ? `${row.summary} · for ${(ctx as { staff?: string }).staff}` : row.summary},
             ${row.input === undefined ? null : sql.json(row.input as never)},
-            ${row.result === undefined ? null : sql.json(row.result as never)}, ${row.refusal_reason ?? null})`;
+            ${row.result === undefined ? null : sql.json(row.result as never)}, ${row.refusal_reason ?? null}, ${(ctx as { staff?: string }).staff ?? null})`;
 }
 
 /** Record that a rule was read, so the activity panel shows it. */
