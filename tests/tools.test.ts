@@ -15,7 +15,7 @@ import { buildDashboard, timeRuleId } from "../lib/dashboard.ts";
 import { proposeChange, decideChange, pendingChanges, ruleHistory, ruleImpact } from "../lib/ruleChanges.ts";
 import { RULE_SET } from "../lib/ruleSet.ts";
 import { appendTurn, forModel, takeOver, handBack, staffReply, customerView } from "../lib/takeover.ts";
-import { runTurn } from "../lib/agent.ts";
+import { runTurn, operations } from "../lib/agent.ts";
 import { staffUser } from "../lib/staff.ts";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -1140,4 +1140,62 @@ test("channels: a conversation keeps its channel and email subject, and the Inbo
   const e = rows.find((r) => r.id === id)!;
   assert.deepEqual([e.channel, e.subject], ["email", "Payment to Lumen Print"]);
   assert.equal(rows.find((r) => r.id === w.id)!.channel, "whatsapp");
+});
+
+
+// ---------------------------------------------------------------- operations
+
+test("operations: with Alexis switched off, messages wait for the team; switching her on lets her carry on", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session(null, MONDAY);
+  // She had asked for the identity form when she was switched off.
+  const history = [{ role: "user", content: "Where is my payout?" }, { role: "assistant", content: [{ type: "text", text: "First, who am I speaking with?" }, { type: "tool_use", id: "tu_9", name: "verify_identity", input: {} }] }];
+  await sql!`update conversations set messages = ${sql!.json(history as never)}, pending_identity_tool_id = 'tu_9', last_activity = now() where id = ${s.conv.id}`;
+  await sql!`update rules set value = 'off' where id = 'alexis_enabled'`;
+  assert.equal((await operations(sql!)).alexisOn, false);
+  const events: { type: string; message?: string }[] = [];
+  await runTurn(sql!, { conversationId: s.conv.id, typingUserId: null, message: "Hello?" }, (e) => events.push(e));
+  assert.deepEqual(events.map((e) => e.type), ["team_queue", "done"], "no model call (no API key in tests)");
+  const [c] = await sql!`select awaiting_team, pending_identity_tool_id, messages from conversations where id = ${s.conv.id}`;
+  assert.equal(c.awaiting_team, "switched_off");
+  assert.equal(c.pending_identity_tool_id, null, "the open form was closed");
+  assert.equal(c.messages[2].content[0].tool_use_id, "tu_9", "with its tool call answered, so the history stays valid");
+  assert.equal(c.messages[2].content.at(-1).text, "Hello?");
+  assert.equal((await listCases(sql!)).find((r) => r.id === s.conv.id)!.status, "Waiting for the team");
+  // Taking it over clears the wait.
+  assert.equal(await takeOver(sql!, s.conv.id, (await staffUser(sql!, "ife"))!), null);
+  assert.equal((await sql!`select awaiting_team from conversations where id = ${s.conv.id}`)[0].awaiting_team, null);
+});
+
+test("operations: outage mode gives the notice; a returning customer finds their case by reference, only their own", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  assert.equal((await operations(sql!)).outage, null);
+  await sql!`update rules set value = 'on' where id = 'outage_mode'`;
+  assert.match((await operations(sql!)).outage!, /delayed/);
+
+  const first = await session("ada", MONDAY);
+  const base = { request: "Payout to Castellan is late", checked: "PO-88102 past window", did: "None", needed: "Chase the bank", told: "The team will pick it up" };
+  const esc = await call(first, "escalate_to_human", { ...base, trigger: "payout_past_window", urgency: "high" });
+  const back = await session("ada", MONDAY);
+  const found = await call(back, "find_case", { reference: ` ${esc.reference!.toLowerCase()} ` });
+  assert.ok(found.ok);
+  assert.equal((found.data as { status: string }).status, "With the team");
+  assert.equal((found.data as { about: string }).about, "Payout to Castellan is late");
+  const other = await session("maya", MONDAY);
+  assert.equal((await call(other, "find_case", { reference: esc.reference! })).ok, false, "another business's case isn't found");
+  const anon = await session(null, MONDAY);
+  assert.equal((await call(anon, "find_case", { reference: esc.reference! })).ok, false, "identity first");
+});
+
+test("operations: a review is saved, logged under the reviewer and shown in the Inbox", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const { saveReview } = await import("../lib/review.ts");
+  const s = await session("ada", MONDAY);
+  await sql!`update conversations set messages = ${sql!.json([{ role: "user", content: "Hi" }] as never)}, language = 'fr' where id = ${s.conv.id}`;
+  assert.equal(await saveReview(sql!, s.conv.id, (await staffUser(sql!, "bayo"))!, "needs_work", "Should have offered the proof of payment"), null);
+  const row = (await listCases(sql!)).find((r) => r.id === s.conv.id)!;
+  assert.deepEqual(row.review, { rating: "needs_work", note: "Should have offered the proof of payment", by: "Bayo Martins" });
+  assert.equal(row.language, "fr");
+  const log = await sql!`select summary, staff from audit_log where conversation_id = ${s.conv.id} and tool = 'review'`;
+  assert.equal(log[0].staff, "Bayo Martins");
 });

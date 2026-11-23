@@ -2,6 +2,7 @@ import { db } from "@/lib/db.ts";
 import { transcriptOf } from "@/lib/cases.ts";
 import { staffUser } from "@/lib/staff.ts";
 import { handBack, staffReply, takeOver } from "@/lib/takeover.ts";
+import { saveReview, translateConversation } from "@/lib/review.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,11 +15,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   if (!UUID.test(id)) return Response.json({ error: "not_found" }, { status: 404 });
   const sql = db();
-  const [c] = await sql`select id, messages, taken_over_by from conversations where id = ${id} and mode = 'customer'`;
+  const [c] = await sql`select c.id, c.messages, c.taken_over_by, c.awaiting_team, c.language, r.rating, r.note, r.reviewed_by
+    from conversations c left join conversation_reviews r on r.conversation_id = c.id where c.id = ${id} and c.mode = 'customer'`;
   if (!c) return Response.json({ error: "not_found" }, { status: 404 });
   const activity = await sql`select id, kind, summary, staff, created_at from audit_log where conversation_id = ${id} order by id`;
   const handoffs = await sql`select reference, urgency, status, trigger, created_at from escalations where conversation_id = ${id} order by created_at`;
-  return Response.json({ transcript: transcriptOf(c.messages), activity, handoffs, takenOverBy: c.taken_over_by }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({
+    transcript: transcriptOf(c.messages), activity, handoffs, takenOverBy: c.taken_over_by, awaitingTeam: c.awaiting_team, language: c.language,
+    review: c.rating ? { rating: c.rating, note: c.note, by: c.reviewed_by } : null,
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 const ERRORS: Record<string, string> = {
@@ -33,10 +38,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   if (!UUID.test(id)) return Response.json({ error: "not_found" }, { status: 404 });
-  const body = (await req.json().catch(() => null)) as { action?: string; staffId?: string; text?: string } | null;
+  const body = (await req.json().catch(() => null)) as { action?: string; staffId?: string; text?: string; rating?: string; note?: string } | null;
   const sql = db();
   const staff = await staffUser(sql, body?.staffId);
   if (!staff) return Response.json({ error: "sign_in", message: "Sign in as a member of the team first (top of the Inbox)." }, { status: 403 });
+  if (body?.action === "translate") {
+    if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "not_configured", message: "The AI service isn't set up." }, { status: 503 });
+    const t = await translateConversation(sql, id).catch(() => null);
+    if (t === "not_found") return Response.json({ error: "not_found", message: ERRORS.not_found }, { status: 404 });
+    if (!t) return Response.json({ error: "failed", message: "The translation didn't work. Try again." }, { status: 502 });
+    return Response.json({ ok: true, translation: t });
+  }
+  if (body?.action === "review") {
+    if (body.rating !== "good" && body.rating !== "needs_work") return Response.json({ error: "bad_request", message: "Choose Good or Needs work." }, { status: 400 });
+    const r = await saveReview(sql, id, staff, body.rating, typeof body.note === "string" ? body.note : null);
+    if (r) return Response.json({ error: r, message: ERRORS[r] }, { status: 404 });
+    return Response.json({ ok: true });
+  }
   const err =
     body?.action === "take_over" ? await takeOver(sql, id, staff)
     : body?.action === "hand_back" ? await handBack(sql, id, staff)

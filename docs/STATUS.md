@@ -54,6 +54,27 @@ staff), the urgency of any handoff, and opens the full chat history and activity
 Staff queue for handoffs. Filters by status, category and urgency, a search, and counts at the top (all
 worked out from the data already stored: no new tables).
 
+## Backlog items 2 to 6 (Nov 23, Tomi: "Build 2, 3, 4, 5 should be email and whatsapp, and 6")
+
+- **Password** (whole site, one password): `SITE_PASSWORD` in Vercel; `proxy.ts` sends anyone without the
+  cookie to `/login`; the cookie holds a hash, 30 days. Without the setting the site stays open.
+- **Hours-saved dashboard** (`/dashboard`, `lib/dashboard.ts`): time and cost saved by category and day,
+  from sample handling times on the Rules screen (Time saved); reviews and conversations waiting for the team.
+- **Rules management** (`lib/ruleChanges.ts`, `lib/policyExtract.ts`): sign-in on the Rules screen; a
+  support agent's change waits for a supervisor, a supervisor's goes live; history with Restore; values per
+  market (Nigeria, UK, United States; `rule_overrides`, read for the customer's country); "Past
+  conversations" lists where Alexis used a rule; a policy document (PDF or text) is read by Claude into
+  proposed changes with their quotes, always waiting for approval.
+- **Email and WhatsApp, simulated**: the customer app's Channel switcher; Alexis writes in each channel's
+  style; the Inbox labels and filters by channel; an email's subject is kept.
+- **Operations**: Alexis's on/off switch and outage mode with its notice (Rules › Operations; a bar across
+  the console, a notice in the customer app, a line in Alexis's session note); conversations wait for the
+  team when Alexis is off or the AI service is down ("Waiting for the team"); `find_case` picks up a case by
+  its reference (the customer's own only); conversation review (Good / Needs work, filter, dashboard);
+  languages (English, French, Pidgin, Yoruba, Hausa, Igbo) with a "Translate to English" for the team.
+  The Yoruba, Hausa and Igbo greetings need a native speaker's check. Voice notes left out (Tomi).
+- New rules reach an existing database on deploy (missing ones are added; edited values are kept).
+
 ## First runs with the real model (Nov 23)
 
 The live site's first real turns failed after any tool call: the session context (time, identity) was

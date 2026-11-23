@@ -11,6 +11,7 @@ interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: string; urgency: string | null; references: string[]; takenOverBy: string | null;
   channel: "app" | "whatsapp" | "email"; subject: string | null;
+  language: string; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
 }
 interface Counts { total: number; open: number; resolvedByAlexis: number; handedOff: number; urgentOpen: number; withoutPerson: number | null }
@@ -19,10 +20,14 @@ interface Detail {
   activity: { id: number; kind: string; summary: string; staff: string | null; created_at: string }[];
   handoffs: { reference: string; urgency: string; status: string; trigger: string; created_at: string }[];
   takenOverBy: string | null;
+  awaitingTeam: string | null;
+  language: string;
+  review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
 }
 interface Staff { id: string; name: string; role: "support_agent" | "supervisor" }
 
 const ALL = "all";
+const LANGUAGE_NAME: Record<string, string> = { en: "English", fr: "French", pcm: "Pidgin", yo: "Yoruba", ha: "Hausa", ig: "Igbo" };
 const CHANNEL_NAME = { app: "App chat", whatsapp: "WhatsApp", email: "Email" } as const;
 
 /** Where the customer wrote from, as a small labelled chip. */
@@ -49,6 +54,9 @@ export default function InboxPage() {
   const [category, setCategory] = useState(ALL);
   const [urgency, setUrgency] = useState(ALL);
   const [channel, setChannel] = useState(ALL);
+  const [reviewed, setReviewed] = useState(ALL);
+  const [translation, setTranslation] = useState<{ who: string; text: string; staff?: string }[] | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -111,6 +119,8 @@ export default function InboxPage() {
   useEffect(() => {
     setDetail(null);
     setActError(null);
+    setTranslation(null);
+    setReviewNote("");
     if (!selected) return;
     loadDetail(selected);
     const t = setInterval(() => document.visibilityState === "visible" && loadDetail(selected), 2000);
@@ -135,24 +145,27 @@ export default function InboxPage() {
       (category === ALL || c.category === category) &&
       (urgency === ALL || (urgency === "none" ? !c.urgency : c.urgency === urgency)) &&
       (channel === ALL || c.channel === channel) &&
+      (reviewed === ALL || (reviewed === "none" ? !c.review : c.review?.rating === reviewed)) &&
       (!q || [c.customer, c.business, c.firstMessage, c.subject, ...c.references].some((v) => v?.toLowerCase().includes(q))));
-  }, [cases, status, category, urgency, channel, search]);
+  }, [cases, status, category, urgency, channel, reviewed, search]);
 
   const c = cases?.find((x) => x.id === selected) ?? null;
   const takenBy = detail?.takenOverBy ?? null;
   const mine = Boolean(staff && takenBy === staff.name);
   const last = detail?.transcript[detail.transcript.length - 1];
-  const alexisWorking = Boolean(c && !takenBy && last?.who === "Customer" && Date.now() - new Date(c.lastActivity).getTime() < 90_000);
+  const waiting = detail?.awaitingTeam ?? null;
+  const alexisWorking = Boolean(c && !takenBy && !waiting && last?.who === "Customer" && Date.now() - new Date(c.lastActivity).getTime() < 90_000);
 
-  async function act(action: "take_over" | "hand_back" | "reply", text?: string) {
+  async function act(action: "take_over" | "hand_back" | "reply" | "review" | "translate", text?: string, rating?: "good" | "needs_work") {
     if (!selected) return;
     setActing(true);
     setActError(null);
     try {
-      const res = await fetch(`/api/cases/${selected}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, staffId, text }) });
+      const res = await fetch(`/api/cases/${selected}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, staffId, text, rating, note: action === "review" ? reviewNote : undefined }) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) setActError((json as { message?: string }).message ?? "That didn't go through. Try again.");
       else if (action === "reply") setReply("");
+      else if (action === "translate") setTranslation((json as { translation: { who: string; text: string }[] }).translation);
       await Promise.all([loadDetail(selected), load()]);
     } catch {
       setActError("Couldn't reach the app's server. Try again.");
@@ -184,6 +197,7 @@ export default function InboxPage() {
               <Filter label="Category" value={category} onChange={setCategory} options={[[ALL, "Category"], ...categories.map((s) => [s, `${s} (${inCategory.get(s) ?? 0})`] as [string, string])]} />
               <Filter label="Urgency" value={urgency} onChange={setUrgency} options={[[ALL, "Urgency"], ["urgent", "Urgent"], ["high", "High"], ["normal", "Normal"], ["none", "Not handed off"]]} />
               <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["whatsapp", "WhatsApp"], ["email", "Email"]]} />
+              <Filter label="Review" value={reviewed} onChange={setReviewed} options={[[ALL, "Review"], ["none", "Not reviewed"], ["good", "Good"], ["needs_work", "Needs work"]]} />
             </div>
             <span className="label">{shown.length} of {cases?.length ?? 0} conversations · updates live</span>
           </div>
@@ -219,7 +233,7 @@ export default function InboxPage() {
               <div className="panel-head inbox-head">
                 <div>
                   <div className="panel-title">{c.business ?? "Customer not identified"}{c.customer ? ` · ${c.customer}` : ""}</div>
-                  <div className="label">{CHANNEL_NAME[c.channel]}{c.subject ? ` · “${c.subject}”` : ""} · {c.category} · started {when(c.started)} · identity {c.verified ? "verified" : "not verified"}</div>
+                  <div className="label">{c.language !== "en" ? `${LANGUAGE_NAME[c.language] ?? c.language} · ` : ""}{CHANNEL_NAME[c.channel]}{c.subject ? ` · “${c.subject}”` : ""} · {c.category} · started {when(c.started)} · identity {c.verified ? "verified" : "not verified"}</div>
                 </div>
                 <span className="inbox-chips">
                   <StatusChip status={c.status} />
@@ -239,10 +253,25 @@ export default function InboxPage() {
                   </select>
                 </label>
                 <span className="takeover-state">
-                  {takenBy ? <><b>{takenBy}</b> is handling this conversation. Alexis is paused.</> : <>Alexis is handling this conversation.</>}
+                  {takenBy ? <><b>{takenBy}</b> is handling this conversation. Alexis is paused.</>
+                    : waiting ? <><b>Waiting for the team.</b> {waiting === "switched_off" ? "Alexis is switched off, so the customer's messages come to you." : "The AI service was down, so this came to you. Alexis answers again on the customer's next message."} Take over to reply.</>
+                    : <>Alexis is handling this conversation.</>}
                 </span>
                 {!takenBy && <button className="btn btn-primary" disabled={!staff || acting || !detail} onClick={() => act("take_over")} title={staff ? "" : "Sign in first"}>Take over</button>}
                 {mine && <button className="btn" disabled={acting} onClick={() => act("hand_back")}>Hand back to Alexis</button>}
+              </div>
+              <div className="takeover-bar review-bar">
+                <span className="label">Review</span>
+                {detail?.review && <span className={`tag tag-${detail.review.rating === "good" ? "live" : "pending"}`}>{detail.review.rating === "good" ? "Good" : "Needs work"} · {detail.review.by}{detail.review.note ? `: ${detail.review.note}` : ""}</span>}
+                <label className="sr-only" htmlFor="review-note">Review note</label>
+                <input id="review-note" className="filter-input review-note" placeholder="Note (optional)" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} maxLength={1000} />
+                <button className="btn" disabled={!staff || acting || !detail} onClick={() => act("review", undefined, "good")} title={staff ? "" : "Sign in first"}>Good</button>
+                <button className="btn" disabled={!staff || acting || !detail} onClick={() => act("review", undefined, "needs_work")} title={staff ? "" : "Sign in first"}>Needs work</button>
+                {detail && detail.language !== "en" && (
+                  translation
+                    ? <button className="btn" onClick={() => setTranslation(null)}>Show the original ({LANGUAGE_NAME[detail.language] ?? detail.language})</button>
+                    : <button className="btn" disabled={!staff || acting} onClick={() => act("translate")}>Translate to English</button>
+                )}
               </div>
               {actError && <div className="case-error takeover-error" role="alert">{actError}</div>}
 
@@ -252,7 +281,8 @@ export default function InboxPage() {
                 <div className="watch-grid">
                   <div className="watch-chat">
                     <div className="history" ref={chatRef} aria-live="polite">
-                      {detail.transcript.map((m, i) => (
+                      {translation && <div className="chat-notice">English translation for the team. The customer sees the original.</div>}
+                      {(translation ?? detail.transcript).map((m, i) => (
                         <div key={i} className={`msg ${m.who === "Customer" ? "msg-in" : "msg-out"}${m.staff ? " msg-staff" : ""}`}>
                           <div className="msg-meta">{m.who === "Customer" ? (c.customer ?? "Customer") : m.staff ? `${m.staff} · support team` : "Alexis · AI"}</div>
                           {m.text}

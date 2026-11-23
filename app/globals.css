@@ -101,6 +101,9 @@ a { color: var(--brand-accent); }
 .tab:hover { color: var(--text-1); }
 .tab[aria-current='page'] { background: var(--brand-50); color: var(--brand-accent); }
 .topbar-right { display: flex; justify-content: flex-end; gap: var(--space-2); align-items: center; }
+.service-bar { flex: none; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); align-items: center; padding: var(--space-2) var(--space-6); background: var(--wait-bg); border-bottom: 1px solid var(--wait); font-size: var(--size-sm); }
+.service-bar b { color: var(--wait); }
+.service-bar a { color: var(--brand-accent); margin-left: auto; }
 .page { flex: 1; min-height: 0; padding: var(--space-4) var(--space-6) var(--space-6); }
 .page-fill { height: 100%; }
 .page-fill[hidden] { display: none; }
@@ -372,6 +375,8 @@ a { color: var(--brand-accent); }
 .phone-email .msg { max-width: 100%; align-self: stretch; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-panel); }
 .phone-email .msg-customer { background: var(--surface-sunk); }
 .phone-email .composer textarea { min-height: 96px; }
+.service-notice { padding: var(--space-2) var(--space-4); font-size: var(--size-sm); background: var(--wait-bg); color: var(--text-1); border-bottom: 1px solid var(--wait); }
+.service-notice b { color: var(--wait); margin-right: var(--space-1); }
 .chat-notice { align-self: center; text-align: center; font-size: var(--size-xs); color: var(--text-2); padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); }
 @media (max-width: 799px) {
   .customer-stage { flex-direction: column; align-items: stretch; padding: 0; gap: 0; }
@@ -432,6 +437,8 @@ a { color: var(--brand-accent); }
 .takeover-state { flex: 1; min-width: 200px; font-size: var(--size-sm); color: var(--text-2); }
 .takeover-state b { color: var(--text-1); }
 .takeover-error { padding: var(--space-2) var(--space-6); }
+.review-bar { padding-top: var(--space-2); padding-bottom: var(--space-2); gap: var(--space-2); }
+.review-note { flex: 1; min-width: 160px; width: auto; }
 .watch-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 .watch-chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
 .watch-chat .history { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-6); }

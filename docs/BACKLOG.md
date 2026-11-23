@@ -12,6 +12,12 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   customer to read back a code the bank didn't just send for this purpose. Left out of the first demo
   (owner, Nov 23); the demo runs `initiate_recall` on the standard check plus payment rights.
 
+## Built on Nov 23 (after the demo)
+
+Items 2, 4 (hours-saved dashboard), 5 and 8 below, and channels as simulated email and WhatsApp (item 6):
+see `docs/STATUS.md`. Still open from this list: Nuvion's real rules (1), real WhatsApp and email
+connections, voice notes (left out by Tomi), and the country packs' content.
+
 ## After the demo (Build Plan order, Nov 23)
 
 The order that follows best from a successful pitch; detail in the phases below.

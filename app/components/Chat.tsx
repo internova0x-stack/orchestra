@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GREETING, OPENERS } from "@/lib/greeting";
+import { GREETINGS, LANGUAGE_NAMES, OPENERS_BY_LANGUAGE } from "@/lib/greeting";
 import { RESET_CHANNEL } from "./events";
 import { drawSample, readImage, type Attachment, type Sample } from "./screenshots";
 
@@ -36,7 +36,7 @@ const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? c
 const SUPPORT_EMAIL = "support@yourbank.example";
 type Channel = "app" | "whatsapp" | "email";
 
-const greeting = (): Msg => ({ id: newId(), role: "alexis", text: GREETING, showLabel: true });
+const greeting = (lang = "en"): Msg => ({ id: newId(), role: "alexis", text: GREETINGS[lang] ?? GREETINGS.en, showLabel: true });
 
 // ---------------------------------------------------------------- status chip
 
@@ -47,7 +47,7 @@ const CHIP: Record<string, { tone: string; icon: "check" | "clock" | "cross" | "
   Failed: { tone: "stop", icon: "cross" }, Reversed: { tone: "stop", icon: "cross" }, Blocked: { tone: "stop", icon: "cross" },
   Declined: { tone: "stop", icon: "cross" }, Resolved: { tone: "ok", icon: "check" },
   "On hold": { tone: "info", icon: "pause" }, "Needs approval": { tone: "info", icon: "pause" },
-  "In progress": { tone: "wait", icon: "clock" }, "Taken over": { tone: "info", icon: "pause" }, "Waiting on customer": { tone: "wait", icon: "clock" },
+  "In progress": { tone: "wait", icon: "clock" }, "Taken over": { tone: "info", icon: "pause" }, "Waiting for the team": { tone: "stop", icon: "clock" }, "Waiting on customer": { tone: "wait", icon: "clock" },
   "Handed off": { tone: "info", icon: "pause" }, "Resolved by Alexis": { tone: "ok", icon: "check" }, "Resolved by staff": { tone: "ok", icon: "check" },
 };
 
@@ -233,6 +233,10 @@ export default function Chat() {
   // Simulated channels (Tomi, Nov 23): the bank's app chat, WhatsApp or email. Each is its own conversation.
   const [channel, setChannel] = useState<Channel>("app");
   const [subject, setSubject] = useState("");
+  const [language, setLanguage] = useState("en");
+  const languageRef = useRef("en");
+  languageRef.current = language;
+  const [status, setStatus] = useState<{ alexisOn: boolean; outage: string | null }>({ alexisOn: true, outage: null });
   const [messages, setMessages] = useState<Msg[]>(() => [greeting()]);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
@@ -275,6 +279,14 @@ export default function Chat() {
     const t = setInterval(() => document.visibilityState === "visible" && load(), 5000);
     return () => { live = false; clearInterval(t); };
   }, [typingUserId]);
+  // The service status: an outage notice, and whether Alexis is answering.
+  useEffect(() => {
+    const load = () => fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setStatus).catch(() => {});
+    load();
+    const t = setInterval(() => document.visibilityState === "visible" && load(), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     fetch("/api/samples", { cache: "no-store" }).then((r) => r.json()).then((j) => setSamples(j.samples ?? [])).catch(() => {});
   }, []);
@@ -282,7 +294,7 @@ export default function Chat() {
   const startOver = useCallback((ch?: Channel) => {
     setConversationId(newId());
     // An email starts with the customer writing in; the chats open with Alexis's greeting.
-    setMessages((ch ?? channelRef.current) === "email" ? [] : [greeting()]);
+    setMessages((ch ?? channelRef.current) === "email" ? [] : [greeting(languageRef.current)]);
     setTakenOverBy(null);
     setSubject("");
   }, []);
@@ -368,7 +380,7 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, typingUserId, channel, ...(channel === "email" && subject.trim() ? { subject: subject.trim() } : {}), ...body }),
+        body: JSON.stringify({ conversationId, typingUserId, channel, language, ...(channel === "email" && subject.trim() ? { subject: subject.trim() } : {}), ...body }),
       });
       if (!res.ok || !res.body) {
         const json = await res.json().catch(() => ({}));
@@ -397,6 +409,13 @@ export default function Chat() {
           switch (e.type) {
             case "text": patchLast((m) => ({ ...m, thinking: false, text: m.text + e.delta })); break;
             case "break": patchLast((m) => ({ ...m, text: m.text ? m.text + "\n\n" : m.text })); break;
+            case "team_queue":
+              // Alexis is switched off or the AI service is down: the message is with the team.
+              setMessages((ms) => {
+                const rest = ms[ms.length - 1]?.role === "alexis" && ms[ms.length - 1].thinking ? ms.slice(0, -1) : ms;
+                return rest.some((m) => m.role === "notice" && m.text === e.message) ? rest : [...rest, { id: newId(), role: "notice", text: e.message }];
+              });
+              break;
             case "taken_over":
               // A member of the team is handling the chat: no reply from Alexis; theirs arrives by the check above.
               setMessages((ms) => (ms[ms.length - 1]?.role === "alexis" && ms[ms.length - 1].thinking ? ms.slice(0, -1) : ms));
@@ -490,6 +509,18 @@ export default function Chat() {
                 <span>{selected.registration}</span>
               </div>
             )}
+            <label className="tester-field">
+              <span className="label">Language</span>
+              <select value={language} disabled={busy} onChange={(e) => {
+                const lang = e.target.value;
+                setLanguage(lang);
+                languageRef.current = lang;
+                // Before the customer writes, the greeting follows the language.
+                setMessages((ms) => (ms.length === 1 && ms[0].role === "alexis" && !ms[0].staff ? [greeting(lang)] : ms));
+              }}>
+                {LANGUAGE_NAMES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
             <div className="tester-field">
               <span className="label">Channel</span>
               <div className="segmented" role="radiogroup" aria-label="Channel">
@@ -523,6 +554,7 @@ export default function Chat() {
             <span className="phone-title label">{channel === "app" ? "Help & support" : channel === "whatsapp" ? "WhatsApp" : "Mail"}</span>
           </div>
 
+        {status.outage && <div className="service-notice" role="status"><b>Service notice</b> {status.outage}</div>}
         <div className="messages" ref={messagesRef} aria-live="polite">
           {setupProblem && <div className="msg msg-alexis" role="alert">{setupProblem}</div>}
           {messages.map((m) => (
@@ -587,9 +619,9 @@ export default function Chat() {
               )}
             </div>
           ))}
-          {empty && (
+          {empty && OPENERS_BY_LANGUAGE[language] && (
             <div className="openers">
-              {OPENERS.map((o) => (
+              {OPENERS_BY_LANGUAGE[language].map((o) => (
                 <button key={o} className="btn" onClick={() => send({ message: o }, o)} disabled={busy}>{o}</button>
               ))}
             </div>

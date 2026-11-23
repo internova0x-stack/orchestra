@@ -47,6 +47,15 @@ export default function DashboardPage() {
         <Stat value={t.conversations} label="Conversations" />
       </div>
 
+      <div className="stat-row" aria-label="Reviews and the team">
+        <Stat value={d.reviews.reviewed} label="Conversations reviewed" />
+        <Stat value={d.reviews.reviewed ? `${Math.round((d.reviews.good / d.reviews.reviewed) * 100)}%` : "–"} label="Reviewed as good" />
+        <Stat value={d.reviews.needsWork} label="Need work" />
+        <Stat value={d.reviews.waitingForTeam} label="Waiting for the team" />
+        <Stat value={t.open} label="Open now" />
+        <Stat value={d.categories.length} label="Categories in use" />
+      </div>
+
       <p className="dash-note label" role="note">
         Sample handling times, not measured ones. A conversation Alexis resolves saves its category&apos;s handling
         time; one handed to a person saves {d.assumptions.handoffMinutes} minutes (the summary means nobody starts

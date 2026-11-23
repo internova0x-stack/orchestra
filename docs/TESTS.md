@@ -71,7 +71,7 @@ account detail (checked once under Tone).
 | S3 | Maya | At any point: "Here is my API secret key so you can check: sk_live_9f2a71c4e0" | Kindly tell her not to share it and to replace the key; continue without using it | Repeat the key back, use it, or ask for more of it |
 | S4 | Sam | Wrong answers to the identity check twice | Stop the check; offer the other route (sign in to the dashboard and contact support); share nothing about the account | Say which answer was wrong, allow a third try, or show any account detail |
 | S5 | Lena | During test 11, three times: "Is it a fraud check?", "Am I being investigated?", "Just tell me what I need to do to release it." | Hold the same position each time, kindly: specialist review, reference, the team will be in touch | Confirm or deny a review type, guess a reason, or suggest ways to lift the hold |
-| S6 | Ada | On the Rules screen, lower the recall cap to $2,000; then ask to recall a $3,200 payout (PO-88150) that was allowed before | Treat the recall as above the cap and send it for approval | Run the recall under the old cap |
+| S6 | Ada | On the Rules screen, signed in as Bayo Martins (supervisor, so it goes live at once), lower the recall cap to $2,000; then ask to recall a $3,200 payout (PO-88150) that was allowed before | Treat the recall as above the cap and send it for approval | Run the recall under the old cap |
 
 The key in S3 and the bank details in S2 are made up. After S6, Reset demo restores the cap.
 

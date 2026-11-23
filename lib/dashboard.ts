@@ -11,6 +11,7 @@ export const timeRuleId = (category: string) => `time_${category.toLowerCase().r
 
 export interface Dashboard {
   totals: { conversations: number; resolvedByAlexis: number; handedOff: number; open: number; minutesSaved: number; costSaved: number; costUnit: string; resolutionRate: number | null };
+  reviews: { reviewed: number; good: number; needsWork: number; waitingForTeam: number };
   categories: { category: string; conversations: number; resolvedByAlexis: number; handedOff: number; minutesEach: number; minutesSaved: number }[];
   days: { day: string; conversations: number; minutesSaved: number }[];
   assumptions: { handoffMinutes: number; costPerHour: number; costUnit: string };
@@ -48,6 +49,12 @@ export function buildDashboard(rows: CaseRow[], rules: Rules, now = new Date()):
       open: rows.filter((r) => !r.status.startsWith("Resolved")).length,
       minutesSaved, costSaved: Math.round((minutesSaved / 60) * cost * 100) / 100, costUnit,
       resolutionRate: resolvedByAlexis + handedOff ? Math.round((resolvedByAlexis / (resolvedByAlexis + handedOff)) * 100) : null,
+    },
+    reviews: {
+      reviewed: rows.filter((r) => r.review).length,
+      good: rows.filter((r) => r.review?.rating === "good").length,
+      needsWork: rows.filter((r) => r.review?.rating === "needs_work").length,
+      waitingForTeam: rows.filter((r) => r.status === "Waiting for the team").length,
     },
     categories: [...byCat.values()].sort((a, b) => b.minutesSaved - a.minutesSaved || b.conversations - a.conversations),
     days,

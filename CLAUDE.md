@@ -54,7 +54,14 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   replies are assistant text blocks carrying `staff`, turned into labelled text by `forModel` before the model
   sees them; same-side messages join one turn (`appendTurn`) so the history always alternates.
 - Rules screen: `app/api/rules` (no source links), `lib/ruleEdit.ts` checks a value (limits are numbers,
-  switches on/off, times HH:MM) and logs it to `rule_changes` and `audit_log`.
+  switches on/off, times HH:MM); `lib/ruleChanges.ts` is the change workflow (an agent's change waits for a
+  supervisor, a supervisor's goes live; history and Restore; per-market values in `rule_overrides`, read by
+  `Rules.load(sql, market)` for the customer's country); `lib/policyExtract.ts` turns a policy document into
+  proposals that always wait for approval.
+- Whole-site password: `proxy.ts` + `SITE_PASSWORD` (off when unset). Dashboard: `/dashboard`, `lib/dashboard.ts`.
+- Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
+  `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
+  (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
 - `npm run dev`, `npm run build`, `npm run typecheck`.
 - `npm test` with `TEST_DATABASE_URL` pointing at a throwaway Postgres runs the tools against the seeded
   bank (no model calls); without it the database tests are skipped.
