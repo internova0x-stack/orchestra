@@ -187,7 +187,7 @@ export default function InboxPage() {
   return (
     <div className="cases-page">
       {counts && (
-        <div className="stat-row" aria-label="Inbox numbers">
+        <div className="stat-row" aria-label="Message numbers">
           <Stat value={counts.total} label="Conversations" />
           <Stat value={counts.open} label="Open now" />
           <Stat value={counts.resolvedByAlexis} label="Resolved by Alexis" />

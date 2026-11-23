@@ -221,7 +221,7 @@ export default function StaffPage() {
       const sent = await post({ action: "reply", text: reply });
       if (!sent.ok) { setReplyMsg(sent.json.message ?? "The reply didn't go through."); return; }
       setReply("");
-      setReplyMsg("Sent. You're now handling this conversation: hand it back to Alexis from the Inbox when you're done.");
+      setReplyMsg("Sent. You're now handling this conversation: hand it back to Alexis from Messages when you're done.");
       if (selected) await open(selected).then(() => setShow("reply"));
     } finally {
       setBusy(false);
