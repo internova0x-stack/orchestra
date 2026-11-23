@@ -1,6 +1,6 @@
 // The API page: how banks and other systems connect to Orchestra, and the keys and webhooks for the
 // Orchestra API. The machine-readable contracts are the OpenAPI files in /public/openapi.
-import ApiAdmin from "./Admin";
+import Integrations from "./Integrations";
 
 const ORCHESTRA_ENDPOINTS: [string, string, string][] = [
   ["POST", "/conversations", "Open a conversation for a customer, on a channel; pass the bank's user id for a customer already signed in to its app"],
@@ -63,8 +63,10 @@ const RULES = [
 export default function DevelopersPage() {
   return (
     <div className="dev">
-      <section className="panel dev-section">
-        <div className="panel-head"><span className="panel-title">Connecting a bank</span></div>
+      <Integrations />
+      <h2 className="int-ref-h">API reference</h2>
+      <details className="panel dev-section dev-doc">
+        <summary className="panel-head"><span className="panel-title">Bank Connector API: what a bank implements</span></summary>
         <div className="dev-body">
           <p>
             Orchestra reads a bank&apos;s records and requests actions through one published contract, the <b>Bank Connector API</b>.
@@ -117,10 +119,10 @@ export default function DevelopersPage() {
             contract over HTTPS, the same path a real bank would use.
           </p>
         </div>
-      </section>
+      </details>
 
-      <section className="panel dev-section">
-        <div className="panel-head"><span className="panel-title">The Orchestra API</span></div>
+      <details className="panel dev-section dev-doc">
+        <summary className="panel-head"><span className="panel-title">Orchestra API: what other systems call, and the webhooks it sends</span></summary>
         <div className="dev-body">
           <p>
             For systems that call Orchestra, and the webhooks Orchestra sends them. A bank&apos;s app, WhatsApp provider or mailbox
@@ -153,8 +155,7 @@ export default function DevelopersPage() {
   -H "Authorization: Bearer $ORCHESTRA_API_KEY" -H "Content-Type: application/json" \\
   -d '{"channel":"whatsapp","verified_user_id":"ada"}'`}</pre>
         </div>
-        <ApiAdmin />
-      </section>
+      </details>
     </div>
   );
 }

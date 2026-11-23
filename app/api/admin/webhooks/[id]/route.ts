@@ -17,6 +17,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const [e] = await sql<{ id: string }[]>`select id from webhook_endpoints where id = ${id}`;
   if (!e) return Response.json({ ok: false, error: "No such endpoint." }, { status: 404 });
   if (body.action === "retry") return Response.json({ ok: true, retried: await retryPending(sql) });
+  // Turn an endpoint off (nothing more is sent to it) or back on; its settings and history stay.
+  if (body.action === "turn_off" || body.action === "turn_on") {
+    await sql`update webhook_endpoints set active = ${body.action === "turn_on"} where id = ${id}`;
+    await logAdmin(sql, s.name, `webhook endpoint ${body.action === "turn_on" ? "turned on" : "turned off"}`);
+    return Response.json({ ok: true });
+  }
   const payload = { id: `evt_${randomUUID()}`, type: "test", created: new Date().toISOString(), data: { message: "A test event from Orchestra. No action needed." } };
   const [d] = await sql<{ id: number }[]>`insert into webhook_deliveries (endpoint_id, event_id, event, payload) values (${id}, ${payload.id}, 'test', ${sql.json(payload as never)}) returning id`;
   await deliver(sql, d.id);

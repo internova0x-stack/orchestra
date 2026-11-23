@@ -7,7 +7,7 @@ import { bank } from "../bank/index.ts";
 import { listCases, transcriptOf } from "../cases.ts";
 import { recordUsage } from "../usage.ts";
 import { CRM_KINDS, CRM_NAME, type CrmKind, type NewTicket } from "./contract.ts";
-import { connector, connectorSettings } from "./service.ts";
+import { connector, connectorSettings, noteHealth } from "./service.ts";
 
 // Data entry (Tomi, Nov 23: "then 3"). For the CRM connectors with "Data entry" on, Orchestra keeps the bank's CRM
 // up to date about the conversations it handles itself, so nobody re-types them:
@@ -121,9 +121,11 @@ async function upsert(sql: Sql, conversationId: string, make: () => Promise<{ ti
         }
         await sql`update crm_records set ticket_id = ${id} where conversation_id = ${conversationId} and kind = ${conn.kind}`;
         await log(sql, conversationId, `${CRM_NAME[conn.kind]} ticket ${id} created · ${opts.reason} · case notes written${t.status === "solved" ? " · solved" : ""}`);
+        await noteHealth(sql, conn.kind, true);
         done.push({ kind: conn.kind, ticket: id });
       }
     } catch (err) {
+      await noteHealth(sql, conn.kind, false, { message: (err as Error).message, status: (err as { status?: number }).status });
       await log(sql, conversationId, `${CRM_NAME[conn.kind]} · data entry failed: ${(err as Error).message.slice(0, 160)}`, "error");
     }
   }

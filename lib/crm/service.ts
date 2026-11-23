@@ -20,12 +20,44 @@ export interface ConnectorSettings {
   groups: Record<string, string>;
   updated_by: string | null;
   updated_at: string | null;
+  last_received_at: string | null;
+  last_ok_at: string | null;
+  last_error: string | null;
+  last_error_status: number | null;
+  last_error_at: string | null;
+  /** The last 20 calls to the CRM: true for success. */
+  recent: boolean[];
 }
 
-const DEFAULTS = (kind: CrmKind): ConnectorSettings => ({ kind, mode: "off", write_back: true, data_entry: false, groups: {}, updated_by: null, updated_at: null });
+/** What the API page shows for a connector: needs attention (and why), active, or off. */
+export function healthOf(c: ConnectorSettings & { envReady: boolean }): { state: "attention" | "active" | "off"; label: string | null; fix: "setup" | "reconnect" | "errors" | null; failures: number } {
+  const failures = c.recent.filter((x) => !x).length;
+  if (c.mode === "off") return { state: "off", label: null, fix: null, failures };
+  if (c.mode === "live" && !c.envReady) return { state: "attention", label: "Credentials missing", fix: "setup", failures };
+  const failing = c.last_error_at && (!c.last_ok_at || new Date(c.last_error_at) > new Date(c.last_ok_at));
+  if (failing && (c.last_error_status === 401 || c.last_error_status === 403)) return { state: "attention", label: "Sign-in failed", fix: "reconnect", failures };
+  if (failing) return { state: "attention", label: c.last_error_status === 0 ? "Can't reach it" : "Write-back failing", fix: c.last_error_status === 0 ? "reconnect" : "errors", failures };
+  return { state: "active", label: null, fix: null, failures };
+}
+
+/** Record one call to the CRM for the API page's health (never throws). */
+export async function noteHealth(sql: Sql, kind: CrmKind, ok: boolean, err?: { message: string; status?: number }) {
+  try {
+    await sql`insert into crm_connectors (kind) values (${kind}) on conflict (kind) do nothing`;
+    if (ok) await sql`update crm_connectors set last_ok_at = now(), recent = (jsonb_build_array(true) || recent) - 20 where kind = ${kind}`;
+    else await sql`update crm_connectors set last_error = ${(err?.message ?? "").slice(0, 300)}, last_error_status = ${err?.status ?? null}, last_error_at = now(),
+      recent = (jsonb_build_array(false) || recent) - 20 where kind = ${kind}`;
+  } catch (e) {
+    console.error("connector health", e);
+  }
+}
+
+const DEFAULTS = (kind: CrmKind): ConnectorSettings => ({ kind, mode: "off", write_back: true, data_entry: false, groups: {}, updated_by: null, updated_at: null,
+  last_received_at: null, last_ok_at: null, last_error: null, last_error_status: null, last_error_at: null, recent: [] });
 
 export async function connectorSettings(sql: Sql): Promise<(ConnectorSettings & { name: string; envReady: boolean; envNeeded: string[] })[]> {
-  const rows = await sql<ConnectorSettings[]>`select kind, mode, write_back, data_entry, groups, updated_by, updated_at from crm_connectors`;
+  const rows = await sql<ConnectorSettings[]>`select kind, mode, write_back, data_entry, groups, updated_by, updated_at,
+    last_received_at, last_ok_at, last_error, last_error_status, last_error_at, recent from crm_connectors`;
   return CRM_KINDS.map((k) => ({
     ...DEFAULTS(k), ...(rows.find((r) => r.kind === k) ?? {}),
     name: CRM_NAME[k], envNeeded: ENV_NEEDED[k], envReady: ENV_NEEDED[k].every((v) => Boolean(process.env[v])) || Boolean(fromEnv(k)),
@@ -92,10 +124,13 @@ export async function handleCrmWebhook(sql: Sql, kind: CrmKind, body: unknown, o
   if (!c) return { ok: false, error: "not_connected", message: `The ${CRM_NAME[kind]} connector is off. Switch it on on the API page.`, status: 409 };
   const id = c.conn.ticketIdFrom(body);
   if (!id) return { ok: false, error: "bad_request", message: "No ticket id in the webhook body.", status: 400 };
+  await sql`update crm_connectors set last_received_at = now() where kind = ${kind}`;
   let ticket;
   try {
     ticket = await c.conn.fetchTicket(id);
+    await noteHealth(sql, kind, true);
   } catch (err) {
+    await noteHealth(sql, kind, false, { message: (err as Error).message, status: (err as { status?: number }).status });
     return { ok: false, error: "crm_unavailable", message: `Couldn't read the ticket from ${CRM_NAME[kind]}: ${(err as Error).message}`, status: 502 };
   }
   if (!ticket) return { ok: false, error: "not_found", message: "The ticket wasn't found.", status: 404 };
@@ -107,10 +142,12 @@ export async function handleCrmWebhook(sql: Sql, kind: CrmKind, body: unknown, o
     await c.conn.writeBack(id, w);
   } catch (err) {
     const msg = (err as Error).message;
+    await noteHealth(sql, kind, false, { message: msg, status: (err as { status?: number }).status });
     await sql`update conversations set listen = listen || ${sql.json({ writeback: { ok: false, error: msg.slice(0, 300), at: new Date().toISOString() } } as never)} where id = ${out.conversation_id}`;
     await sql`insert into audit_log (conversation_id, tool_use_id, kind, tool, summary) values (${out.conversation_id}, ${`crm-${Date.now()}`}, 'error', 'crm_write_back', ${`${CRM_NAME[kind]} ${id} · write-back failed: ${msg.slice(0, 160)}`})`;
     return { ok: true, conversation_id: out.conversation_id, analysed: true, written_back: false, error: msg };
   }
+  await noteHealth(sql, kind, true);
   await sql`update conversations set listen = listen || ${sql.json({ writeback: { ok: true, at: new Date().toISOString(), tags: w.tags, priority: w.priority, group: w.groupId } } as never)} where id = ${out.conversation_id}`;
   await sql`insert into audit_log (conversation_id, tool_use_id, kind, tool, summary)
     values (${out.conversation_id}, ${`crm-${Date.now()}`}, 'action', 'crm_write_back',
@@ -122,4 +159,28 @@ export async function handleCrmWebhook(sql: Sql, kind: CrmKind, body: unknown, o
 export async function sandboxCalls(sql: Sql, kind: CrmKind) {
   return sql<{ id: number; method: string; path: string; body: unknown; at: string }[]>`
     select id, method, path, body, at from crm_sandbox_calls where kind = ${kind} order by id desc limit 20`;
+}
+
+/** "Reconnect": check the credentials with a cheap read, and record the result. */
+export async function checkConnection(sql: Sql, kind: CrmKind): Promise<{ ok: boolean; error?: string }> {
+  const c = await connector(sql, kind);
+  if (!c) return { ok: false, error: "The connector is off, or its credentials aren't set." };
+  try {
+    await c.conn.ping();
+    await noteHealth(sql, kind, true);
+    await sql`insert into audit_log (kind, tool, summary) values ('action', 'crm_connector', ${`${CRM_NAME[kind]} · connection checked · working`})`;
+    return { ok: true };
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    await noteHealth(sql, kind, false, { message: (err as Error).message, status });
+    return { ok: false, error: status === 401 || status === 403 ? `${CRM_NAME[kind]} refused the credentials. Update them in Vercel's environment variables, redeploy, then try again.` : `Couldn't reach ${CRM_NAME[kind]}: ${(err as Error).message.slice(0, 160)}` };
+  }
+}
+
+/** The connector's recent activity for the API page: write-backs, data entry, checks and failures. */
+export async function connectorActivity(sql: Sql, kind: CrmKind) {
+  return sql<{ id: number; kind: string; summary: string; created_at: string }[]>`
+    select id, kind, summary, created_at from audit_log
+    where tool in ('crm_write_back', 'crm_data_entry', 'crm_connector') and summary like ${CRM_NAME[kind] + "%"}
+    order by id desc limit 8`;
 }

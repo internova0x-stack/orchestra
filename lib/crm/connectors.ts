@@ -46,6 +46,7 @@ export function zendesk(cfg: { subdomain: string; email: string; token: string }
   return {
     kind: "zendesk",
     ticketIdFrom: (b) => firstId(obj(b).ticket_id, obj(obj(b).ticket).id, obj(obj(b).detail).id),
+    ping: async () => { await req("GET", "/api/v2/users/me.json"); },
     async fetchTicket(id) {
       const { ticket } = await req<{ ticket: { id: number; subject: string | null; requester_id: number } }>("GET", `/api/v2/tickets/${enc(id)}.json`);
       const { comments } = await req<{ comments: { id: number; author_id: number; plain_body?: string; body: string; public: boolean; created_at: string }[] }>("GET", `/api/v2/tickets/${enc(id)}/comments.json`);
@@ -91,6 +92,7 @@ export function freshdesk(cfg: { domain: string; apiKey: string }, fetcher: Fetc
   return {
     kind: "freshdesk",
     ticketIdFrom: (b) => firstId(obj(obj(b).freshdesk_webhook).ticket_id, obj(b).ticket_id, obj(b).id),
+    ping: async () => { await req("GET", "/api/v2/agents/me"); },
     async fetchTicket(id) {
       const t = await req<{ id: number; subject: string | null; description_text: string; created_at: string; requester?: { name: string | null; email: string | null; phone: string | null } }>("GET", `/api/v2/tickets/${enc(id)}?include=requester`);
       const conv = await req<{ id: number; body_text: string; incoming: boolean; private: boolean; created_at: string }[]>("GET", `/api/v2/tickets/${enc(id)}/conversations`);
@@ -154,6 +156,7 @@ export function salesforce(cfg: { instanceUrl: string; accessToken?: string; cli
   return {
     kind: "salesforce",
     ticketIdFrom: (b) => firstId(obj(b).caseId, obj(b).CaseId, obj(b).Id, obj(b).id),
+    ping: async () => { token = cfg.accessToken ?? null; await req("GET", `${SF}/limits`); },
     async fetchTicket(id) {
       const c = await req<{ Id: string; Subject: string | null; Description: string | null; SuppliedName: string | null; SuppliedEmail: string | null; SuppliedPhone: string | null; CreatedDate: string }>("GET", `${SF}/sobjects/Case/${sfId(id)}`);
       const mail = await req<{ records: { Id: string; TextBody: string | null; Incoming: boolean; FromName: string | null; CreatedDate: string }[] }>("GET", soql(`SELECT Id, TextBody, Incoming, FromName, CreatedDate FROM EmailMessage WHERE ParentId = '${sfId(id)}' ORDER BY CreatedDate`));
@@ -206,6 +209,7 @@ export function hubspot(cfg: { accessToken: string }, fetcher: Fetch = fetch): C
   });
   return {
     kind: "hubspot",
+    ping: async () => { await req("GET", "/crm/v3/objects/tickets?limit=1"); },
     ticketIdFrom: (b) => firstId(obj(b).objectId, obj(Array.isArray(b) ? b[0] : null).objectId, obj(b).hs_object_id, obj(b).id),
     async fetchTicket(id) {
       const t = await req<{ id: string; createdAt: string; properties: { subject: string | null; content: string | null }; associations?: { contacts?: { results: { id: string }[] } } }>(

@@ -1951,3 +1951,20 @@ test("sign-in: the first admin sets up the console; passwords are hashed; wrong 
   assert.equal((await auth.enableDemoTeam(sql!, me!, "demo-pass-2026") as { count: number }).count, 6);
   assert.ok((await auth.signIn(sql!, "lara@yourbank.example", "demo-pass-2026", null)).ok);
 });
+
+test("connector health: a failing call puts a connector in Needs attention; Reconnect clears it", { skip }, async () => {
+  const { saveConnector, connectorSettings, healthOf, noteHealth, checkConnection } = await import("../lib/crm/service.ts");
+  await saveConnector(sql!, "freshdesk", { mode: "sandbox" }, "Bayo");
+  const health = async () => healthOf((await connectorSettings(sql!)).find((c) => c.kind === "freshdesk")!);
+  await noteHealth(sql!, "freshdesk", true);
+  assert.equal((await health()).state, "active");
+  await noteHealth(sql!, "freshdesk", false, { message: "PUT /api/v2/tickets/2001: 401 Unauthorized", status: 401 });
+  assert.deepEqual([(await health()).state, (await health()).label, (await health()).fix], ["attention", "Sign-in failed", "reconnect"]);
+  await noteHealth(sql!, "freshdesk", false, { message: "PUT /api/v2/tickets/2001: 422 bad group", status: 422 });
+  assert.equal((await health()).label, "Write-back failing");
+  assert.equal((await health()).failures, 2);
+  assert.deepEqual(await checkConnection(sql!, "freshdesk"), { ok: true }, "the sandbox answers the credentials check");
+  assert.equal((await health()).state, "active", "a working call clears it");
+  await saveConnector(sql!, "freshdesk", { mode: "off" }, "Bayo");
+  assert.equal((await health()).state, "off");
+});

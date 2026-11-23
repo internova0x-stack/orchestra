@@ -3,7 +3,7 @@ import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
 import { requireApiAdmin } from "@/lib/api/admin.ts";
 import { CRM_KINDS, type CrmKind } from "@/lib/crm/contract.ts";
-import { connectorSettings, handleCrmWebhook, sandboxCalls, saveConnector, type CrmMode } from "@/lib/crm/service.ts";
+import { checkConnection, connectorActivity, connectorSettings, handleCrmWebhook, healthOf, sandboxCalls, saveConnector, type CrmMode } from "@/lib/crm/service.ts";
 import { SAMPLE_WEBHOOK } from "@/lib/crm/sandbox.ts";
 
 export const runtime = "nodejs";
@@ -18,7 +18,13 @@ export async function GET(req: Request) {
   if (viewer instanceof Response) return viewer;
   await ensureSeeded(sql);
   const list = await connectorSettings(sql);
-  const connectors = await Promise.all(list.map(async (c) => ({ ...c, sample: SAMPLE_WEBHOOK[c.kind], writes: c.mode === "sandbox" ? await sandboxCalls(sql, c.kind) : [] })));
+  const week = await sql<{ source: string; n: number }[]>`
+    select listen->>'source' as source, count(*)::int as n from conversations where listen is not null and created_at > now() - interval '7 days' group by 1`;
+  const connectors = await Promise.all(list.map(async (c) => ({
+    ...c, health: healthOf(c), sample: SAMPLE_WEBHOOK[c.kind], activity: await connectorActivity(sql, c.kind),
+    ticketsWeek: week.find((w) => w.source === c.kind)?.n ?? 0,
+    writes: c.mode === "sandbox" ? await sandboxCalls(sql, c.kind) : [],
+  })));
   return Response.json({ connectors }, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -31,6 +37,10 @@ export async function POST(req: Request) {
   if (s instanceof Response) return s;
   if (!CRM_KINDS.includes(body.kind as CrmKind)) return Response.json({ ok: false, error: "Choose a connector." }, { status: 400 });
   const kind = body.kind as CrmKind;
+  if (body.action === "reconnect") {
+    const out = await checkConnection(sql, kind);
+    return Response.json(out, { status: out.ok ? 200 : 502 });
+  }
   if (body.action === "test") {
     const out = await handleCrmWebhook(sql, kind, SAMPLE_WEBHOOK[kind], { consoleBase: new URL(req.url).origin });
     return Response.json(out.ok ? out : { ok: false, error: out.message }, { status: out.ok ? 200 : out.status });

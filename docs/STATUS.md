@@ -117,6 +117,22 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## The API page as one list of connections (Nov 23, Tomi: "build it and use it for the whole api page")
+
+`app/developers/Integrations.tsx`: every connection in one list, grouped Needs attention / Active / Not active, with a
+filter box and All / Connectors / Webhooks / API keys tabs: the Bank Connector (simulated or a real bank, from
+Vercel's settings), the four CRM connectors, webhook endpoints and API keys. Each row shows what it is and its
+state in one line, a coloured chip (Live, Sandbox, Simulated, On, Active, or the problem), a fix button when needed
+(Reconnect, See errors, Set up, Retry, Connect, Go live, Turn on) and a ··· menu; selecting a row opens its settings
+beside the list (for a connector: Off / Sandbox / Live, the two switches, team mapping, recent activity, setup
+instructions, what it wrote into the sandbox). "+ API key" and "+ Webhook" add them there (secrets shown once).
+Connector health (`crm_connectors.last_*`, `recent`; `noteHealth`, `healthOf` in lib/crm/service.ts): every call to a
+CRM is recorded; the latest failing means Needs attention ("Sign-in failed" for 401/403, "Can't reach it", "Write-back
+failing", or "Credentials missing" when live without them); Reconnect checks the credentials with a cheap read
+(`ping`). Webhook endpoints can be turned off and on (kept, not deleted) and show "Deliveries failing" when the
+latest delivery failed. The API reference (both APIs' endpoints, rules, examples, OpenAPI files) is below the list,
+folded. Coloured letter tiles stand in for the products' logos. One new test.
+
 ## Sign-in and roles (Nov 23, Tomi: "build the roles and log in")
 
 The console now has real accounts (`lib/auth.ts`): each member of the team signs in with their work email and

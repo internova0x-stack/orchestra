@@ -45,6 +45,8 @@ export interface CrmConnector {
   reply(id: string, text: string, author: string): Promise<{ public: boolean }>;
   /** Data entry: a ticket recording a conversation Orchestra handled. Returns the new ticket's id. */
   createTicket(t: NewTicket): Promise<string>;
+  /** A cheap authenticated read, to check the credentials work ("Reconnect" on the API page). */
+  ping(): Promise<void>;
   /** Data entry: an internal note on a ticket (a decision, the outcome), optionally closing it. */
   addNote(id: string, text: string, opts?: { solve?: boolean }): Promise<void>;
 }

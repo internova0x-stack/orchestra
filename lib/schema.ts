@@ -265,6 +265,13 @@ create table if not exists crm_connectors (
   updated_by text,
   updated_at timestamptz
 );
+-- Connector health (Nov 23): the API page's "Needs attention".
+alter table crm_connectors add column if not exists last_received_at timestamptz;
+alter table crm_connectors add column if not exists last_ok_at timestamptz;
+alter table crm_connectors add column if not exists last_error text;
+alter table crm_connectors add column if not exists last_error_status int;
+alter table crm_connectors add column if not exists last_error_at timestamptz;
+alter table crm_connectors add column if not exists recent jsonb not null default '[]';
 create table if not exists crm_records (
   conversation_id uuid not null references conversations(id) on delete cascade,
   kind text not null,
