@@ -210,7 +210,7 @@ export async function seed(sql: Sql, now = new Date()) {
 async function seedInto(tx: any, now: Date) {
   {
     await tx.unsafe(`truncate ${TABLES_TO_WIPE.join(", ")} restart identity cascade`);
-    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301;`);
+    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101;`);
 
     for (const b of BUSINESSES) {
       await tx`insert into businesses (id, name, country, registration_number, verification_status, verification_reason, verification_missing, verification_submitted_at)
@@ -228,6 +228,7 @@ async function seedInto(tx: any, now: Date) {
         values (${c.id}, ${c.id}, ${c.name}, ${c.name.split(" ")[0]}, ${c.dob}, 'payment_rights', ${c.phone}, ${c.email})`;
     }
     await seedCards(tx, now);
+    await seedPayments(tx, now);
 
     // Planted case 9: Emeka's online access is locked after failed sign-ins.
     await tx`update business_users set login_locked = 'failed_logins' where id = 'emeka'`;
@@ -350,4 +351,24 @@ async function seedCards(tx: any, now: Date) {
     await tx`insert into transactions (id, holder_id, card_id, descriptor, merchant_name, location, channel, amount, currency, status, decline_reason, at)
       values (${r[0]}, ${r[1]}, ${r[2]}, ${r[3]}, ${r[4]}, ${r[5]}, ${r[6]}, ${r[7]}, ${r[8]}, ${r[9]}, ${r[10]}, ${r[11]})`;
   }
+}
+
+// ---------------------------------------------------------------- use case 12 (and 9, 11 later)
+
+/** Card, POS, ATM and web payments, with planted cases 16 and 17. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedPayments(tx: any, now: Date) {
+  const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * H);
+  const rows = [
+    // Planted 16: Chioma's POS payment declined at the merchant but debited, no reversal after 72 hours.
+    { id: "PAY-61001", holder_id: "chioma", channel: "POS", merchant_name: "Mama Cass Kitchen", location: "Allen Avenue, Ikeja, Lagos", terminal_bank: "Eko Commercial Bank", processor: "Interswitch-style switch (simulated)", card_last4: "4421", amount: 18750, currency: "NGN", outcome: "failed_debited", failure_detail: "Terminal showed 'Transaction declined'; the account was debited", at: at(4 * 24 + 3) },
+    // Planted 17: Emeka's withdrawal at another bank's ATM, debited without cash, already reversed.
+    { id: "PAY-61002", holder_id: "emeka", channel: "ATM", merchant_name: "Sahel Trust Bank ATM", location: "Wuse Market, Abuja", terminal_bank: "Sahel Trust Bank", processor: "Interbank ATM network (simulated)", card_last4: "7710", amount: 40000, currency: "NGN", outcome: "failed_debited", failure_detail: "No cash dispensed; the account was debited", at: at(3 * 24) },
+    // Ordinary successful payments, so a search has something to look through.
+    { id: "PAY-61003", holder_id: "chioma", channel: "web", merchant_name: "Konga (online store)", location: "Online", terminal_bank: null, processor: "Card processor (simulated)", card_last4: "4421", amount: 32000, currency: "NGN", outcome: "successful", failure_detail: null, at: at(6 * 24) },
+    { id: "PAY-61004", holder_id: "emeka", channel: "POS", merchant_name: "Chicken Republic, Wuse", location: "Abuja", terminal_bank: "Sahel Trust Bank", processor: "Interswitch-style switch (simulated)", card_last4: "7710", amount: 7800, currency: "NGN", outcome: "successful", failure_detail: null, at: at(30) },
+  ];
+  for (const r of rows) await tx`insert into payments ${tx(r)}`;
+  await tx`insert into reversals (reference, payment_id, holder_id, amount, currency, status, automatic, requested_at, completed_at)
+    values ('REV-8001', 'PAY-61002', 'emeka', 40000, 'NGN', 'completed', true, ${at(3 * 24)}, ${at(2 * 24 + 2)})`;
 }

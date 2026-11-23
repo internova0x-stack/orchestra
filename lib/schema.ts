@@ -230,6 +230,37 @@ create table if not exists card_replacements (
 create sequence if not exists dispute_seq start 7001;
 create sequence if not exists replacement_seq start 3301;
 
+-- Use cases 12, 9 and 11: card, POS, ATM and web payments, their reversals and (later) their timelines.
+create table if not exists payments (
+  id text primary key,
+  holder_id text not null references businesses(id) on delete cascade,
+  channel text not null check (channel in ('card','POS','ATM','web')),
+  merchant_name text not null,
+  location text,
+  terminal_bank text,
+  processor text,
+  card_last4 text,
+  amount numeric(18,2) not null,
+  currency text not null,
+  outcome text not null check (outcome in ('successful','failed_debited','declined')),
+  failure_detail text,
+  at timestamptz not null
+);
+create table if not exists reversals (
+  reference text primary key,
+  payment_id text not null unique references payments(id) on delete cascade,
+  holder_id text not null references businesses(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete set null,
+  amount numeric(18,2) not null,
+  currency text not null,
+  status text not null check (status in ('in_progress','completed','requested','awaiting_approval')),
+  automatic boolean not null default false,
+  breach boolean not null default false,
+  requested_at timestamptz not null,
+  completed_at timestamptz
+);
+create sequence if not exists reversal_seq start 8101;
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -256,6 +287,8 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "reversals",
+  "payments",
   "disputes",
   "card_replacements",
   "transactions",

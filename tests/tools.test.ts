@@ -601,3 +601,36 @@ test("switches: an action switched off on the Rules screen is refused before it 
   assert.match(out.reason!, /switched off/);
   await sql!`update rules set value = 'on' where id = 'action_freeze_card'`;
 });
+
+// ---------------------------------------------------------------- use case 12: debited but no value
+
+test("planted 16: Chioma's POS payment, debited, no reversal after 72 hours: request one, breach logged", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session("chioma", MONDAY, true);
+  const found = (await call(s, "find_payments", { amount: 18750, channel: "POS" })).data as { payments: Record<string, string>[] };
+  assert.equal(found.payments[0].id, "PAY-61001");
+  assert.match(found.payments[0].outcome, /debited/);
+  const st = (await call(s, "get_reversal_status", { payment_id: "PAY-61001" })).data as Record<string, unknown>;
+  assert.equal(st.past_window, true);
+  await call(s, "request_reversal", { payment_id: "PAY-61001" });
+  await confirmPending(s);
+  const out = await call(s, "request_reversal", { payment_id: "PAY-61001" });
+  assert.equal(out.ok, true);
+  assert.equal(out.reference, "REV-8101");
+  assert.equal((out.data as { breach_logged: boolean }).breach_logged, true);
+  assert.equal((await call(s, "request_reversal", { payment_id: "PAY-61001" })).reference, "REV-8101", "once");
+});
+
+test("planted 17: Emeka's ATM withdrawal at another bank is already reversed", { skip }, async () => {
+  const s = await session("emeka", MONDAY, true);
+  const st = (await call(s, "get_reversal_status", { payment_id: "PAY-61002" })).data as { reversal: Record<string, string>; window: string };
+  assert.equal(st.reversal.status, "Reversed");
+  assert.equal(st.window, "48 hours");
+  assert.match((await call(s, "request_reversal", { payment_id: "PAY-61002" })).reason!, /already been reversed/);
+});
+
+test("reversal: never for a payment that succeeded, or for someone else's", { skip }, async () => {
+  const s = await session("chioma", MONDAY, true);
+  assert.match((await call(s, "request_reversal", { payment_id: "PAY-61003" })).reason!, /succeeded/);
+  assert.match((await call(s, "request_reversal", { payment_id: "PAY-61002" })).reason!, /No payment/);
+});

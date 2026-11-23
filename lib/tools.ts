@@ -17,6 +17,7 @@ import {
 import { sendOneTimeCode, sendResetLink, unlockAccount } from "./tools/access.ts";
 import { freezeCard, getCard, orderReplacement } from "./tools/cards.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
+import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
 import {
   AWAITING_CODE,
   AWAITING_IDENTITY,
@@ -125,6 +126,12 @@ const TRIGGERS = {
   formal_complaint: { urgency: "normal", label: "Formal complaint" },
   customer_asked_for_human: { urgency: "normal", label: "Customer asked for a human" },
   out_of_scope: { urgency: "normal", label: "Request outside what Alexis covers" },
+  reversal_past_window: { urgency: "high", label: "Failed payment not reversed within its window" },
+  reversal_not_arrived: { urgency: "high", label: "A requested reversal hasn't arrived" },
+  dispute_over_cap: { urgency: "normal", label: "Dispute above the cap, past the window or over the limit" },
+  card_problem: { urgency: "normal", label: "Card problem Alexis can't fix (address, use after loss, freeze failed)" },
+  account_takeover_suspected: { urgency: "urgent", label: "Several fraudulent transactions: possible account takeover" },
+  contact_change_requested: { urgency: "normal", label: "Customer wants contact details changed" },
 } as const;
 
 type Trigger = keyof typeof TRIGGERS;
@@ -815,7 +822,8 @@ const getFees = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHuman, getTransferStatus, generateProofOfPayment, findIncomingPayment, getAccountRestrictions, initiateRecall, getKycStatus, getBalance, getFees,
   sendOneTimeCode, sendResetLink, unlockAccount,
-  getCard, freezeCard, orderReplacement, listTransactions, openDispute];
+  getCard, freezeCard, orderReplacement, listTransactions, openDispute,
+  findPayments, getReversalStatus, requestReversal];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

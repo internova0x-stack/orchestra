@@ -129,6 +129,14 @@ export const RULE_SET: RuleSeed[] = [
   l("replacement_fee_gbp", "Cards", "Replacement card fee (GBP)", "5", "£"),
   l("replacement_fee_ngn", "Cards", "Replacement card fee (NGN)", "1000", "₦"),
 
+  // Failed payments and reversals (Nigeria, from the Guardrails' market pack; to verify against current CBN rules)
+  a("reversal_atm_own", "Reversals", "Failed ATM withdrawal at the customer's own bank", "Reversal should be instant; if that fails, a manual reversal within 24 hours", "sample"),
+  a("reversal_atm_other", "Reversals", "Failed ATM withdrawal at another bank's machine", "Refund within 48 hours", "sample"),
+  a("reversal_pos_web", "Reversals", "Failed or disputed POS or web payment", "Resolved within 72 hours", "sample"),
+  l("reversal_window_atm_own", "Reversals", "Own-bank ATM reversal due within", "24", "hours"),
+  l("reversal_window_atm_other", "Reversals", "Other-bank ATM reversal due within", "48", "hours"),
+  l("reversal_window_pos_web", "Reversals", "POS and web reversal due within", "72", "hours"),
+
   // Limits and approvals
   l("action_initiate_recall", "Limits and approvals", "Recalls switched on", "on"),
   l("action_generate_proof_of_payment", "Limits and approvals", "Proof of payment switched on", "on"),
@@ -143,6 +151,10 @@ export const RULE_SET: RuleSeed[] = [
   l("dispute_cap_ngn", "Limits and approvals", "Dispute cap before human approval (NGN)", "250000", "₦"),
   l("dispute_limit", "Limits and approvals", "Disputes per customer before a human reviews", "3", "per 90 days"),
   l("replacement_limit", "Limits and approvals", "Replacement cards per customer", "2", "per 12 months"),
+  l("reversal_cap_usd", "Limits and approvals", "Reversal cap before human approval (USD)", "1000", "$"),
+  l("reversal_cap_gbp", "Limits and approvals", "Reversal cap before human approval (GBP)", "800", "£"),
+  l("reversal_cap_ngn", "Limits and approvals", "Reversal cap before human approval (NGN)", "500000", "₦"),
+  l("action_request_reversal", "Limits and approvals", "Reversal requests switched on", "on"),
   l("action_freeze_card", "Limits and approvals", "Card freezing switched on", "on"),
   l("action_order_replacement", "Limits and approvals", "Replacement cards switched on", "on"),
   l("action_open_dispute", "Limits and approvals", "Disputes switched on", "on"),
