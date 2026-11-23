@@ -11,6 +11,8 @@ import { checkIdentity } from "../lib/identity.ts";
 import { Rules } from "../lib/rules.ts";
 import { fromLocal } from "../lib/time.ts";
 import { categoryOf, statusOf, urgencyOf, listCases, caseCounts, transcriptOf } from "../lib/cases.ts";
+import { buildDashboard, timeRuleId } from "../lib/dashboard.ts";
+import { RULE_SET } from "../lib/ruleSet.ts";
 import { appendTurn, forModel, takeOver, handBack, staffReply, customerView } from "../lib/takeover.ts";
 import { runTurn } from "../lib/agent.ts";
 import { staffUser } from "../lib/staff.ts";
@@ -1038,4 +1040,25 @@ test("take over: Alexis pauses, the customer's messages wait for the team, and h
   assert.equal((await customerView(sql!, s.conv.id)).takenOverBy, null);
   const log = await sql!`select summary, staff from audit_log where conversation_id = ${s.conv.id} and staff is not null order by id`;
   assert.deepEqual(log.map((r) => r.summary), ["Ife Adeyemi (support agent) took over the conversation · Alexis paused", "Ife Adeyemi replied to the customer", "Ife Adeyemi handed the conversation back to Alexis"]);
+});
+
+
+// ---------------------------------------------------------------- hours-saved dashboard
+
+test("dashboard: every category has a handling time, and time saved follows the rules", { skip }, async () => {
+  const ids = new Set(RULE_SET.map((r) => r.id));
+  for (const c of ["Payouts", "Incoming payments", "Verification", "Balances", "Fees and limits", "Account access", "Cards", "Transactions and disputes", "Failed payments and reversals", "Payment tracing", "Loans", "Merchant payouts", "Airtime and bills", "USSD and agent banking", "Complaint", "Fraud and scams", "General question"]) {
+    assert.ok(ids.has(timeRuleId(c)), `no handling time for ${c}`);
+  }
+  await seed(sql!, MONDAY);
+  const rules = await Rules.load(sql!);
+  const row = (status: string, category: string, references: string[] = []) => ({ id: randomUUID(), customer: null, business: null, verified: true, category, status, urgency: null, references, takenOverBy: null, started: MONDAY.toISOString(), lastActivity: MONDAY.toISOString(), messages: 2, firstMessage: null }) as never;
+  const d = buildDashboard([row("Resolved by Alexis", "Payouts"), row("Resolved by Alexis", "Payouts"), row("Handed off", "Complaint", ["CMP-1"]), row("In progress", "Cards")], rules, MONDAY);
+  assert.equal(d.totals.minutesSaved, 12 + 12 + 5, "two payouts resolved (12 each) and one handoff summary (5)");
+  assert.equal(d.totals.costSaved, Math.round((29 / 60) * 15 * 100) / 100);
+  assert.equal(d.totals.resolutionRate, 67);
+  assert.equal(d.categories[0].category, "Payouts");
+  await sql!`update rules set value = '30' where id = 'time_payouts'`;
+  const again = buildDashboard([row("Resolved by Alexis", "Payouts")], await Rules.load(sql!), MONDAY);
+  assert.equal(again.totals.minutesSaved, 30, "a Rules screen edit changes the dashboard");
 });

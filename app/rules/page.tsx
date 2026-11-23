@@ -106,6 +106,12 @@ export default function RulesPage() {
     }
   }, []);
 
+  // A link can open a category (the Dashboard links to Time saved).
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("category");
+    if (c) setCategory(c);
+  }, []);
+
   useEffect(() => {
     load();
     window.addEventListener(RESET_EVENT, load);

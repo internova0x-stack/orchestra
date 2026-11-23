@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 // The bank's support console. The customer side is a separate app at /customer, without this frame.
 const TABS = [
   { href: "/", label: "Inbox" },
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/staff", label: "Staff queue" },
   { href: "/rules", label: "Rules" },
 ];

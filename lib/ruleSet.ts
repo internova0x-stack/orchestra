@@ -212,6 +212,28 @@ export const RULE_SET: RuleSeed[] = [
   l("business_days", "Response targets", "Business days", "Monday to Friday"),
   l("business_open", "Response targets", "Business hours start", "09:00"),
   l("business_close", "Response targets", "Business hours end", "17:00"),
+
+  // Time saved (sample values for the hours-saved dashboard, Nov 23): how long a person takes to handle
+  // each kind of conversation, and what a handoff summary saves when the case still goes to a person.
+  l("time_payouts", "Time saved", "Staff handling time: payouts", "12", "minutes"),
+  l("time_incoming_payments", "Time saved", "Staff handling time: incoming payments", "15", "minutes"),
+  l("time_verification", "Time saved", "Staff handling time: verification", "10", "minutes"),
+  l("time_balances", "Time saved", "Staff handling time: balances", "4", "minutes"),
+  l("time_fees_and_limits", "Time saved", "Staff handling time: fees and limits", "8", "minutes"),
+  l("time_account_access", "Time saved", "Staff handling time: account access", "10", "minutes"),
+  l("time_cards", "Time saved", "Staff handling time: cards", "10", "minutes"),
+  l("time_transactions_and_disputes", "Time saved", "Staff handling time: transactions and disputes", "15", "minutes"),
+  l("time_failed_payments_and_reversals", "Time saved", "Staff handling time: failed payments and reversals", "15", "minutes"),
+  l("time_payment_tracing", "Time saved", "Staff handling time: payment tracing", "20", "minutes"),
+  l("time_loans", "Time saved", "Staff handling time: loans", "12", "minutes"),
+  l("time_merchant_payouts", "Time saved", "Staff handling time: merchant payouts", "15", "minutes"),
+  l("time_airtime_and_bills", "Time saved", "Staff handling time: airtime and bills", "8", "minutes"),
+  l("time_ussd_and_agent_banking", "Time saved", "Staff handling time: USSD and agent banking", "12", "minutes"),
+  l("time_complaint", "Time saved", "Staff handling time: complaints", "20", "minutes"),
+  l("time_fraud_and_scams", "Time saved", "Staff handling time: fraud and scams", "20", "minutes"),
+  l("time_general_question", "Time saved", "Staff handling time: general questions", "6", "minutes"),
+  l("time_handoff_summary", "Time saved", "Time a handoff summary saves on a case a person still handles", "5", "minutes"),
+  l("time_staff_cost", "Time saved", "Cost of an hour of a support agent's time", "15", "$"),
 ];
 
 /** The Guardrails' fixed rules: shown locked on the Rules screen, enforced in code, never editable. */

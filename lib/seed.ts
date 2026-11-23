@@ -294,7 +294,7 @@ const ready = globalThis as unknown as { __orchestraReady?: Promise<void> };
  * Postgres advisory lock stops two first visitors from seeding at the same time.
  */
 /** A fingerprint of the schema: the database records the one it has, so unchanged schemas aren't re-run. */
-export const SCHEMA_VERSION = createHash("sha256").update(SCHEMA).digest("hex").slice(0, 16);
+export const SCHEMA_VERSION = createHash("sha256").update(SCHEMA).update(JSON.stringify(RULE_SET.map((r) => r.id))).digest("hex").slice(0, 16);
 
 /**
  * Make sure the tables exist and the sample bank is loaded, once per server process. Serverless hosts
@@ -320,6 +320,15 @@ export function ensureSeeded(sql: Sql): Promise<void> {
         await tx.unsafe(SCHEMA);
         const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from rules`;
         if (n === 0) await seedInto(tx, new Date());
+        else {
+          // Rules added in a new version reach a database seeded before them; edited values are kept.
+          let sort = 0;
+          for (const r of RULE_SET) {
+            await tx`insert into rules (id, category, name, kind, origin, value, unit, source_url, sort)
+              values (${r.id}, ${r.category}, ${r.name}, ${r.kind}, ${r.origin}, ${r.value}, ${r.unit ?? null}, ${r.source_url ?? null}, ${sort++})
+              on conflict (id) do nothing`;
+          }
+        }
         await tx`insert into app_meta (key, value) values ('schema_version', ${SCHEMA_VERSION})
           on conflict (key) do update set value = excluded.value`;
       });

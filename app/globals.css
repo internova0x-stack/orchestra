@@ -361,6 +361,18 @@ a { color: var(--brand-accent); }
   .phone { width: 100%; height: calc(100dvh - 32px); border-radius: 0; border: 0; }
 }
 
+/* ---------- Dashboard: hours saved ---------- */
+.dash { display: grid; gap: var(--space-4); align-content: start; height: 100%; overflow-y: auto; }
+.dash-note { margin: 0; }
+.dash-note a { color: var(--brand-accent); }
+.dash-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.table-wrap { overflow-x: auto; }
+.dash-table { width: 100%; border-collapse: collapse; font-size: var(--size-sm); font-variant-numeric: tabular-nums; }
+.dash-table th, .dash-table td { text-align: left; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.dash-table thead th { color: var(--text-2); font-weight: 600; font-size: var(--size-xs); }
+.dash-table tbody th { font-weight: 500; }
+@media (max-width: 1099px) { .dash-grid { grid-template-columns: 1fr; } }
+
 /* ---------- Sign-in (the shared password) ---------- */
 .login-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--surface-page); }
 .login-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
