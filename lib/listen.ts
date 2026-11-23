@@ -76,12 +76,15 @@ export const claudeClassifier: Classifier = async (text) => {
 const REF = /\b(PO-\d{4,6}|PAY-\d{4,6}|TX-\d{4,6}|BP-\d{4,6}|PY-\d{4,6}|LN-\d{4,6}|IN-\d{4,6}|ESC-\d{3,6}|CMP-\d{3,6}|DSP-\d{3,6}|REV-\d{3,6}|REC-\d{3,6})\b/gi;
 const FRAUD = /\b(not me|wasn't me|didn't make|didn't authori[sz]e|fraud|scam|stolen|hacked|someone (else )?(logged|used|took)|unknown (payment|transaction))\b/i;
 
+/** A reference's prefix says what it's about, more reliably than the words around it. */
+const BY_REF: Record<string, string> = { PO: "Payouts", PAY: "Failed payments and reversals", TX: "Transactions and disputes", BP: "Airtime and bills", PY: "Merchant payouts", LN: "Loans", IN: "Incoming payments" };
+
 /** Without the AI service: words and references only, so listening never stops. */
 export function ruleClassify(text: string): AnalysisOut {
   const refs = [...new Set((text.match(REF) ?? []).map((r) => r.toUpperCase()))];
   const fraud = FRAUD.test(text);
   return {
-    category: fraud ? "Fraud and scams" : categoryOf([], [], text),
+    category: fraud ? "Fraud and scams" : (refs.map((r) => BY_REF[r.split("-")[0]]).find(Boolean) ?? categoryOf([], [], text)),
     urgency: fraud ? "urgent" : /\b(urgent|asap|immediately|still (hasn't|not)|days? (late|ago))\b/i.test(text) ? "high" : "normal",
     summary: text.replace(/\s+/g, " ").slice(0, 140),
     references: refs,

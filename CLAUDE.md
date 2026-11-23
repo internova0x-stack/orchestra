@@ -65,6 +65,9 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
 - Listen mode: `lib/listen.ts` (`ingestInteraction` from `/api/v1/interactions` and the CRM connectors; conversations
   with `origin = 'listen'`, channel 'helpdesk', `listen` jsonb with the match and analysis; never replies or acts).
+- CRM connectors: `lib/crm/` (contract, the four connectors to published APIs, the sandbox stand-in, `service.ts`:
+  settings in `crm_connectors`, credentials only in env vars, `handleCrmWebhook` → listen mode → write-back);
+  webhook `/api/v1/connectors/{kind}/webhook`; managed on the API page (`/api/admin/connectors`).
 - Proactive failure messages: `lib/proactive.ts` (`notifyFailure` from the Events API's failure types; `proactive_*`
   rules; conversations with `origin = 'alexis'` and `proactive`; `deliverDue` for quiet hours). CRM team replies:
   `lib/api/teamReply.ts`. Billing: `lib/billing.ts` + `/billing` (`billing_*`, `ai_price_*` rules; `ai_usage` from

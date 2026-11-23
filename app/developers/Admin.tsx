@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Connectors from "./Connectors";
 
 // Managing the Orchestra API from the console: API keys for systems that call Orchestra, and webhook
 // endpoints Orchestra posts to. Supervisors only (simulated sign-in, as on the other screens).
@@ -111,6 +112,10 @@ export default function ApiAdmin() {
           </table>
         </div>
       )}
+
+      <h3 className="dev-h">CRM and helpdesk connectors</h3>
+      <p className="label">Zendesk, Freshdesk, Salesforce Service Cloud and HubSpot Service Hub. When a ticket arrives or the customer replies, the helpdesk calls Orchestra; Orchestra reads the ticket, categorises, routes and looks it up (listen mode) and writes the result into the ticket. Try each one in the sandbox, a stand-in for the product, before connecting the bank&apos;s account.</p>
+      <Connectors staffId={staffId} supervisor={supervisor} />
 
       <h3 className="dev-h">Webhooks</h3>
       <p className="label">Where Orchestra posts what happened: a CRM or helpdesk, or the channel that delivers replies. Each delivery is signed with the endpoint&apos;s secret.</p>

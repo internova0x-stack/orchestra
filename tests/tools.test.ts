@@ -1518,7 +1518,7 @@ test("Orchestra API: the OpenAPI file's paths and webhook events match the route
   const yaml = fs.readFileSync(new URL("../public/openapi/orchestra-api-v1.yaml", import.meta.url), "utf8");
   const [paths, hooks] = yaml.split(/^webhooks:$/m);
   const listed = [...paths.matchAll(/^  (\/[^:]+):$/gm)].map((m) => m[1]);
-  const route = (p: string) => new URL(`../app/api/v1${p.replace("{conversationId}", "[id]")}/route.ts`, import.meta.url);
+  const route = (p: string) => new URL(`../app/api/v1${p.replace("{conversationId}", "[id]").replace("{kind}", "[kind]")}/route.ts`, import.meta.url);
   for (const p of listed) assert.ok(fs.existsSync(route(p)), `a route serves ${p}`);
   const events = [...hooks.matchAll(/^  ([a-z_]+\.[a-z_]+):$/gm)].map((m) => m[1]).sort();
   assert.deepEqual(events, [...WEBHOOK_EVENTS].sort(), "every event Orchestra sends is documented");
@@ -1798,4 +1798,53 @@ test("listen mode: a helpdesk ticket is matched, categorised, routed and looked 
   await sql!`update rules set value = 'off' where id = 'listen_enabled'`;
   assert.equal((await ingestInteraction(sql!, ticket, { classify }) as { error: string }).error, "switched_off");
   await sql!`update rules set value = 'on' where id = 'listen_enabled'`;
+});
+
+// ---------------------------------------------------------------- CRM connectors (Nov 23)
+
+test("CRM connectors: each of the four reads its ticket, and writes tags, priority, team and a note back in its own API's shape", { skip }, async () => {
+  const { handleCrmWebhook, saveConnector } = await import("../lib/crm/service.ts");
+  const { SAMPLE_WEBHOOK } = await import("../lib/crm/sandbox.ts");
+  const { ruleClassify } = await import("../lib/listen.ts");
+  await seed(sql!, MONDAY);
+  assert.equal((await handleCrmWebhook(sql!, "zendesk", SAMPLE_WEBHOOK.zendesk) as { error: string }).error, "not_connected", "off until switched on");
+  assert.deepEqual(await saveConnector(sql!, "zendesk", { mode: "live" }, "Bayo"), { ok: false, error: "Set ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN in Vercel's environment variables first." });
+  const classify = async (t: string) => ({ analysis: ruleClassify(t) });
+  for (const kind of ["zendesk", "freshdesk", "salesforce", "hubspot"] as const) {
+    await saveConnector(sql!, kind, { mode: "sandbox", groups: { "Payments team": kind === "salesforce" ? "00G000000PAY" : "360001", "Fraud team": "360009" } }, "Bayo");
+    const out = await handleCrmWebhook(sql!, kind, SAMPLE_WEBHOOK[kind], { classify, draft: false, consoleBase: "https://orchestra.example" });
+    assert.ok(out.ok && out.analysed && out.written_back, `${kind}: ${JSON.stringify(out)}`);
+    const writes = await sql!<{ method: string; path: string; body: Record<string, unknown> }[]>`select method, path, body from crm_sandbox_calls where kind = ${kind} order by id`;
+    const all = JSON.stringify(writes);
+    assert.match(all, /Orchestra \(AI\)/, `${kind}: an internal note`);
+    assert.match(all, /not identity-verified/, `${kind}: the note says the match isn't a verification`);
+    if (kind === "zendesk") {
+      const put = writes.find((w) => w.method === "PUT")!;
+      assert.equal(put.path, "/api/v2/tickets/1001.json");
+      const t = put.body.ticket as { additional_tags: string[]; priority: string; group_id: number; comment: { public: boolean } };
+      assert.ok(t.additional_tags.includes("orc_payouts"));
+      assert.deepEqual([t.priority, t.group_id, t.comment.public], ["high", 360001, false]);
+    }
+    if (kind === "freshdesk") {
+      const put = writes.find((w) => w.method === "PUT")!;
+      assert.deepEqual([put.path, (put.body as { priority: number }).priority, (put.body as { group_id: number }).group_id], ["/api/v2/tickets/2001", 4, 360009], "a fraud report: urgent, Fraud team");
+      assert.ok(writes.some((w) => w.path === "/api/v2/tickets/2001/notes" && (w.body as { private: boolean }).private === true));
+    }
+    if (kind === "salesforce") {
+      assert.ok(writes.some((w) => w.method === "PATCH" && /\/sobjects\/Case\/5003000000ABCdE$/.test(w.path)));
+      assert.ok(writes.some((w) => w.path.endsWith("/sobjects/CaseComment") && (w.body as { IsPublished: boolean }).IsPublished === false));
+    }
+    if (kind === "hubspot") {
+      assert.ok(writes.some((w) => w.method === "PATCH" && w.path === "/crm/v3/objects/tickets/8001"));
+      assert.ok(writes.some((w) => w.path === "/crm/v3/objects/notes" && JSON.stringify(w.body).includes('"associationTypeId":228')));
+    }
+    const [c] = await sql!`select listen from conversations where id = ${out.ok ? out.conversation_id : ""}`;
+    assert.equal(c.listen.writeback.ok, true);
+  }
+  // The ticket ids each product's webhook sends.
+  const { zendesk, freshdesk, salesforce, hubspot } = await import("../lib/crm/connectors.ts");
+  assert.equal(zendesk({ subdomain: "x", email: "e", token: "t" }).ticketIdFrom({ ticket_id: "77" }), "77");
+  assert.equal(freshdesk({ domain: "x", apiKey: "k" }).ticketIdFrom({ freshdesk_webhook: { ticket_id: 12 } }), "12");
+  assert.equal(salesforce({ instanceUrl: "https://x", accessToken: "t" }).ticketIdFrom({ caseId: "500ABC" }), "500ABC");
+  assert.equal(hubspot({ accessToken: "t" }).ticketIdFrom([{ objectId: 9 }]), "9");
 });

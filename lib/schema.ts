@@ -255,6 +255,24 @@ alter table conversations add column if not exists proactive jsonb;
 -- Listen mode (Nov 23): a helpdesk ticket or mailbox thread Orchestra listens to (lib/listen.ts).
 alter table conversations add column if not exists listen jsonb;
 create index if not exists conversations_listen on conversations ((listen->>'source'), (listen->>'external_id'));
+-- CRM connectors (Nov 23): settings per product (credentials are environment variables) and the sandbox's record of writes.
+create table if not exists crm_connectors (
+  kind text primary key,
+  mode text not null default 'off' check (mode in ('off','sandbox','live')),
+  write_back boolean not null default true,
+  data_entry boolean not null default false,
+  groups jsonb not null default '{}',
+  updated_by text,
+  updated_at timestamptz
+);
+create table if not exists crm_sandbox_calls (
+  id bigserial primary key,
+  kind text not null,
+  method text not null,
+  path text not null,
+  body jsonb,
+  at timestamptz not null default now()
+);
 
 -- Smart routing (Nov 23): the team a handoff is routed to, who picked it up, and when it went overdue unattended.
 alter table escalations add column if not exists team text;
@@ -570,6 +588,7 @@ create table if not exists rule_overrides (
 
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
+  "crm_sandbox_calls",
   "conversation_reviews",
   "rule_overrides",
   "audit_log",

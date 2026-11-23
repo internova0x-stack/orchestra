@@ -117,6 +117,23 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## CRM connectors (Nov 23, Tomi: "can we have 4 different connectors?")
+
+One interface (`lib/crm/contract.ts`) and four connectors (`lib/crm/connectors.ts`), each written to its product's
+published REST API: Zendesk (Support API v2, API token), Freshdesk (API v2, API key), Salesforce Service Cloud
+(REST v60, connected app's client credentials), HubSpot Service Hub (CRM v3, private app token). Each reads a ticket
+and its thread, writes back tags, priority, the team's group or queue and an internal note, posts a reply, and opens a
+ticket. The helpdesk calls `POST /api/v1/connectors/{kind}/webhook` (an Orchestra API key; `?key=` where a header
+can't be set) on ticket created or customer replied, with the ticket id in its own format; Orchestra reads the ticket,
+runs listen mode and writes the result back (`lib/crm/service.ts`). API page, "CRM and helpdesk connectors": each one
+Off, Sandbox or Live (Live needs the credentials in Vercel), write-back on or off, Orchestra's teams mapped to the
+product's group, queue or owner ids, setup instructions with the webhook address and body, and in the sandbox a
+"Send the test ticket" button with a list of exactly what Orchestra wrote. The sandbox (`lib/crm/sandbox.ts`) is a
+stand-in for each product's API inside Orchestra, used by the tests too. Not yet checked against a real account of
+any of the four: field names and limits should be confirmed in each product's current API reference before going
+live. HubSpot's replies to customers go through its inbox, which the connector doesn't send to: a reply is recorded
+on the ticket as a note to send. One new test covers all four.
+
 ## Listen mode (Nov 23, Tomi: "build the listen mode first")
 
 Orchestra listens to tickets and emails already in the bank's own helpdesk (`lib/listen.ts`,

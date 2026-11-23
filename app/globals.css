@@ -628,3 +628,5 @@ a { color: var(--brand-accent); }
 .listen-panel { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--edge); font-size: var(--size-sm); }
 .listen-draft { padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--edge-strong); }
 .listen-draft p { margin: var(--space-2) 0 0; white-space: pre-wrap; }
+.connector { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--edge-strong); border-radius: var(--radius-md); }
+.connector pre.dev-code { white-space: pre-wrap; word-break: break-word; }
