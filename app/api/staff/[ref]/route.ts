@@ -28,14 +28,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ref: st
     ? await sql`select id, kind, summary, approver, created_at from audit_log where conversation_id = ${c.conversation_id} order by id`
     : [];
   const { messages: _m, ...rest } = c;
-  return Response.json({ case: rest, transcript, activity }, { headers: { "Cache-Control": "no-store" } });
+  const claim = c.action?.type === "claim" ? (await sql`select reference, to_party, draft, deadline, status, sent_at from claim_drafts where reference = ${c.action.reference}`)[0] ?? null : null;
+  return Response.json({ case: rest, transcript, activity, claim }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /** Approve or decline a prepared action, or mark the case resolved. */
 export async function POST(req: Request, { params }: { params: Promise<{ ref: string }> }) {
   const { ref } = await params;
   const body = (await req.json().catch(() => null)) as { decision?: Decision; note?: string } | null;
-  if (!body?.decision || !["approve", "decline", "resolve"].includes(body.decision)) return Response.json({ error: "bad_request" }, { status: 400 });
+  if (!body?.decision || !["approve", "decline", "resolve", "claim_sent"].includes(body.decision)) return Response.json({ error: "bad_request" }, { status: 400 });
   if (!process.env.DATABASE_URL) return Response.json({ error: "not_configured" }, { status: 503 });
   const out = await decide(db(), ref.toUpperCase(), body.decision, body.note ?? null);
   return Response.json(out, { status: out.ok ? 200 : out.error === "not_found" ? 404 : 409 });

@@ -210,7 +210,7 @@ export async function seed(sql: Sql, now = new Date()) {
 async function seedInto(tx: any, now: Date) {
   {
     await tx.unsafe(`truncate ${TABLES_TO_WIPE.join(", ")} restart identity cascade`);
-    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101; alter sequence waiver_seq restart with 9201; alter sequence deferral_seq restart with 4401;`);
+    await tx.unsafe(`alter sequence escalation_seq restart with 1042; alter sequence complaint_seq restart with 211; alter sequence proof_seq restart with 4101; alter sequence recall_seq restart with 5001; alter sequence dispute_seq restart with 7001; alter sequence replacement_seq restart with 3301; alter sequence reversal_seq restart with 8101; alter sequence waiver_seq restart with 9201; alter sequence deferral_seq restart with 4401; alter sequence claim_seq restart with 6601;`);
 
     for (const b of BUSINESSES) {
       await tx`insert into businesses (id, name, country, registration_number, verification_status, verification_reason, verification_missing, verification_submitted_at)

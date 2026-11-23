@@ -785,3 +785,31 @@ test("use case 17: no proactive message to a customer on a review hold", { skip 
   assert.equal((await sql!`select count(*)::int as n from outbox where user_id = 'lena'`)[0].n, 0);
   void watch;
 });
+
+// ---------------------------------------------------------------- use case 18: claim drafting
+
+test("use case 18: a chargeback pack for Chioma's disputed charge, with its deadline, in the staff queue", { skip }, async () => {
+  const { decide } = await import("../lib/staff.ts");
+  await seed(sql!, MONDAY);
+  const s = await session("chioma", MONDAY);
+  await call(s, "open_dispute", { transaction_id: "TX-90012", reason: "not_mine" });
+  await confirmPending(s);
+  await call(s, "open_dispute", { transaction_id: "TX-90012", reason: "not_mine" });
+  const out = await call(s, "draft_claim_pack", { kind: "chargeback", reference: "DSP-7001" });
+  assert.equal(out.ok, true);
+  const [claim] = await sql!`select reference, status, draft, escalation_reference from claim_drafts`;
+  assert.equal(claim.status, "draft", "never sent by Alexis");
+  assert.ok(claim.draft.facts.some(([k]: [string]) => k === "Filing deadline"));
+  assert.ok(claim.draft.missing.length > 0, "missing items are marked, not guessed");
+  assert.equal((await call(s, "draft_claim_pack", { kind: "chargeback", reference: "DSP-7001" })).ok, false, "once");
+  const sent = await decide(sql!, claim.escalation_reference, "claim_sent", null);
+  assert.equal(sent.ok, true);
+  assert.equal((await sql!`select status from claim_drafts`)[0].status, "sent");
+});
+
+test("use case 18: a conflicting timeline is marked uncertain in a settlement query", { skip }, async () => {
+  const s = await session("grace", MONDAY);
+  await call(s, "draft_claim_pack", { kind: "settlement_query", reference: "PAY-62005" });
+  const [claim] = await sql!`select draft from claim_drafts where subject = 'PAY-62005'`;
+  assert.ok(claim.draft.missing.some((m: string) => /UNCERTAIN/.test(m)));
+});

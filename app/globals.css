@@ -290,6 +290,9 @@ a { color: var(--brand-accent); }
 .summary dd { margin: 0; }
 .transcript p { margin: 0 0 var(--space-3); white-space: pre-wrap; }
 .case-error { width: 100%; color: var(--stop); font-size: var(--size-sm); }
+.claim-missing { border: 1px solid var(--wait); background: var(--wait-bg); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); }
+.claim-missing ul, .claim-list { margin: var(--space-2) 0 0; padding-left: var(--space-6); }
+.claim-h { font-size: var(--size-sm); margin: var(--space-6) 0 var(--space-2); color: var(--text-2); }
 .case-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border); }
 .note { flex: 1; min-width: 200px; min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--border-strong); }
 @media (max-width: 899px) {

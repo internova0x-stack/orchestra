@@ -366,6 +366,24 @@ create table if not exists outbox (
   sent_at timestamptz not null default now()
 );
 
+-- Use case 18: claim and evidence packs for another bank, a processor or a card scheme.
+create table if not exists claim_drafts (
+  reference text primary key,
+  kind text not null check (kind in ('recall','chargeback','settlement_query')),
+  subject text not null,
+  holder_id text not null references businesses(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete set null,
+  escalation_reference text,
+  to_party text not null,
+  draft jsonb not null,
+  deadline timestamptz,
+  status text not null default 'draft' check (status in ('draft','sent')),
+  sent_by text,
+  sent_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create sequence if not exists claim_seq start 6601;
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -392,6 +410,7 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "claim_drafts",
   "outbox",
   "case_watches",
   "deferral_requests",

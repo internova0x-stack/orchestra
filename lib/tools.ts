@@ -17,6 +17,7 @@ import {
 import { sendOneTimeCode, sendResetLink, unlockAccount } from "./tools/access.ts";
 import { watch } from "./updates.ts";
 import { watchCase } from "./tools/watching.ts";
+import { draftClaimPack } from "./tools/claims.ts";
 import { freezeCard, getCard, orderReplacement } from "./tools/cards.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
 import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
@@ -139,6 +140,7 @@ const TRIGGERS = {
   contact_change_requested: { urgency: "normal", label: "Customer wants contact details changed" },
   loan_hardship: { urgency: "normal", label: "Loan payment difficulty or deferral request" },
   merchant_payout_problem: { urgency: "high", label: "Merchant payout rejected, unreconciled or held" },
+  claim_draft: { urgency: "normal", label: "Claim pack ready for review" },
 } as const;
 
 type Trigger = keyof typeof TRIGGERS;
@@ -838,7 +840,7 @@ const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHu
   getCard, freezeCard, orderReplacement, listTransactions, openDispute,
   findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits,
   getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds,
-  watchCase];
+  watchCase, draftClaimPack];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

@@ -5,13 +5,13 @@ import type { Sql } from "./db.ts";
 
 export const APPROVER = "Supervisor";
 
-export type Decision = "approve" | "decline" | "resolve";
+export type Decision = "approve" | "decline" | "resolve" | "claim_sent";
 
 interface CaseRow {
   reference: string;
   conversation_id: string | null;
   status: string;
-  action: { type: "recall"; reference: string; payout: string; amount: string } | null;
+  action: { type: "recall" | "claim"; reference: string; payout?: string; amount?: string } | null;
 }
 
 export async function decide(sql: Sql, reference: string, decision: Decision, note: string | null) {
@@ -28,6 +28,17 @@ export async function decide(sql: Sql, reference: string, decision: Decision, no
       const message = `The team marked ${reference} resolved${cleanNote ? `: ${cleanNote}` : "."}`;
       await tx`insert into audit_log (conversation_id, kind, tool, summary, result, approver)
         values (${c.conversation_id}, 'approval', 'staff', ${`resolved by ${APPROVER} · ${reference}`}, ${tx.json({ message })}, ${APPROVER})`;
+      return { ok: true as const, status: "resolved" };
+    }
+
+    if (decision === "claim_sent") {
+      if (c.action?.type !== "claim") return { ok: false as const, error: "no_claim" };
+      const sent = await tx`update claim_drafts set status = 'sent', sent_by = ${APPROVER}, sent_at = ${now} where reference = ${c.action.reference} and status = 'draft' returning reference, to_party`;
+      if (!sent.length) return { ok: false as const, error: "already_decided" };
+      await tx`update escalations set status = 'resolved', resolution = ${cleanNote ?? "Claim sent"}, decided_at = ${now} where reference = ${reference}`;
+      const message = `The team sent claim ${c.action.reference} to ${String(sent[0].to_party).split(",")[0]}. We'll update you when they reply.`;
+      await tx`insert into audit_log (conversation_id, kind, tool, summary, result, approver)
+        values (${c.conversation_id}, 'approval', 'staff', ${`claim ${c.action.reference} sent by ${APPROVER}`}, ${tx.json({ message })}, ${APPROVER})`;
       return { ok: true as const, status: "resolved" };
     }
 

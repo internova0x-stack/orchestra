@@ -13,10 +13,15 @@ interface Summary {
   customer: { business?: string; user?: string; role?: string; identity: string };
   request: string; checked: string; did: string; why: string; needed: string; told: string; flags: string[];
 }
+interface ClaimDraft {
+  reference: string; to_party: string; status: string; deadline: string | null; sent_at: string | null;
+  draft: { to: string; subject: string; facts: [string, string][]; timeline: { stage: string; status: string; time: string; reported_by: string }[]; evidence: string[]; missing: string[]; request: string };
+}
 interface CaseDetail {
   case: CaseItem & { summary: Summary; respond_by: string | null; resolution: string | null; decided_at: string | null };
   transcript: { who: string; text: string }[];
   activity: { id: number; kind: string; summary: string; created_at: string }[];
+  claim: ClaimDraft | null;
 }
 
 const STATUS_WORD: Record<string, string> = { open: "Open", approved: "Approved", declined: "Declined", resolved: "Resolved" };
@@ -33,11 +38,11 @@ export default function StaffPage() {
   const [problem, setProblem] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<CaseDetail | null>(null);
-  const [arming, setArming] = useState<"approve" | "decline" | null>(null);
+  const [arming, setArming] = useState<"approve" | "decline" | "claim_sent" | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [actError, setActError] = useState<string | null>(null);
-  const [show, setShow] = useState<"summary" | "transcript" | "activity">("summary");
+  const [show, setShow] = useState<"summary" | "claim" | "transcript" | "activity">("summary");
 
   const load = useCallback(async () => {
     try {
@@ -69,7 +74,7 @@ export default function StaffPage() {
     return () => { clearInterval(t); window.removeEventListener(RESET_EVENT, onReset); };
   }, [load]);
 
-  async function act(decision: "approve" | "decline" | "resolve") {
+  async function act(decision: "approve" | "decline" | "resolve" | "claim_sent") {
     if (!selected) return;
     setBusy(true);
     setActError(null);
@@ -132,9 +137,9 @@ export default function StaffPage() {
               </span>
             </div>
             <div className="case-tabs">
-              {(["summary", "transcript", "activity"] as const).map((v) => (
+              {(["summary", ...(detail.claim ? (["claim"] as const) : []), "transcript", "activity"] as const).map((v) => (
                 <button key={v} className="tab" aria-current={show === v ? "page" : undefined} onClick={() => setShow(v)}>
-                  {v === "summary" ? "Handoff summary" : v === "transcript" ? "Transcript" : "Activity log"}
+                  {v === "summary" ? "Handoff summary" : v === "claim" ? "Claim draft" : v === "transcript" ? "Transcript" : "Activity log"}
                 </button>
               ))}
             </div>
@@ -154,6 +159,31 @@ export default function StaffPage() {
                   {c.action && <div><dt>Prepared action</dt><dd>Recall <span className="ref">{c.action.reference}</span> on <span className="ref">{c.action.payout}</span>, {c.action.amount}</dd></div>}
                   {c.resolution && <div><dt>Note</dt><dd>{c.resolution}</dd></div>}
                 </dl>
+              )}
+              {show === "claim" && detail.claim && (
+                <div className="claim">
+                  <p className="label">Draft {detail.claim.reference} · {detail.claim.status === "sent" ? `sent ${new Date(detail.claim.sent_at!).toLocaleString("en-GB")}` : "not sent: review and edit before sending from your usual channel"}{detail.claim.deadline ? ` · filing deadline ${new Date(detail.claim.deadline).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}` : ""}</p>
+                  {detail.claim.draft.missing.length > 0 && (
+                    <div className="claim-missing" role="note">
+                      <b>Missing or uncertain</b>
+                      <ul>{detail.claim.draft.missing.map((m) => <li key={m}>{m}</li>)}</ul>
+                    </div>
+                  )}
+                  <dl className="summary">
+                    <div><dt>To</dt><dd>{detail.claim.draft.to}</dd></div>
+                    <div><dt>Subject</dt><dd>{detail.claim.draft.subject}</dd></div>
+                    {detail.claim.draft.facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+                    <div><dt>Request</dt><dd>{detail.claim.draft.request}</dd></div>
+                  </dl>
+                  {detail.claim.draft.timeline.length > 0 && (
+                    <>
+                      <h3 className="claim-h">Timeline</h3>
+                      <ul className="claim-list">{detail.claim.draft.timeline.map((t, i) => <li key={i}>{t.time}: {t.stage}, {t.status} (reported by {t.reported_by})</li>)}</ul>
+                    </>
+                  )}
+                  <h3 className="claim-h">Evidence from the case</h3>
+                  <ul className="claim-list">{detail.claim.draft.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                </div>
               )}
               {show === "transcript" && (
                 <div className="transcript">
@@ -193,7 +223,14 @@ export default function StaffPage() {
                     <button className="btn" disabled={busy} onClick={() => setArming("decline")}>Decline</button>
                   )
                 )}
-                {!pendingRecall && <button className="btn" disabled={busy} onClick={() => act("resolve")}>Mark resolved</button>}
+                {c.action?.type === "claim" && (
+                  arming === "claim_sent" ? (
+                    <button className="btn btn-primary" disabled={busy} onClick={() => act("claim_sent")}>Confirm it was sent</button>
+                  ) : (
+                    <button className="btn btn-primary" disabled={busy} onClick={() => setArming("claim_sent")}>Mark claim as sent</button>
+                  )
+                )}
+                {!pendingRecall && c.action?.type !== "claim" && <button className="btn" disabled={busy} onClick={() => act("resolve")}>Mark resolved</button>}
                 {arming && <button className="btn" onClick={() => setArming(null)}>Cancel</button>}
               </div>
             )}
