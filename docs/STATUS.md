@@ -79,6 +79,21 @@ worked out from the data already stored: no new tables).
   limits and what's needed to move up where tiers are used; how verification works where they aren't.
   Upgrades and tier disputes go to a person. Figures are sample values until Nuvion supplies its own.
 
+## Orchestra API, step 2 of 2 (Nov 23)
+
+For systems that call Orchestra, under `/api/v1` with an API key (`lib/api/`; `public/openapi/orchestra-api-v1.yaml`):
+- **Channel API**: open a conversation (`verified_user_id` for a customer the bank's app signed in; channel, language,
+  external_ref), send the customer's message or their identity answers, Yes/Cancel or code, and get Alexis's reply with
+  any form under `needs`; read the conversation. Same turn, checks, take-over and audit log as the customer app.
+- **Events API**: recall, reversal, dispute and verification status changes, applied once per event id; Alexis's
+  proactive updates follow.
+- **Webhooks**: case.created, case.updated, conversation.taken_over / handed_back, conversation.reviewed,
+  message.created, customer.notified; signed (Orchestra-Signature, HMAC-SHA256), public https addresses only, sent
+  after the response, kept with their status, up to 5 attempts, retry and test from the console.
+- **Keys and endpoints**: the API page (supervisors only) creates and revokes keys (shown once, stored as a hash) and
+  adds or removes webhook endpoints (secret shown once). Configuration survives Reset demo.
+Checked by tests (keys, signatures, events once, signed-in conversation, docs in step) and a local end-to-end run.
+
 ## Bank Connector API, step 1 of 2 (Nov 23, Tomi: "build something systems can connect to")
 
 Orchestra reads a bank's core records and asks it to act through one published contract

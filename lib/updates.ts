@@ -1,6 +1,7 @@
 import type { Sql } from "./db.ts";
 import { money } from "./format.ts";
 import { dayMonthYear } from "./time.ts";
+import { emitEvent } from "./api/webhooks.ts";
 
 // Use case 17: proactive status updates. Every case Alexis opens is watched; when its status changes,
 // or its expected date passes with no change, the customer gets a short message on the contact
@@ -62,6 +63,12 @@ async function simulateBank(sql: Sql, now: Date) {
 
 /** Run the watches once. Safe to call often: a database lock lets one caller at a time do it. */
 export async function runUpdates(sql: Sql, now = new Date()) {
+  const sent: { holder_id: string; user_id: string | null; reference: string; body: string }[] = [];
+  await runUpdatesInTx(sql, now, sent);
+  for (const m of sent) await emitEvent(sql, "customer.notified", { channel: "sms", ...m });
+}
+
+async function runUpdatesInTx(sql: Sql, now: Date, sent: { holder_id: string; user_id: string | null; reference: string; body: string }[]) {
   await sql.begin(async (tx) => {
     const [{ got }] = await tx<{ got: boolean }[]>`select pg_try_advisory_xact_lock(4209) as got`;
     if (!got) return;
@@ -84,8 +91,10 @@ export async function runUpdates(sql: Sql, now = new Date()) {
       if (held.n === 0 && recent.n > 0) continue;
       const canSend = held.n === 0 && contact?.phone;
       if (canSend) {
+        const body = compose(w.label, w.reference, status, late, w.expected_by);
         await tx`insert into outbox (holder_id, user_id, watch_id, channel, sent_to, body, sent_at)
-          values (${w.holder_id}, ${w.user_id}, ${w.id}, 'Text message', ${`•••• ${contact.phone!.replace(/\D/g, "").slice(-4)}`}, ${compose(w.label, w.reference, status, late, w.expected_by)}, ${now})`;
+          values (${w.holder_id}, ${w.user_id}, ${w.id}, 'Text message', ${`•••• ${contact.phone!.replace(/\D/g, "").slice(-4)}`}, ${body}, ${now})`;
+        sent.push({ holder_id: w.holder_id, user_id: w.user_id, reference: w.reference, body });
       }
       // Held customers get nothing; their watch just follows the status. A closed case stops being watched.
       await tx`update case_watches set last_status = ${status}, late_notified = ${w.late_notified || (late && Boolean(canSend))}, active = ${!CLOSED.has(status)} where id = ${w.id}`;

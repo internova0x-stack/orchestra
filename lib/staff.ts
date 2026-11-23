@@ -1,5 +1,6 @@
 import type { Sql } from "./db.ts";
 import { bank } from "./bank/index.ts";
+import { emitEvent } from "./api/webhooks.ts";
 
 // The Staff queue (Escalation Playbook, "The staff queue in the demo"): one staff view acting as
 // supervisor, no login. Approving a prepared recall submits it and records who approved it.
@@ -29,6 +30,12 @@ export async function decide(sql: Sql, reference: string, decision: Decision, no
     return { ok: false as const, error: "supervisor_only" };
   }
   const who = staff ? `${staff.name} (${staff.role === "supervisor" ? "Supervisor" : "Support agent"})` : APPROVER;
+  const result = await decideInTx(sql, reference, decision, note, staff, who);
+  if (result.ok) await emitEvent(sql, "case.updated", { reference, status: result.status, decision, by: who, note: note?.trim().slice(0, 500) || null });
+  return result;
+}
+
+async function decideInTx(sql: Sql, reference: string, decision: Decision, note: string | null, staff: StaffUser | null | undefined, who: string) {
   return sql.begin(async (tx) => {
     const rows = await tx<CaseRow[]>`select reference, conversation_id, status, action from escalations where reference = ${reference} for update`;
     const c = rows[0];

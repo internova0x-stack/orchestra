@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Sql } from "./db.ts";
 import { MODEL } from "./config.ts";
+import { emitEvent } from "./api/webhooks.ts";
 import { transcriptOf } from "./cases.ts";
 import type { StaffUser } from "./staff.ts";
 import { LANGUAGES } from "./session.ts";
@@ -17,6 +18,7 @@ export async function saveReview(sql: Sql, conversationId: string, staff: StaffU
     on conflict (conversation_id) do update set rating = excluded.rating, note = excluded.note, reviewed_by = excluded.reviewed_by, reviewed_at = excluded.reviewed_at`;
   await sql`insert into audit_log (conversation_id, tool_use_id, kind, tool, summary, staff)
     values (${conversationId}, ${`review-${Date.now()}`}, 'approval', 'review', ${`conversation reviewed · ${rating === "good" ? "good" : "needs work"}${clean ? ` · ${clean.slice(0, 120)}` : ""}`}, ${staff.name})`;
+  await emitEvent(sql, "conversation.reviewed", { conversation_id: conversationId, rating, note: clean, by: staff.name });
   return null;
 }
 

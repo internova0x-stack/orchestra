@@ -482,6 +482,49 @@ create table if not exists conversation_reviews (
   reviewed_at timestamptz not null default now()
 );
 
+-- The Orchestra API (Nov 23, step 2): keys for systems that call Orchestra, webhooks Orchestra sends,
+-- and the events banks push in. Configuration (keys, endpoints) survives Reset demo.
+create table if not exists api_keys (
+  id text primary key,
+  name text not null,
+  prefix text not null,
+  hash text not null,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at timestamptz
+);
+create table if not exists webhook_endpoints (
+  id text primary key,
+  url text not null,
+  secret text not null,
+  events text[] not null,
+  active boolean not null default true,
+  created_by text not null,
+  created_at timestamptz not null default now()
+);
+create table if not exists webhook_deliveries (
+  id bigserial primary key,
+  endpoint_id text not null references webhook_endpoints(id) on delete cascade,
+  event_id text not null,
+  event text not null,
+  payload jsonb not null,
+  status text not null default 'pending' check (status in ('pending','delivered','failed')),
+  attempts int not null default 0,
+  last_status int,
+  last_error text,
+  created_at timestamptz not null default now(),
+  delivered_at timestamptz
+);
+create index if not exists webhook_deliveries_recent on webhook_deliveries (created_at desc);
+create table if not exists api_events_received (
+  id text primary key,
+  type text not null,
+  received_at timestamptz not null default now(),
+  result jsonb
+);
+alter table conversations add column if not exists external_ref text;
+
 create table if not exists rule_overrides (
   rule_id text not null references rules(id) on delete cascade,
   market text not null check (market in ('NG','UK','US')),

@@ -470,6 +470,12 @@ a { color: var(--brand-accent); }
 .dev-table td, .dev-table thead th { text-align: left !important; }
 .dev-code { margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); background: var(--surface-100); font: 400 13px/20px var(--font-mono); overflow-x: auto; white-space: pre; }
 .btn-primary[href] { text-decoration: none; }
+.dev-input { flex: 1; min-width: 220px; }
+.dev-stack { display: grid; gap: var(--space-2); }
+.dev-events { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.dev-check { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.dev-actions { display: flex; gap: var(--space-2); }
+.secret-box { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--wait-line); background: var(--wait-bg); border-radius: var(--radius-lg); }
 
 /* ---------- Sign-in (the shared password) ---------- */
 .login-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--surface-page); }

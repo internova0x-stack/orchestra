@@ -1306,3 +1306,92 @@ test("bank connector: the OpenAPI file and the reference server list the same en
     assert.ok(served.includes(`"${last}"`), `the reference server handles ${p}`);
   }
 });
+
+// ---------------------------------------------------------------- the Orchestra API (step 2)
+
+test("Orchestra API: keys are shown once, stored as a hash, and stop working when revoked", { skip }, async () => {
+  const { createApiKey, checkApiKey, revokeApiKey } = await import("../lib/api/keys.ts");
+  await seed(sql!, MONDAY);
+  const k = await createApiKey(sql!, "Nuvion app", "Bayo Martins");
+  assert.match(k.key, /^orc_[A-Za-z0-9]{8}_/);
+  const [row] = await sql!`select hash, prefix from api_keys where id = ${k.id}`;
+  assert.ok(!JSON.stringify(row).includes(k.key.split("_")[2]), "the key itself isn't stored");
+  assert.deepEqual(await checkApiKey(sql!, `Bearer ${k.key}`), { id: k.id, name: "Nuvion app" });
+  assert.equal(await checkApiKey(sql!, `Bearer ${k.key}x`), null);
+  assert.equal(await checkApiKey(sql!, "Bearer nonsense"), null);
+  assert.ok(await revokeApiKey(sql!, k.id));
+  assert.equal(await checkApiKey(sql!, `Bearer ${k.key}`), null, "revoked");
+});
+
+test("Orchestra API: webhooks are signed and sent for a handoff and the team's decision", { skip }, async () => {
+  const { setWebhookFetcher, signature, webhookUrlProblem } = await import("../lib/api/webhooks.ts");
+  const { decide } = await import("../lib/staff.ts");
+  await seed(sql!, MONDAY);
+  assert.equal(webhookUrlProblem("http://crm.example/hook"), "Use an https:// address.");
+  assert.match(webhookUrlProblem("https://localhost/hook")!, /public/);
+  assert.match(webhookUrlProblem("https://10.0.0.5/hook")!, /private/);
+  assert.equal(webhookUrlProblem("https://crm.example/hook"), null);
+  const secret = "whsec_test";
+  await sql!`delete from webhook_endpoints where id = 'wh_test'`;
+  await sql!`insert into webhook_endpoints (id, url, secret, events, created_by) values ('wh_test', 'https://crm.example/hook', ${secret}, ${["case.created", "case.updated"]}, 'test')`;
+  const got: { headers: Record<string, string>; body: string }[] = [];
+  setWebhookFetcher((async (_url: string, init: { headers: Record<string, string>; body: string }) => { got.push({ headers: init.headers, body: init.body }); return new Response("ok", { status: 200 }); }) as never);
+  try {
+    const s = await session("ada", MONDAY);
+    const esc = await call(s, "escalate_to_human", { request: "Payout late", checked: "PO-88102", did: "None", needed: "Chase", told: "The team will pick it up", trigger: "payout_past_window", urgency: "high" });
+    const waitFor = async (n: number) => { for (let i = 0; i < 50 && got.length < n; i++) await new Promise((r) => setTimeout(r, 20)); };
+    await waitFor(1);
+    const first = JSON.parse(got[0].body);
+    assert.equal(first.type, "case.created");
+    assert.equal(first.data.reference, esc.reference);
+    const sig = got[0].headers["Orchestra-Signature"];
+    const t = Number(sig.match(/t=(\d+)/)![1]);
+    assert.equal(sig, signature(secret, got[0].body, t), "the receiver can check the signature");
+    assert.equal((await decide(sql!, esc.reference!, "resolve", "Chased and arrived", (await staffUser(sql!, "ife"))!)).ok, true);
+    await waitFor(2);
+    assert.equal(JSON.parse(got[1].body).type, "case.updated");
+    const rows = await sql!`select status from webhook_deliveries order by id`;
+    assert.deepEqual(rows.map((r) => r.status), ["delivered", "delivered"]);
+  } finally {
+    setWebhookFetcher(null);
+    await sql!`delete from webhook_endpoints where id = 'wh_test'`;
+  }
+});
+
+test("Orchestra API: events change a status once; the Channel API opens a signed-in conversation and queues for the team when Alexis is off", { skip }, async () => {
+  const { receiveEvent } = await import("../lib/api/events.ts");
+  const { openConversation, sendToAlexis, conversationMessages } = await import("../lib/api/channel.ts");
+  await seed(sql!, MONDAY);
+  assert.deepEqual(await receiveEvent(sql!, { id: "e1", type: "verification.updated", data: { holder_id: "harbour", status: "approved" } }), { ok: true, applied: true });
+  assert.equal((await sql!`select verification_status from businesses where id = 'harbour'`)[0].verification_status, "approved");
+  assert.deepEqual(await receiveEvent(sql!, { id: "e1", type: "verification.updated", data: { holder_id: "harbour", status: "failed" } }), { ok: true, applied: false, duplicate: true }, "the same event id applies once");
+  assert.equal((await receiveEvent(sql!, { id: "e2", type: "card.exploded", data: {} })).ok, false);
+  assert.equal((await receiveEvent(sql!, { id: "e3", type: "recall.updated", data: { reference: "REC-0000", status: "approved" } }) as { error: string }).error, "not_found");
+  assert.equal((await receiveEvent(sql!, { id: "e4", type: "recall.updated", data: { reference: "x", status: "teleported" } }) as { error: string }).error, "bad_status");
+
+  const opened = await openConversation(sql!, { channel: "whatsapp", verified_user_id: "ada", external_ref: "wa:+447700900123", language: "fr" });
+  assert.ok("conversation_id" in opened);
+  assert.match(opened.greeting!, /^Bonjour/);
+  const [c] = await sql!`select verified_user_id, channel, language, external_ref from conversations where id = ${opened.conversation_id}`;
+  assert.deepEqual([c.verified_user_id, c.channel, c.language, c.external_ref], ["ada", "whatsapp", "fr", "wa:+447700900123"], "a customer the bank's app signed in arrives verified");
+  assert.deepEqual(await openConversation(sql!, { verified_user_id: "nobody" }), { error: "unknown_user" });
+  await sql!`update rules set value = 'off' where id = 'alexis_enabled'`;
+  const r = await sendToAlexis(sql!, opened.conversation_id, { text: "Where is my payment to Lumen Print?" });
+  assert.equal(r.reply, null);
+  assert.match(r.notices[0], /switched off/);
+  const m = await conversationMessages(sql!, opened.conversation_id);
+  assert.equal(m!.waiting_for_team, true);
+  assert.deepEqual(m!.messages.map((x) => [x.from, x.text]), [["customer", "Where is my payment to Lumen Print?"]]);
+});
+
+test("Orchestra API: the OpenAPI file's paths and webhook events match the routes and the events sent", async () => {
+  const fs = await import("node:fs");
+  const { WEBHOOK_EVENTS } = await import("../lib/api/webhooks.ts");
+  const yaml = fs.readFileSync(new URL("../public/openapi/orchestra-api-v1.yaml", import.meta.url), "utf8");
+  const [paths, hooks] = yaml.split(/^webhooks:$/m);
+  const listed = [...paths.matchAll(/^  (\/[^:]+):$/gm)].map((m) => m[1]);
+  const route = (p: string) => new URL(`../app/api/v1${p.replace("{conversationId}", "[id]")}/route.ts`, import.meta.url);
+  for (const p of listed) assert.ok(fs.existsSync(route(p)), `a route serves ${p}`);
+  const events = [...hooks.matchAll(/^  ([a-z_]+\.[a-z_]+):$/gm)].map((m) => m[1]).sort();
+  assert.deepEqual(events, [...WEBHOOK_EVENTS].sort(), "every event Orchestra sends is documented");
+});

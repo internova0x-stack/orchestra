@@ -1,5 +1,6 @@
 import type { Sql } from "./db.ts";
 import { maskSecrets } from "./secrets.ts";
+import { emitEvent } from "./api/webhooks.ts";
 import type { StaffUser } from "./staff.ts";
 
 // A member of the team takes over a conversation from the console, replies in person, then hands it
@@ -56,6 +57,12 @@ export type TakeoverError = "not_found" | "taken_over_by_someone_else" | "not_ta
  * identity form, the code form, a Yes/Cancel), so nothing can be confirmed while a person is in charge.
  */
 export async function takeOver(sql: Sql, conversationId: string, staff: StaffUser): Promise<TakeoverError | null> {
+  const err = await takeOverInTx(sql, conversationId, staff);
+  if (!err) await emitEvent(sql, "conversation.taken_over", { conversation_id: conversationId, by: staff.name, role: staff.role });
+  return err;
+}
+
+async function takeOverInTx(sql: Sql, conversationId: string, staff: StaffUser): Promise<TakeoverError | null> {
   return sql.begin(async (tx) => {
     const [c] = await tx<{ messages: Message[]; taken_over_by: string | null; pending_identity_tool_id: string | null; pending_code: { tool_use_id: string } | null; pending_results: Block[]; pending_action: { label: string } | null }[]>`
       select messages, taken_over_by, pending_identity_tool_id, pending_code, pending_results, pending_action
@@ -86,6 +93,7 @@ export async function handBack(sql: Sql, conversationId: string, staff: StaffUse
   if (c.taken_over_by !== staff.name) return "taken_over_by_someone_else";
   await sql`update conversations set taken_over_by = null, taken_over_at = null where id = ${conversationId}`;
   await log(sql, conversationId, staff.name, "handoff", "handback", `${staff.name} handed the conversation back to Alexis`);
+  await emitEvent(sql, "conversation.handed_back", { conversation_id: conversationId, by: staff.name });
   return null;
 }
 
@@ -93,6 +101,12 @@ export async function handBack(sql: Sql, conversationId: string, staff: StaffUse
 export async function staffReply(sql: Sql, conversationId: string, staff: StaffUser, text: string): Promise<TakeoverError | null> {
   const clean = maskSecrets(text.trim().slice(0, 4000)).text;
   if (!clean) return "empty";
+  const err = await staffReplyInTx(sql, conversationId, staff, clean);
+  if (!err) await emitEvent(sql, "message.created", { conversation_id: conversationId, from: "team", name: staff.name, text: clean });
+  return err;
+}
+
+async function staffReplyInTx(sql: Sql, conversationId: string, staff: StaffUser, clean: string): Promise<TakeoverError | null> {
   return sql.begin(async (tx) => {
     const [c] = await tx<{ messages: Message[]; taken_over_by: string | null }[]>`
       select messages, taken_over_by from conversations where id = ${conversationId} and mode = 'customer' for update`;

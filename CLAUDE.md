@@ -67,6 +67,10 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   SQL for those records; `BANK_API_URL` + `BANK_API_KEY` switch to a real bank; `/api/bank/v1` is the reference
   implementation; `public/openapi/bank-connector-v1.yaml` is the contract (a test keeps it in step with the server).
   API page: `/developers`.
+- Orchestra API (`lib/api/`, `/api/v1`, `public/openapi/orchestra-api-v1.yaml`): Channel API (`channel.ts`), Events API
+  (`events.ts`), signed webhooks (`webhooks.ts`: `emitEvent` never throws or blocks; add a new event to
+  `WEBHOOK_EVENTS` and the OpenAPI file, a test checks both), API keys (`keys.ts`, hashed). Supervisors manage keys
+  and endpoints on the API page (`/api/admin/*`). `/api/v1` and `/api/bank/v1` sit outside the site password.
 - `npm run dev`, `npm run build`, `npm run typecheck`.
 - `npm test` with `TEST_DATABASE_URL` pointing at a throwaway Postgres runs the tools against the seeded
   bank (no model calls); without it the database tests are skipped.

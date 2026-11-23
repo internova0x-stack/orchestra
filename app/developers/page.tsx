@@ -1,5 +1,22 @@
-// The API page: how banks and other systems connect to Orchestra. Static; the machine-readable
-// contracts are the OpenAPI files in /public/openapi.
+// The API page: how banks and other systems connect to Orchestra, and the keys and webhooks for the
+// Orchestra API. The machine-readable contracts are the OpenAPI files in /public/openapi.
+import ApiAdmin from "./Admin";
+
+const ORCHESTRA_ENDPOINTS: [string, string, string][] = [
+  ["POST", "/conversations", "Open a conversation for a customer, on a channel; pass the bank's user id for a customer already signed in to its app"],
+  ["POST", "/conversations/{id}/messages", "Send the customer's message (or their identity answers, a Yes/Cancel, a code); returns Alexis's reply and any form the channel should show"],
+  ["GET", "/conversations/{id}", "The conversation so far, who is handling it, and whether it's waiting for the team"],
+  ["POST", "/events", "Report a status change (recall, reversal, dispute, verification); Alexis's proactive updates follow. The same event id twice applies once"],
+];
+
+const WEBHOOK_DOCS: [string, string][] = [
+  ["case.created", "Alexis handed a conversation to the team, with the handoff summary, urgency and response target"],
+  ["case.updated", "a supervisor approved or declined, or the team resolved a case"],
+  ["conversation.taken_over / handed_back", "a member of the team took a conversation over, or handed it back to Alexis"],
+  ["conversation.reviewed", "the team reviewed a conversation (good or needs work)"],
+  ["message.created", "a reply to the customer from Alexis or the team"],
+  ["customer.notified", "a proactive status update went to the customer's phone on file"],
+];
 
 const BANK_ENDPOINTS: [string, string, string][] = [
   ["POST", "/identity/verify", "Check a customer's identity (name, date of birth, registration number or a personal account's last 4); returns the user it identifies"],
@@ -78,14 +95,40 @@ export default function DevelopersPage() {
       </section>
 
       <section className="panel dev-section">
-        <div className="panel-head"><span className="panel-title">The Orchestra API</span><span className="tag">Next step</span></div>
+        <div className="panel-head"><span className="panel-title">The Orchestra API</span></div>
         <div className="dev-body">
           <p>
-            For systems that call Orchestra: a channel API (a bank&apos;s app, WhatsApp provider or mailbox sends customer messages in
-            and gets Alexis&apos;s replies back), an events API (status changes that drive Alexis&apos;s proactive updates) and webhooks
-            (handoffs, decisions and reviews sent to a helpdesk or CRM), with an API key per institution.
+            For systems that call Orchestra, and the webhooks Orchestra sends them. A bank&apos;s app, WhatsApp provider or mailbox
+            brings customers&apos; messages to Alexis; the bank reports status changes so Alexis&apos;s proactive updates go out; and a
+            CRM or helpdesk receives each handoff, decision and reply as a webhook, so the team can keep working where they already work.
           </p>
+          <div className="dev-row">
+            <a className="btn btn-primary" href="/openapi/orchestra-api-v1.yaml" download>Download the OpenAPI file</a>
+            <span className="label">OpenAPI 3.1 · version 1 · endpoints and webhook events</span>
+          </div>
+          <h3 className="dev-h">Endpoints (under /api/v1, with an API key)</h3>
+          <div className="table-wrap">
+            <table className="dash-table dev-table">
+              <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                {ORCHESTRA_ENDPOINTS.map(([m, p, d]) => (
+                  <tr key={m + p}><td><span className={`tag ${m === "POST" ? "tag-market" : ""}`}>{m}</span></td><td><span className="ref">{p}</span></td><td className="dev-desc">{d}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <h3 className="dev-h">Webhook events</h3>
+          <ul className="dev-list">{WEBHOOK_DOCS.map(([e, d]) => <li key={e}><span className="ref">{e}</span>: {d}</li>)}</ul>
+          <p className="label">
+            Each delivery carries <span className="ref">Orchestra-Signature: t=…,v1=…</span>, an HMAC-SHA256 of &quot;t.body&quot; with the endpoint&apos;s
+            secret. A CRM opens a ticket on <span className="ref">case.created</span> and updates it on <span className="ref">case.updated</span>; a channel
+            delivers <span className="ref">message.created</span> to the customer.
+          </p>
+          <pre className="dev-code">{`curl -X POST https://orchestra-plum.vercel.app/api/v1/conversations \\
+  -H "Authorization: Bearer $ORCHESTRA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"channel":"whatsapp","verified_user_id":"ada"}'`}</pre>
         </div>
+        <ApiAdmin />
       </section>
     </div>
   );

@@ -1,0 +1,267 @@
+openapi: 3.1.0
+info:
+  title: Orchestra API
+  version: "1.0.0"
+  summary: For systems that call Orchestra (channels, the bank's events) and receive its webhooks (CRMs, helpdesks).
+  description: |
+    **Channel API**: a bank's app, a WhatsApp provider or a mailbox brings its customers' messages to Alexis, the AI
+    support agent, and gets the replies back. Every check, the audit log, the team's take-over and hand-back work
+    exactly as in Orchestra's own chat. A step that needs a form (the identity check, a Yes/Cancel, a one-time code)
+    comes back under `needs`; show it your own way (a secure link, buttons) and send the answer to the same endpoint.
+
+    **Events API**: the bank reports a status change (a recall approved, a reversal completed, a dispute resolved,
+    verification approved) and Alexis's proactive updates to the customer follow. Each event carries your own id:
+    the same id twice is applied once.
+
+    **Webhooks**: Orchestra posts what happened to your systems (a CRM or helpdesk opens a ticket for each handoff,
+    updates it when the team decides, receives every reply for delivery). Add endpoints and choose events on the
+    console's API page. Each delivery has the header `Orchestra-Signature: t=<unix seconds>,v1=<hex>` where `v1` is
+    HMAC-SHA256 of `"<t>.<raw body>"` with the endpoint's signing secret: check it, and reject old `t` values.
+    Reply 2xx within 8 seconds; a failed delivery is retried (up to 5 attempts) and can be retried from the console.
+
+    **Authentication**: an API key from the console's API page (supervisors create and revoke them), sent as
+    `Authorization: Bearer orc_…`. Keys are shown once and stored only as a hash.
+servers:
+  - url: /api/v1
+    description: This Orchestra
+security:
+  - apiKey: []
+
+paths:
+  /conversations:
+    post:
+      tags: [Channel]
+      summary: Open a conversation
+      description: |
+        For a customer the bank's app has already signed in, pass `verified_user_id` (the bank's user id): the
+        conversation starts verified and Alexis skips the identity check. Otherwise she asks for it.
+      operationId: openConversation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel: { type: string, enum: [app, whatsapp, email], default: app }
+                verified_user_id: { type: string, description: "The bank's id for a customer already signed in to its app" }
+                external_ref: { type: string, description: "Your id for this customer or thread (a phone number, a ticket id)" }
+                language: { type: string, enum: [en, fr, pcm], default: en }
+                subject: { type: string, description: "An email's subject line" }
+            example: { channel: whatsapp, verified_user_id: "ada", external_ref: "wa:+447700900123" }
+      responses:
+        "201":
+          description: Opened
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation_id]
+                properties:
+                  conversation_id: { type: string, format: uuid }
+                  greeting: { type: [string, "null"], description: "Alexis's opening message to show (none for email)" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: The bank doesn't know verified_user_id }
+
+  /conversations/{conversationId}:
+    get:
+      tags: [Channel]
+      summary: The conversation so far
+      description: Customer, Alexis and team messages in order, who is handling it, and whether it's waiting for the team. Team replies also arrive as `message.created` webhooks.
+      operationId: getConversation
+      parameters: [{ $ref: "#/components/parameters/conversationId" }]
+      responses:
+        "200":
+          description: The conversation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "404": { description: No such conversation }
+
+  /conversations/{conversationId}/messages:
+    post:
+      tags: [Channel]
+      summary: Send the customer's message, or their answer to a form
+      description: |
+        Send exactly one of: `text` (what the customer wrote), `identity` (their answers to the identity check),
+        `confirm` (true for Yes, false for Cancel) or `code` (the one-time code they received). Alexis's reply comes
+        back in the response. While a member of the team is handling the conversation, `reply` is null and
+        `handled_by` names them; their reply arrives later (webhook `message.created`, or GET the conversation).
+      operationId: sendMessage
+      parameters: [{ $ref: "#/components/parameters/conversationId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string, maxLength: 4000 }
+                identity:
+                  type: object
+                  required: [full_name, date_of_birth, registration_number]
+                  properties:
+                    full_name: { type: string }
+                    date_of_birth: { type: string, format: date }
+                    registration_number: { type: string, description: "A business's registration number, or a personal account's last 4 digits" }
+                confirm: { type: boolean }
+                code: { type: string }
+            examples:
+              message: { value: { text: "Where is my payment to Lumen Print? I sent $4,200 two days ago." } }
+              yes: { value: { confirm: true } }
+      responses:
+        "200":
+          description: Alexis's reply and anything the channel needs to show
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reply" }
+        "400": { description: None of text, identity, confirm or code }
+        "404": { description: Open the conversation first }
+
+  /events:
+    post:
+      tags: [Events]
+      summary: Report a status change
+      operationId: postEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, data]
+              properties:
+                id: { type: string, description: "Your unique id for this event; the same id twice is applied once" }
+                type: { type: string, enum: [recall.updated, reversal.updated, dispute.updated, verification.updated] }
+                data:
+                  type: object
+                  description: |
+                    recall.updated: { reference, status: approved | declined }
+                    reversal.updated: { reference, status: in_progress | completed }
+                    dispute.updated: { reference, status: open | investigating | resolved | declined }
+                    verification.updated: { holder_id, status: incomplete | pending | approved | failed, missing?, reason? }
+            example: { id: "bank-evt-88213", type: "reversal.updated", data: { reference: "REV-3301", status: "completed" } }
+      responses:
+        "202": { description: Applied; proactive updates follow }
+        "200": { description: Already received (same id) }
+        "400": { description: Unknown type or status }
+        "404": { description: No record with that reference }
+
+webhooks:
+  case.created:
+    post:
+      summary: Alexis handed a conversation to the team
+      description: The handoff summary (who, what was asked, what Alexis checked and did, why, what's needed, what the customer was told), urgency and response target. Open a ticket from it.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Event" }
+            example:
+              id: evt_3f1c
+              type: case.created
+              created: "2026-11-23T11:02:00Z"
+              data: { reference: ESC-1042, conversation_id: "6c2e…", urgency: high, trigger: payout_past_window, respond_by: "2026-11-23T15:02:00Z", customer: { user_id: ada, holder_id: brightline }, summary: { request: "…", checked: "…", did: "…", needed: "…", told: "…" } }
+      responses: { "200": { description: Received } }
+  case.updated:
+    post:
+      summary: A supervisor approved or declined, or the team resolved a case
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+      responses: { "200": { description: Received } }
+  conversation.taken_over:
+    post:
+      summary: A member of the team took a conversation over (Alexis paused)
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+      responses: { "200": { description: Received } }
+  conversation.handed_back:
+    post:
+      summary: The conversation was handed back to Alexis
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+      responses: { "200": { description: Received } }
+  conversation.reviewed:
+    post:
+      summary: The team reviewed a conversation (good / needs work, with a note)
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+      responses: { "200": { description: Received } }
+  message.created:
+    post:
+      summary: A reply to the customer from Alexis or the team
+      description: "`data`: conversation_id, from (alexis | team), name (for the team), text. Deliver it on your channel."
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+      responses: { "200": { description: Received } }
+  customer.notified:
+    post:
+      summary: A proactive status update was sent to the customer's phone on file
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+      responses: { "200": { description: Received } }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: An Orchestra API key (orc_…) from the console's API page.
+  parameters:
+    conversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Unauthorized:
+      description: Missing, wrong or revoked API key
+  schemas:
+    Reply:
+      type: object
+      required: [conversation_id, reply, handled_by, needs, cards, handoff, proof, notices]
+      properties:
+        conversation_id: { type: string }
+        reply: { type: [string, "null"], description: "Alexis's reply; null while the team is handling it or it's waiting for them" }
+        handled_by: { type: [string, "null"], description: "The team member handling the conversation" }
+        needs:
+          type: array
+          description: Forms the channel shows (send the answer back to the same endpoint)
+          items:
+            oneOf:
+              - { type: object, required: [type], properties: { type: { const: identity } } }
+              - { type: object, required: [type, action, consequence], properties: { type: { const: confirm }, action: { type: string }, consequence: { type: string } } }
+              - { type: object, required: [type, sent_to], properties: { type: { const: code }, sent_to: { type: string, description: "The masked phone on file the code went to" } } }
+        cards: { type: array, description: "Payment cards Alexis looked up (reference, amount, status, stages)", items: { type: object } }
+        handoff:
+          type: [object, "null"]
+          properties:
+            reference: { type: string }
+            urgency: { type: string }
+            respond: { type: string, description: "When the team will respond, in words" }
+        proof: { type: [object, "null"], description: "A payment confirmation, when one was issued" }
+        notices: { type: array, items: { type: string }, description: "Things to tell the customer, e.g. Alexis is switched off and the team will reply" }
+    Conversation:
+      type: object
+      required: [conversation_id, channel, handled_by, waiting_for_team, messages]
+      properties:
+        conversation_id: { type: string }
+        channel: { type: string }
+        handled_by: { type: [string, "null"] }
+        waiting_for_team: { type: boolean }
+        messages:
+          type: array
+          items:
+            type: object
+            required: [index, from, text]
+            properties:
+              index: { type: integer }
+              from: { type: string, enum: [customer, alexis, team] }
+              name: { type: string }
+              text: { type: string }
+    Event:
+      type: object
+      required: [id, type, created, data]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        created: { type: string, format: date-time }
+        data: { type: object }

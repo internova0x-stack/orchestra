@@ -11,6 +11,7 @@ import { createConversation, loadConversation, verifiedUser, LANGUAGES, type Cha
 import { dateTime, longDate } from "./time.ts";
 import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
 import { appendTurn, forModel, hadStaff } from "./takeover.ts";
+import { emitEvent } from "./api/webhooks.ts";
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
@@ -165,7 +166,22 @@ const YES = /^\s*(yes|yeah|yep|yup|sure|ok|okay|go ahead|please do|please go ahe
 const NO = /^\s*(no|nope|cancel|stop|don't|do not|wait)\b/i;
 
 /** Run one customer turn: a message, or the identity form's answers. Streams events to the screen. */
-export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent) => void): Promise<void> {
+export async function runTurn(sql: Sql, input: TurnInput, emitToScreen: (e: StreamEvent) => void): Promise<void> {
+  // Alexis's reply text is also sent as a message.created webhook when the turn ends.
+  let replied = "";
+  const emit = (e: StreamEvent) => {
+    if (e.type === "text") replied += e.delta;
+    else if (e.type === "break" && replied) replied += "\n\n";
+    emitToScreen(e);
+  };
+  try {
+    await runTurnInner(sql, input, emit);
+  } finally {
+    if (replied.trim()) await emitEvent(sql, "message.created", { conversation_id: input.conversationId, from: "alexis", text: replied.trim() });
+  }
+}
+
+async function runTurnInner(sql: Sql, input: TurnInput, emit: (e: StreamEvent) => void): Promise<void> {
   const now = new Date();
   let conv = (await loadConversation(sql, input.conversationId)) ?? (await createConversation(sql, input.conversationId, input.typingUserId, input.channel ?? "app", input.subject?.slice(0, 200) ?? null));
   let user = await verifiedUser(sql, conv, now);

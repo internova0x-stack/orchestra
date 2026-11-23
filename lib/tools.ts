@@ -2,6 +2,7 @@ import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
 import { Rules, marketOf, settlementRuleId } from "./rules.ts";
 import { bank } from "./bank/index.ts";
+import { emitEvent } from "./api/webhooks.ts";
 import type { Transfer } from "./bank/contract.ts";
 import { maskAccount, money, statusLabel } from "./format.ts";
 import {
@@ -250,6 +251,7 @@ const escalateToHuman = {
       values (${reference}, ${ctx.conv.id}, ${ctx.user?.business_id ?? null}, ${ctx.user?.id ?? null}, ${urgency},
               ${input.trigger}, ${sql.json(summary)}, ${due.at}, ${action ? sql.json(action) : null})`;
     await audit(ctx, { kind: "handoff", tool: "escalate_to_human", summary: `escalate_to_human · ${reference} · ${urgency}`, input, result: summary });
+    await emitEvent(sql, "case.created", { reference, conversation_id: ctx.conv.id, urgency, trigger: input.trigger, respond_by: due.at.toISOString(), customer: ctx.user ? { user_id: ctx.user.id, holder_id: ctx.user.business_id } : null, summary, action });
     if (ctx.user) {
       await watch(sql, { conversationId: ctx.conv.id, holderId: ctx.user.business_id, userId: ctx.user.id, kind: "case", reference, label: `case with our team (${TRIGGERS[input.trigger].label.toLowerCase()})`, status: "open", expectedBy: due.at });
     }
