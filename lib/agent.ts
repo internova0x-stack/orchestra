@@ -302,6 +302,10 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
   const joined = appendTurn(messages as never, "user", content as never) as unknown as MessageParam[];
   messages.length = 0;
   messages.push(...joined);
+  // This turn's session facts (time, identity, pending confirmation, case updates) go AFTER the history as a
+  // system message, kept in it for good. The top-level system prompt never changes, so the history stays
+  // append-only: Claude's earlier thinking stays valid (an edited prefix is a 400) and the prompt cache holds.
+  messages.push({ role: "system", content: await sessionContext(sql, now, user, conv) } as unknown as MessageParam);
 
   // A consistent history to save: only after a full assistant turn and its tool results.
   let saved = [...messages];
@@ -320,13 +324,14 @@ export async function runTurn(sql: Sql, input: TurnInput, emit: (e: StreamEvent)
       const stream = client().beta.messages.stream({
         model: MODEL,
         max_tokens: MAX_TOKENS,
-        betas: ["server-side-fallback-2026-07-01"],
+        // Safety net: if a thinking block ever no longer matches its history, drop it rather than fail the turn.
+        betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
         fallbacks: "default",
+        thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } } as never,
         output_config: { effort: EFFORT },
         system: [
           { type: "text", text: coreInstructions() },
           { type: "text", text: extendedScope(), cache_control: { type: "ephemeral" } },
-          { type: "text", text: await sessionContext(sql, new Date(), user, conv) },
         ],
         tools,
         messages: forModel(messages as never) as unknown as MessageParam[],

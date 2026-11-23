@@ -974,6 +974,17 @@ test("take over: turns stay alternating and staff replies reach the model as lab
   assert.deepEqual(transcriptOf(m as never).map((x) => x.who), ["Customer", "Ife Adeyemi"]);
 });
 
+test("session notes: kept after the history, never shown as chat, and a trailing one gives way to the next message", () => {
+  type M = Parameters<typeof appendTurn>[0];
+  const m: M = [{ role: "user", content: "Hello" }, { role: "system", content: "Session context: not verified" }, { role: "assistant", content: [{ type: "text", text: "Hi" }] }];
+  assert.deepEqual(transcriptOf(m as never).map((x) => x.who), ["Customer", "Alexis"], "the session note isn't chat");
+  const stopped: M = [{ role: "user", content: "Hello" }, { role: "system", content: "note" }];
+  const next = appendTurn(stopped, "user", [{ type: "text", text: "Anyone?" }]);
+  assert.deepEqual(next.map((x) => x.role), ["user"], "a note Alexis never answered is dropped, and the two messages join");
+  const kept = appendTurn(m, "user", [{ type: "text", text: "Thanks" }]);
+  assert.deepEqual(kept.map((x) => x.role), ["user", "system", "assistant", "user"], "earlier notes stay exactly where they were");
+});
+
 test("take over: Alexis pauses, the customer's messages wait for the team, and hand back returns it", { skip }, async () => {
   await seed(sql!, MONDAY);
   const ife = (await staffUser(sql!, "ife"))!;

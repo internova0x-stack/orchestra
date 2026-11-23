@@ -89,6 +89,7 @@ type Message = { role: string; content: string | Block[] };
 export function transcriptOf(messages: Message[] | null): { who: string; text: string; staff?: string }[] {
   const out: { who: string; text: string; staff?: string }[] = [];
   for (const m of messages ?? []) {
+    if ((m.role as string) === "system") continue; // session notes for Alexis, never shown as chat
     if (typeof m.content === "string") {
       if (m.content.trim()) out.push({ who: m.role === "assistant" ? "Alexis" : "Customer", text: m.content });
       continue;

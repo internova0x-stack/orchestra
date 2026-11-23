@@ -10,13 +10,18 @@ import type { StaffUser } from "./staff.ts";
 // - before the history reaches the model, `forModel` turns staff blocks into plain, labelled text.
 
 type Block = { type: string; text?: string; staff?: string; [k: string]: unknown };
-type Message = { role: "user" | "assistant"; content: string | Block[] };
+type Message = { role: "user" | "assistant" | "system"; content: string | Block[] };
 
 const blocks = (c: string | Block[]): Block[] => (typeof c === "string" ? [{ type: "text", text: c }] : c);
 
-/** Add one turn's content, joining it to the last turn when that turn is from the same side. */
-export function appendTurn(messages: Message[], role: Message["role"], content: Block[]): Message[] {
+/**
+ * Add one turn's content, joining it to the last turn when that turn is from the same side. A session
+ * note (role "system") must be followed by Alexis's reply; if a turn stopped before she answered, the
+ * trailing note is dropped before the next customer message (nothing comes after it, so nothing breaks).
+ */
+export function appendTurn(messages: Message[], role: "user" | "assistant", content: Block[]): Message[] {
   const out = [...messages];
+  while (role === "user" && out.length && out[out.length - 1].role === "system") out.pop();
   const last = out[out.length - 1];
   if (last && last.role === role) out[out.length - 1] = { role, content: [...blocks(last.content), ...content] };
   else out.push({ role, content });
@@ -108,7 +113,7 @@ export async function customerView(sql: Sql, conversationId: string) {
   if (!c) return { takenOverBy: null, staff: [], updates: [] };
   const staff: { key: string; name: string; text: string }[] = [];
   (c.messages ?? []).forEach((m, i) => {
-    if (typeof m.content === "string") return;
+    if (typeof m.content === "string" || m.role === "system") return;
     m.content.forEach((b, j) => { if (b.staff && b.text) staff.push({ key: `${i}-${j}`, name: b.staff, text: b.text }); });
   });
   // The team's decisions on this conversation's cases (approve, decline, resolve), as the Staff queue words them.

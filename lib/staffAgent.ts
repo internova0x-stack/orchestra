@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
+import { appendTurn } from "./takeover.ts";
 import type { Sql } from "./db.ts";
 import { EFFORT, MAX_STEPS, MAX_TOKENS, MODEL } from "./config.ts";
 import { staffUser } from "./staff.ts";
@@ -54,7 +55,12 @@ export async function runStaffTurn(
     user ? `The case's customer: ${user.full_name}, ${user.business_name}${user.personal ? "" : `, ${user.role === "payment_rights" ? "payment rights" : "view-only"}`}.` : "The case's customer was never verified, so their account records can't be looked up; work from the case materials.",
   ].join("\n");
 
-  const messages = [...(conv.messages as MessageParam[]), { role: "user" as const, content: [{ type: "text" as const, text: input.message.slice(0, 4000) }] }];
+  // The session facts go after the history as a system message (kept), never into the top-level system
+  // prompt: an edited prefix invalidates Claude's earlier thinking and the request is refused.
+  const messages = [
+    ...(appendTurn(conv.messages as never, "user", [{ type: "text", text: input.message.slice(0, 4000) }]) as unknown as MessageParam[]),
+    { role: "system", content: context } as unknown as MessageParam,
+  ];
   const client = new Anthropic({ maxRetries: 4 });
   let saved = [...messages];
   let wroteText = false;
@@ -63,12 +69,12 @@ export async function runStaffTurn(
       const stream = client.beta.messages.stream({
         model: MODEL,
         max_tokens: MAX_TOKENS,
-        betas: ["server-side-fallback-2026-07-01"],
+        betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
+        thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } } as never,
         fallbacks: "default",
         output_config: { effort: EFFORT },
         system: [
           { type: "text", text: staffPrompt(), cache_control: { type: "ephemeral" } },
-          { type: "text", text: context },
         ],
         tools: toolDefinitions("staff"),
         messages,
