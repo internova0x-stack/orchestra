@@ -72,7 +72,7 @@ worked out from the data already stored: no new tables).
   team when Alexis is off or the AI service is down ("Waiting for the team"); `find_case` picks up a case by
   its reference (the customer's own only); conversation review (Good / Needs work, filter, dashboard);
   languages (English, French, Pidgin, Yoruba, Hausa, Igbo) with a "Translate to English" for the team.
-  The Yoruba, Hausa and Igbo greetings need a native speaker's check. Voice notes left out (Tomi).
+  Yoruba, Hausa and Igbo have no written greeting (Tomi, Nov 23): the English one shows and Alexis replies in the language. Voice notes left out (Tomi).
 - New rules reach an existing database on deploy (missing ones are added; edited values are kept).
 
 ## First runs with the real model (Nov 23)
