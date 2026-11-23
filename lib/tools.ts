@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
 import { Rules, marketOf, settlementRuleId } from "./rules.ts";
+import { bank } from "./bank/index.ts";
+import type { Transfer } from "./bank/contract.ts";
 import { maskAccount, money, statusLabel } from "./format.ts";
 import {
   addBusinessDays,
@@ -295,6 +297,11 @@ interface TransferRow {
   review_hold: boolean;
 }
 
+/** A payout from the Bank Connector API, in the shape the tools work with. */
+function toRow(t: Transfer): TransferRow {
+  return { ...t, business_id: t.holder_id, sent_at: new Date(t.sent_at), completed_at: t.completed_at ? new Date(t.completed_at) : null };
+}
+
 /** When a payout on this route is normally expected, from the settlement rule's wording. */
 function expectedBy(sent: Date, settlement: string, h: BusinessHours): Date {
   const s = settlement.toLowerCase();
@@ -348,14 +355,8 @@ const getTransferStatus = {
     const ref = input.reference?.trim().toUpperCase();
     // Check 3: the record must belong to the verified user's business. A reference from another
     // business is reported as not found, so nothing about it leaks.
-    let rows: TransferRow[] = await sql<TransferRow[]>`
-      select t.*, exists (select 1 from restrictions r where r.transfer_id = t.id and r.kind = 'review_hold') as review_hold
-      from transfers t
-      where t.business_id = ${user.business_id}
-        ${ref ? sql`and upper(t.id) = ${ref}` : sql``}
-        ${input.recipient ? sql`and t.recipient_name ilike ${"%" + input.recipient + "%"}` : sql``}
-        ${input.amount != null ? sql`and t.amount = ${input.amount}` : sql``}
-      order by t.sent_at desc limit 20`;
+    // Through the Bank Connector API: only this holder's payouts come back.
+    let rows: TransferRow[] = (await bank(sql).searchTransfers(user.business_id, { reference: ref, recipient: input.recipient, amount: input.amount ?? undefined })).map(toRow);
     if (input.sent_on && rows.length > 1) {
       const target = new Date(`${input.sent_on}T12:00:00Z`).getTime();
       rows = rows.filter((r) => Math.abs(new Date(r.sent_at).getTime() - target) < 4 * 86_400_000);
@@ -457,11 +458,8 @@ const generateProofOfPayment = {
     if (!rules.on("action_generate_proof_of_payment")) {
       return refuse(ctx, "generate_proof_of_payment", input, "Proof of payment is switched off for this institution. Explain and offer a handoff.", "switched off");
     }
-    // Check 3: the payout belongs to the verified user's business.
-    const rows = await sql<TransferRow[]>`
-      select t.*, exists (select 1 from restrictions r where r.transfer_id = t.id and r.kind = 'review_hold') as review_hold
-      from transfers t where upper(t.id) = ${ref} and t.business_id = ${user.business_id}`;
-    const t = rows[0];
+    // Check 3: the payout belongs to the verified user's business (the bank returns only theirs).
+    const t = (await bank(sql).searchTransfers(user.business_id, { reference: ref })).map(toRow).find((x) => x.id.toUpperCase() === ref);
     if (!t) return refuse(ctx, "generate_proof_of_payment", input, "No payout with that reference on this account.", "payout not found");
     // Check 4: nothing on a review hold.
     if (t.review_hold) {
@@ -540,13 +538,10 @@ const findIncomingPayment = {
     if (input.amount == null && !input.payer && !input.reference) {
       return refuse(ctx, "find_incoming_payment", input, "Need at least the amount, the payer's name or the reference to search. Ask the customer.", "not enough detail");
     }
-    const rows = await sql<IncomingRow[]>`
-      select id, business_id, payer_name, payer_bank, amount, currency, reference, status, received_at, credited_at
-      from incoming_payments
-      where (business_id = ${user.business_id} or status = 'unallocated')
-        ${input.amount != null ? sql`and amount = ${input.amount}` : sql``}
-        ${input.currency ? sql`and currency = ${input.currency}` : sql``}
-      order by received_at desc limit 50`;
+    // Through the Bank Connector API: this holder's payments, plus unallocated ones matched strictly below.
+    const rows: IncomingRow[] = (await bank(sql).searchIncomingPayments(user.business_id, { amount: input.amount ?? undefined, currency: input.currency })).map((r) => ({
+      ...r, business_id: r.holder_id, received_at: new Date(r.received_at), credited_at: r.credited_at ? new Date(r.credited_at) : null,
+    }));
     const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
     const target = input.sent_on ? new Date(`${input.sent_on}T12:00:00Z`).getTime() : null;
     const matches = rows.filter((r) => {
@@ -608,12 +603,8 @@ const getAccountRestrictions = {
   async run(input: z.infer<typeof restrictionsSchema>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
     const user = ctx.user!;
     const ref = input.reference?.trim().toUpperCase() ?? null;
-    // The internal reason is never selected, so it can't reach the model or the audit log.
-    const rows = await ctx.sql<{ id: string; transfer_id: string | null; kind: string; customer_reason: string | null }[]>`
-      select id, transfer_id, kind, customer_reason from restrictions
-      where business_id = ${user.business_id}
-        ${ref ? ctx.sql`and (transfer_id = ${ref} or transfer_id is null)` : ctx.sql``}
-      order by created_at`;
+    // Through the Bank Connector API, which never sends a review hold's reason.
+    const rows = (await bank(ctx.sql).listRestrictions(user.business_id, { transfer: ref ?? undefined })).map((r) => ({ ...r, kind: r.type }));
     const restrictions = rows.map((r) =>
       r.kind === "review_hold"
         ? { applies_to: r.transfer_id ? `payout ${r.transfer_id}` : "the account", type: "review hold" }
@@ -666,11 +657,8 @@ const initiateRecall = {
     if (user.role !== "payment_rights") {
       return refuse(ctx, T, input, "This user's role is view-only, so they cannot request a recall. Tell them a team member with payment rights can ask, or their admin can change their role. You may still give information about the payout.", "view-only role");
     }
-    // 3. The payout belongs to the verified user's business.
-    const rows = await sql<TransferRow[]>`
-      select t.*, exists (select 1 from restrictions r where r.transfer_id = t.id and r.kind = 'review_hold') as review_hold
-      from transfers t where upper(t.id) = ${ref} and t.business_id = ${user.business_id}`;
-    const t = rows[0];
+    // 3. The payout belongs to the verified user's business (the bank returns only theirs).
+    const t = (await bank(sql).searchTransfers(user.business_id, { reference: ref })).map(toRow).find((x) => x.id.toUpperCase() === ref);
     if (!t) return refuse(ctx, T, input, "No payout with that reference on this account.", "payout not found");
     // 4. Never on a review hold.
     if (t.review_hold) return refuse(ctx, T, input, "review hold. No action can be taken; follow the review-hold instructions.", "review hold");
@@ -724,6 +712,14 @@ const initiateRecall = {
         reason: `The recall is above the ${capText} cap, so you cannot submit it. It has been prepared as ${reference} and needs a supervisor's approval. Now escalate with trigger recall_over_cap (urgency high), then tell the customer it needs approval from the payments team, that it's prepared with the details, when to expect a response, the reference, and that recovery isn't guaranteed once funds are credited.`,
       };
     }
+    // Within the cap: submitted to the bank now, through the Bank Connector API (the reference is the idempotency key).
+    let sent: { accepted: boolean };
+    try {
+      sent = await bank(sql).requestRecall(user.business_id, { transfer_id: t.id, amount: String(t.amount), currency: t.currency, reference, requested_by: user.id }, reference);
+    } catch {
+      return refuse(ctx, T, input, "SYSTEM_ERROR: the bank's system didn't respond, so the recall wasn't submitted. Say so, and escalate so the team submits it.", "bank unavailable");
+    }
+    if (!sent.accepted) return refuse(ctx, T, input, "The bank didn't accept the recall request. Say it couldn't be submitted and escalate so the team follows it up.", "bank refused");
     await sql`insert into recalls (reference, transfer_id, business_id, conversation_id, user_id, amount, currency, status)
       values (${reference}, ${t.id}, ${user.business_id}, ${ctx.conv.id}, ${user.id}, ${t.amount}, ${t.currency}, 'requested')`;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${t.id} · recall ${reference} requested`, input, result: { reference, amount } });
@@ -752,8 +748,9 @@ const getKycStatus = {
   schema: z.object({}),
   async run(_input: Record<string, never>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const user = ctx.user!;
-    const [b] = await ctx.sql<{ verification_status: string; verification_reason: string | null; verification_missing: string | null; verification_submitted_at: Date | null; kyc_tier: number | null }[]>`
-      select verification_status, verification_reason, verification_missing, verification_submitted_at, kyc_tier from businesses where id = ${user.business_id}`;
+    const v = await bank(ctx.sql).getVerification(user.business_id);
+    if (!v) return refuse(ctx, "get_kyc_status", {}, "The bank has no verification record for this account. Say you can't see it and hand off.", "no record");
+    const b = { verification_status: v.status, verification_reason: v.reason, verification_missing: v.missing, verification_submitted_at: v.submitted_at ? new Date(v.submitted_at) : null, kyc_tier: v.kyc_tier };
     const status = statusLabel(b.verification_status);
     let data: Record<string, unknown>;
     if (b.verification_status === "blocked") {
@@ -792,8 +789,7 @@ const getBalance = {
   schema: z.object({}),
   async run(_input: Record<string, never>, ctx: ToolCtx, _rules: Rules): Promise<ToolResult> {
     const user = ctx.user!;
-    const rows = await ctx.sql<{ currency: string; amount: string }[]>`
-      select currency, amount from balances where business_id = ${user.business_id} order by currency`;
+    const rows = await bank(ctx.sql).getBalances(user.business_id);
     const balances = rows.map((r) => ({ currency: r.currency, balance: money(r.amount, r.currency) }));
     await audit(ctx, { kind: "lookup", tool: "get_balance", summary: `get_balance · ${balances.map((b) => b.balance).join(", ") || "none"}`, result: balances });
     return { ok: true, data: { as_of: dateTime(ctx.now), balances } };
@@ -819,12 +815,10 @@ const getFees = {
     const { sql } = ctx;
     const kind = input.kind ?? "both";
     const since = new Date(ctx.now.getTime() - 30 * 86_400_000);
-    const rows = await sql<{ id: string; kind: string; description: string; trigger: string | null; transfer_id: string | null; currency: string; amount: string; from_currency: string | null; from_amount: string | null; to_currency: string | null; to_amount: string | null; rate: string | null; charged_at: Date; waivable: boolean; waived: string | null }[]>`
-      select f.*, (select reference from waivers w where w.fee_id = f.id) as waived
-      from fees f where business_id = ${user.business_id} and charged_at > ${since}
-        ${kind !== "both" ? sql`and kind = ${kind}` : sql``}
-        ${input.payout ? sql`and transfer_id = ${input.payout.trim().toUpperCase()}` : sql``}
-      order by charged_at desc limit 40`;
+    // The fees come from the bank; whether Orchestra already waived one is Orchestra's own record.
+    const fees = await bank(sql).listFees(user.business_id, { kind: kind === "both" ? undefined : kind, transfer: input.payout, since: since.toISOString() });
+    const waivers = fees.length ? await sql<{ fee_id: string; reference: string }[]>`select fee_id, reference from waivers where fee_id in ${sql(fees.map((f) => f.id))}` : [];
+    const rows = fees.map((f) => ({ ...f, charged_at: new Date(f.charged_at), waived: waivers.find((w) => w.fee_id === f.id)?.reference ?? null }));
     let list: typeof rows[number][] = [...rows];
     if (input.on) {
       const target = new Date(`${input.on}T12:00:00Z`).getTime();

@@ -1,4 +1,5 @@
 import type { Sql } from "./db.ts";
+import { bank } from "./bank/index.ts";
 
 // The Staff queue (Escalation Playbook, "The staff queue in the demo"): one staff view acting as
 // supervisor, no login. Approving a prepared recall submits it and records who approved it.
@@ -58,6 +59,18 @@ export async function decide(sql: Sql, reference: string, decision: Decision, no
     if (!c.action || c.action.type !== "recall") return { ok: false as const, error: "nothing_to_approve" };
     const recall = c.action;
     const approved = decision === "approve";
+    if (approved) {
+      // An approved recall is submitted to the bank through the Bank Connector API.
+      const [r] = await tx<{ business_id: string; transfer_id: string; amount: string; currency: string; user_id: string | null; status: string }[]>`
+        select business_id, transfer_id, amount, currency, user_id, status from recalls where reference = ${recall.reference}`;
+      if (!r || r.status !== "awaiting_approval") return { ok: false as const, error: "already_decided" };
+      try {
+        const sent = await bank(tx as unknown as Sql).requestRecall(r.business_id, { transfer_id: r.transfer_id, amount: String(r.amount), currency: r.currency, reference: recall.reference, requested_by: r.user_id ?? "customer", approved_by: who }, recall.reference);
+        if (!sent.accepted) return { ok: false as const, error: "bank_refused" };
+      } catch {
+        return { ok: false as const, error: "bank_unavailable" };
+      }
+    }
     const updated = await tx`update recalls set status = ${approved ? "approved" : "declined"}, decided_by = ${staff ? who : APPROVER}, decided_at = ${now}
       where reference = ${recall.reference} and status = 'awaiting_approval' returning reference`;
     if (!updated.length) return { ok: false as const, error: "already_decided" };

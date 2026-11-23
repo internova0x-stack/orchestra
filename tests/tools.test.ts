@@ -1233,3 +1233,76 @@ test("KYC tiers: Nigeria explains its tiers; the UK and US have none; each count
   assert.match(ukNow.single_transfer_limit, /^£/);
   assert.equal(((await call(david, "get_account_limits", {})).data as Record<string, string>).tier, "No numbered tiers in this country");
 });
+
+
+// ---------------------------------------------------------------- Bank Connector API
+
+test("bank connector: the tools give the same answers over HTTP as from the simulated bank", { skip }, async () => {
+  const http = await import("node:http");
+  const { simulatedBank } = await import("../lib/bank/simulated.ts");
+  const { serveBank } = await import("../lib/bank/serve.ts");
+  await seed(sql!, MONDAY);
+  const KEY = "test-bank-key";
+  const calls: string[] = [];
+  const server = http.createServer(async (req, res) => {
+    let raw = "";
+    for await (const c of req) raw += c;
+    const url = new URL(req.url!, "http://x");
+    calls.push(`${req.method} ${url.pathname}`);
+    if (req.headers.authorization !== `Bearer ${KEY}`) { res.writeHead(401).end("{}"); return; }
+    const path = url.pathname.replace(/^\/v1\//, "").split("/").filter(Boolean).map(decodeURIComponent);
+    const out = await serveBank(simulatedBank(sql!), req.method!, path, url.searchParams, raw ? JSON.parse(raw) : null, (req.headers["idempotency-key"] as string) ?? null);
+    res.writeHead(out.status, { "Content-Type": "application/json" }).end(JSON.stringify(out.body));
+  });
+  await new Promise<void>((r) => server.listen(0, r));
+  const port = (server.address() as { port: number }).port;
+  const run = async () => {
+    const s = await session("ada", MONDAY);
+    const out = {
+      transfer: (await call(s, "get_transfer_status", { recipient: "Lumen Print" })).data,
+      restrictions: (await call(s, "get_account_restrictions", {})).data,
+      kyc: (await call(s, "get_kyc_status", {})).data,
+      balances: ((await call(s, "get_balance", {})).data as { balances: unknown }).balances,
+      fees: (await call(s, "get_fees", {})).data,
+      incoming: (await call(await session("maya", MONDAY), "find_incoming_payment", { amount: 2750, currency: "GBP", payer: "Ashby" })).data,
+      held: (await call(await session("lena", MONDAY), "get_transfer_status", { recipient: "Varga" })).data,
+      identity: await checkIdentity(sql!, { full_name: "Ada Okafor", date_of_birth: "1988-03-14", registration_number: "11482037" }),
+    };
+    return out;
+  };
+  const local = await run();
+  process.env.BANK_API_URL = `http://127.0.0.1:${port}/v1`;
+  process.env.BANK_API_KEY = KEY;
+  try {
+    const remote = await run();
+    assert.deepEqual(remote, local, "every answer is the same through the contract");
+    assert.ok(calls.some((c) => c === "GET /v1/holders/brightline/transfers"), "the tools really called the bank");
+    assert.ok(calls.some((c) => c === "POST /v1/identity/verify"));
+    assert.ok(calls.some((c) => c.startsWith("GET /v1/users/")), "the verified customer's profile comes from the bank");
+    // A recall within the cap is submitted to the bank, with the reference as the idempotency key.
+    const s = await session("ada", MONDAY);
+    await call(s, "initiate_recall", { reference: "PO-88150" });
+    await confirmPending(s);
+    const r = await call(s, "initiate_recall", { reference: "PO-88150" });
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.ok(calls.some((c) => c === "POST /v1/holders/brightline/recalls"));
+  } finally {
+    delete process.env.BANK_API_URL;
+    delete process.env.BANK_API_KEY;
+    server.close();
+  }
+});
+
+
+test("bank connector: the OpenAPI file and the reference server list the same endpoints", async () => {
+  const fs = await import("node:fs");
+  const yaml = fs.readFileSync(new URL("../public/openapi/bank-connector-v1.yaml", import.meta.url), "utf8");
+  const paths = [...yaml.matchAll(/^  (\/[^:]+):$/gm)].map((m) => m[1]).sort();
+  assert.deepEqual(paths, ["/holders/{holderId}/balances", "/holders/{holderId}/fees", "/holders/{holderId}/incoming-payments", "/holders/{holderId}/recalls",
+    "/holders/{holderId}/restrictions", "/holders/{holderId}/transfers", "/holders/{holderId}/verification", "/identity/verify", "/users/{userId}"]);
+  const served = fs.readFileSync(new URL("../lib/bank/serve.ts", import.meta.url), "utf8");
+  for (const p of paths) {
+    const last = p.split("/").filter((x) => x && !x.startsWith("{")).pop()!;
+    assert.ok(served.includes(`"${last}"`), `the reference server handles ${p}`);
+  }
+});

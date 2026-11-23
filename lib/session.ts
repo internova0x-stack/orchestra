@@ -1,5 +1,6 @@
 import type { Sql } from "./db.ts";
 import { SESSION_IDLE_MINUTES } from "./config.ts";
+import { bank } from "./bank/index.ts";
 
 export interface Conversation {
   id: string;
@@ -74,13 +75,13 @@ export async function verifiedUser(sql: Sql, conv: Conversation, now: Date): Pro
   if (!conv.verified_user_id || !conv.verified_at) return null;
   const idle = now.getTime() - new Date(conv.last_activity).getTime();
   if (idle > SESSION_IDLE_MINUTES * 60_000) return null;
-  const rows = await sql<VerifiedUser[]>`
-    select u.id, u.full_name, u.first_name, u.role, u.business_id, b.name as business_name,
-      (b.kind = 'personal') as personal, false as stronger, b.country
-    from business_users u join businesses b on b.id = u.business_id
-    where u.id = ${conv.verified_user_id}`;
-  const user = rows[0];
-  if (!user) return null;
+  // The customer's profile comes from the bank (Bank Connector API, GET /users/{id}).
+  const b = await bank(sql).getUser(conv.verified_user_id);
+  if (!b) return null;
+  const user: VerifiedUser = {
+    id: b.id, full_name: b.full_name, first_name: b.first_name, role: b.role, business_id: b.holder_id,
+    business_name: b.holder_name, personal: Boolean(b.personal), stronger: false, country: b.country,
+  };
   user.stronger = Boolean(conv.stronger_verified_at);
   return user;
 }

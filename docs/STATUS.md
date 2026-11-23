@@ -79,6 +79,18 @@ worked out from the data already stored: no new tables).
   limits and what's needed to move up where tiers are used; how verification works where they aren't.
   Upgrades and tier disputes go to a person. Figures are sample values until Nuvion supplies its own.
 
+## Bank Connector API, step 1 of 2 (Nov 23, Tomi: "build something systems can connect to")
+
+Orchestra reads a bank's core records and asks it to act through one published contract
+(`lib/bank/contract.ts`, `public/openapi/bank-connector-v1.yaml`, the console's API page). `bank(sql)` picks the
+bank: any implementation over HTTPS when `BANK_API_URL` and `BANK_API_KEY` are set (`lib/bank/http.ts`: bearer key,
+10 s timeout, one retry on reads, Idempotency-Key on actions), otherwise the simulated bank (`lib/bank/simulated.ts`).
+The simulated bank also serves the contract at `/api/bank/v1` (needs `BANK_API_KEY`; outside the site password).
+Through it: the identity check, the verified customer's profile, payouts, incoming payments, verification,
+balances, fees, restrictions and recalls (a supervisor's approval submits an over-cap recall). Cards, loans, bills
+and the rest still read the simulated database. A test runs the tools over HTTP against the reference server and
+checks every answer matches. Step 2: the Orchestra API (channels, events, webhooks, keys).
+
 ## First runs with the real model (Nov 23)
 
 The live site's first real turns failed after any tool call: the session context (time, identity) was

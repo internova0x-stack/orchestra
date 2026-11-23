@@ -444,7 +444,8 @@ a { color: var(--brand-accent); }
 @media (max-width: 899px) { .rule-detail { grid-template-columns: 1fr; } .rules-who { margin-left: 0; width: 100%; } }
 
 /* ---------- Dashboard: hours saved ---------- */
-.dash { display: grid; gap: var(--space-4); align-content: start; height: 100%; overflow-y: auto; }
+.dash { display: grid; gap: var(--space-4); align-content: start; grid-auto-rows: max-content; height: 100%; overflow-y: auto; }
+.dash .panel { min-height: auto; }
 .dash-note { margin: 0; }
 .dash-note a { color: var(--brand-accent); }
 .dash-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: var(--space-4); align-items: start; }
@@ -456,6 +457,19 @@ a { color: var(--brand-accent); }
 .dash-table thead th { color: var(--text-2); font-weight: 600; font-size: var(--size-xs); }
 .dash-table tbody th { font-weight: 500; }
 @media (max-width: 1099px) { .dash-grid { grid-template-columns: 1fr; } }
+
+/* ---------- API page ---------- */
+.dev { display: grid; gap: var(--space-4); align-content: start; grid-auto-rows: max-content; height: 100%; overflow-y: auto; }
+.dev .panel { min-height: auto; } /* sections take their full height; the page scrolls */
+.dev-body { padding: var(--space-4) var(--space-6) var(--space-6); display: grid; gap: var(--space-3); max-width: 960px; }
+.dev-body p { margin: 0; }
+.dev-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.dev-h { margin: var(--space-4) 0 0; font: 700 16px/24px var(--font-sans); }
+.dev-list { margin: 0; padding-left: var(--space-6); display: grid; gap: var(--space-1); }
+.dev-table td.dev-desc { white-space: normal; text-align: left; }
+.dev-table td, .dev-table thead th { text-align: left !important; }
+.dev-code { margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); background: var(--surface-100); font: 400 13px/20px var(--font-mono); overflow-x: auto; white-space: pre; }
+.btn-primary[href] { text-decoration: none; }
 
 /* ---------- Sign-in (the shared password) ---------- */
 .login-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--surface-page); }

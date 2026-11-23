@@ -1,0 +1,373 @@
+openapi: 3.1.0
+info:
+  title: Orchestra Bank Connector API
+  version: "1.0.0"
+  summary: The contract a bank implements so Orchestra's AI support agent can read its records and request actions.
+  description: |
+    A bank (or its middleware) implements these endpoints once. Orchestra calls them over HTTPS to answer
+    customers: it never stores the bank's records, only what each conversation needed, in its audit log.
+
+    **Rules of the contract**
+    - Every record belongs to an account holder (a business or a personal account). Orchestra always passes the
+      verified customer's holder id and the bank returns only that holder's records.
+    - Amounts are decimal strings in the currency's major unit ("4200.00"); currencies are ISO 4217 codes.
+    - Times are ISO 8601 with a time zone.
+    - A review hold comes back as a flag only (`review_hold: true`, or a restriction of type `review_hold`).
+      The bank never sends Orchestra the reason, so the agent can't reveal it.
+    - Full account numbers may be returned; Orchestra masks them to the last 4 digits before the AI sees them.
+    - Actions carry an `Idempotency-Key` header. The same key twice must return the first result, never act twice.
+    - A record that doesn't exist, or doesn't belong to the holder, is a 404.
+
+    **Version 1 covers** the identity check, the customer, payouts, incoming payments, verification,
+    balances, fees and currency conversions, restrictions, and the recall request.
+
+    The reference implementation, backed by the prototype's simulated bank, is served at
+    `/api/bank/v1` on the Orchestra prototype. All data there is invented.
+servers:
+  - url: https://bank.example/orchestra/v1
+    description: Your implementation (example address)
+  - url: /api/bank/v1
+    description: The Orchestra prototype's reference implementation (simulated bank)
+security:
+  - bearer: []
+tags:
+  - name: Identity
+  - name: Payouts
+  - name: Incoming payments
+  - name: Account
+  - name: Actions
+
+paths:
+  /identity/verify:
+    post:
+      tags: [Identity]
+      summary: Check a customer's identity
+      description: |
+        The standard identity check: full name, date of birth, and a business's registration number (or a personal
+        account's last 4 digits). Returns the user it identifies, or null. Never say which answer was wrong.
+      operationId: verifyIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityCheck" }
+            example: { full_name: "Ada Okafor", date_of_birth: "1988-03-14", registration_number: "11482037" }
+      responses:
+        "200":
+          description: The user identified, or null
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user_id]
+                properties:
+                  user_id: { type: [string, "null"] }
+              example: { user_id: "ada" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users/{userId}:
+    get:
+      tags: [Identity]
+      summary: Get a verified user's profile
+      operationId: getUser
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /holders/{holderId}/transfers:
+    get:
+      tags: [Payouts]
+      summary: Search the holder's payouts
+      description: Newest first, at most 20. Filter by reference, recipient (part of the name) or exact amount.
+      operationId: searchTransfers
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: reference, in: query, schema: { type: string }, example: "PO-88190" }
+        - { name: recipient, in: query, schema: { type: string }, example: "Lumen" }
+        - { name: amount, in: query, schema: { type: number }, example: 4200 }
+      responses:
+        "200":
+          description: Matching payouts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Transfer" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /holders/{holderId}/incoming-payments:
+    get:
+      tags: [Incoming payments]
+      summary: Search payments sent to the holder
+      description: |
+        The holder's credited payments, plus unallocated payments (arrived with a reference that matches no account,
+        `holder_id: null`). Orchestra only shows an unallocated payment to a customer on an exact amount plus the payer
+        or the date, and hands it to staff to credit.
+      operationId: searchIncomingPayments
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: amount, in: query, schema: { type: number }, example: 2750 }
+        - { name: currency, in: query, schema: { type: string }, example: "GBP" }
+      responses:
+        "200":
+          description: Matching payments
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/IncomingPayment" } }
+
+  /holders/{holderId}/verification:
+    get:
+      tags: [Account]
+      summary: The holder's verification (KYC) status
+      operationId: getVerification
+      parameters: [{ $ref: "#/components/parameters/holderId" }]
+      responses:
+        "200":
+          description: Verification
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Verification" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /holders/{holderId}/balances:
+    get:
+      tags: [Account]
+      summary: The holder's balances, one per currency
+      operationId: getBalances
+      parameters: [{ $ref: "#/components/parameters/holderId" }]
+      responses:
+        "200":
+          description: Balances
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Balance" } }
+
+  /holders/{holderId}/fees:
+    get:
+      tags: [Account]
+      summary: Fees charged and currency conversions
+      operationId: listFees
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: kind, in: query, schema: { type: string, enum: [fee, conversion] } }
+        - { name: transfer, in: query, description: "A payout reference", schema: { type: string } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Fees and conversions, newest first, at most 40
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Fee" } }
+
+  /holders/{holderId}/restrictions:
+    get:
+      tags: [Account]
+      summary: Restrictions on the account or a payout
+      description: A review hold has no reason in it, ever. A restriction the customer can fix carries the cause and the fix.
+      operationId: listRestrictions
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: transfer, in: query, description: "Only restrictions on this payout (and the whole account)", schema: { type: string } }
+      responses:
+        "200":
+          description: Restrictions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Restriction" } }
+
+  /holders/{holderId}/recalls:
+    post:
+      tags: [Actions]
+      summary: Request a recall of a payout
+      description: |
+        Ask the receiving bank to return a payout sent in error. Orchestra only calls this after its own checks: the
+        customer's identity and role, the payout belongs to them, no review hold, the per-customer limit, the cap,
+        and the customer's explicit yes. A recall above the cap is sent only after a supervisor approves it
+        (`approved_by`). The `Idempotency-Key` is Orchestra's reference: the same key twice returns the first result.
+      operationId: requestRecall
+      parameters:
+        - $ref: "#/components/parameters/holderId"
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string }, example: "REC-5501" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecallRequest" }
+            example: { transfer_id: "PO-88150", amount: "3200.00", currency: "USD", reference: "REC-5501", requested_by: "ada", approved_by: null }
+      responses:
+        "200":
+          description: The bank's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecallResult" }
+              example: { accepted: true, bank_reference: "RCL-77810", status: "requested" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: An API key Orchestra sends on every call (BANK_API_KEY in Orchestra's settings).
+  parameters:
+    holderId:
+      name: holderId
+      in: path
+      required: true
+      description: The account holder (business or personal account) the verified customer belongs to.
+      schema: { type: string }
+      example: "brightline"
+  responses:
+    Unauthorized:
+      description: Missing or wrong API key
+    NotFound:
+      description: No such record for this holder
+  schemas:
+    Money:
+      type: string
+      pattern: "^-?\\d+(\\.\\d+)?$"
+      description: A decimal amount in the currency's major unit
+      example: "4200.00"
+    IdentityCheck:
+      type: object
+      required: [full_name, date_of_birth, registration_number]
+      properties:
+        full_name: { type: string }
+        date_of_birth: { type: string, format: date }
+        registration_number: { type: string, description: "A business's registration number, or a personal account's last 4 digits" }
+    User:
+      type: object
+      required: [id, full_name, first_name, role, holder_id, holder_name, personal, country]
+      properties:
+        id: { type: string }
+        full_name: { type: string }
+        first_name: { type: string }
+        role: { type: string, enum: [view_only, payment_rights] }
+        holder_id: { type: string }
+        holder_name: { type: string }
+        personal: { type: boolean }
+        country: { type: string, description: "Picks the market's rules: Nigeria, United Kingdom, United States", example: "United Kingdom" }
+    Transfer:
+      type: object
+      required: [id, holder_id, recipient_name, recipient_account, amount, currency, route, status, sent_at, history, review_hold]
+      properties:
+        id: { type: string, example: "PO-88190" }
+        holder_id: { type: string }
+        recipient_name: { type: string }
+        recipient_account: { type: string }
+        recipient_bank: { type: [string, "null"] }
+        recipient_country: { type: [string, "null"] }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string, example: "USD" }
+        route: { type: string, example: "SWIFT" }
+        description: { type: [string, "null"] }
+        status: { type: string, enum: [pending, processing, successful, failed, reversed] }
+        stage: { type: [string, "null"], example: "With an intermediary bank" }
+        failure_reason: { type: [string, "null"] }
+        sent_at: { type: string, format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        history:
+          type: array
+          items:
+            type: object
+            required: [stage, at]
+            properties:
+              stage: { type: string }
+              at: { type: string, format: date-time }
+        review_hold: { type: boolean, description: "True if the payout is on a review hold. No reason, ever." }
+    IncomingPayment:
+      type: object
+      required: [id, holder_id, payer_name, amount, currency, status, received_at]
+      properties:
+        id: { type: string }
+        holder_id: { type: [string, "null"], description: "Null while unallocated" }
+        payer_name: { type: string }
+        payer_bank: { type: [string, "null"] }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        reference: { type: [string, "null"] }
+        status: { type: string, enum: [credited, unallocated] }
+        received_at: { type: string, format: date-time }
+        credited_at: { type: [string, "null"], format: date-time }
+    Verification:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [incomplete, pending, approved, failed, blocked] }
+        reason: { type: [string, "null"], description: "Why it failed, in words for the customer. Never for blocked." }
+        missing: { type: [string, "null"], description: "What is still needed" }
+        submitted_at: { type: [string, "null"], format: date-time }
+        kyc_tier: { type: [integer, "null"], description: "Where the country uses numbered tiers" }
+    Balance:
+      type: object
+      required: [currency, amount]
+      properties:
+        currency: { type: string }
+        amount: { $ref: "#/components/schemas/Money" }
+    Fee:
+      type: object
+      required: [id, kind, description, currency, amount, charged_at, waivable]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [fee, conversion] }
+        description: { type: string }
+        trigger: { type: [string, "null"] }
+        transfer_id: { type: [string, "null"] }
+        currency: { type: string }
+        amount: { $ref: "#/components/schemas/Money" }
+        from_currency: { type: [string, "null"] }
+        from_amount: { type: [string, "null"] }
+        to_currency: { type: [string, "null"] }
+        to_amount: { type: [string, "null"] }
+        rate: { type: [string, "null"] }
+        charged_at: { type: string, format: date-time }
+        waivable: { type: boolean }
+    Restriction:
+      type: object
+      required: [id, type]
+      properties:
+        id: { type: string }
+        transfer_id: { type: [string, "null"] }
+        type: { type: string, enum: [review_hold, customer_can_fix] }
+        customer_reason: { type: [string, "null"], description: "Only for customer_can_fix" }
+    RecallRequest:
+      type: object
+      required: [transfer_id, amount, currency, reference, requested_by]
+      properties:
+        transfer_id: { type: string }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string }
+        reference: { type: string, description: "Orchestra's reference for the request" }
+        requested_by: { type: string, description: "The user id of the customer who asked" }
+        approved_by: { type: [string, "null"], description: "The supervisor who approved a recall above the cap" }
+    RecallResult:
+      type: object
+      required: [accepted, status]
+      properties:
+        accepted: { type: boolean }
+        bank_reference: { type: [string, "null"] }
+        status: { type: string, example: "requested" }

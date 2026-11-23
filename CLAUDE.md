@@ -63,6 +63,10 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
+- Bank Connector API (`lib/bank/`): tools reach the bank's core records through `bank(sql)`, never with their own
+  SQL for those records; `BANK_API_URL` + `BANK_API_KEY` switch to a real bank; `/api/bank/v1` is the reference
+  implementation; `public/openapi/bank-connector-v1.yaml` is the contract (a test keeps it in step with the server).
+  API page: `/developers`.
 - `npm run dev`, `npm run build`, `npm run typecheck`.
 - `npm test` with `TEST_DATABASE_URL` pointing at a throwaway Postgres runs the tools against the seeded
   bank (no model calls); without it the database tests are skipped.

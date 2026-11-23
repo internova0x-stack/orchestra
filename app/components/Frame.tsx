@@ -11,6 +11,7 @@ const ICONS: Record<string, React.ReactNode> = {
   chart: <><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></>,
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
   sliders: <><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></>,
+  code: <><path d="m16 18 6-6-6-6" /><path d="m8 6-6 6 6 6" /></>,
   external: <><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>,
 };
 const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidden="true">{ICONS[name]}</svg>;
@@ -78,7 +79,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   // The customer app has its own look: no console tabs or buttons.
   if (path.startsWith("/customer") || path === "/login") return <>{children}</>;
 
-  const current = TABS.find((x) => x.href === path)?.label ?? "Support console";
+  const current = TABS.find((x) => x.href === path)?.label ?? (path === "/developers" ? "API" : "Support console");
 
   return (
     <div className="app">
@@ -97,6 +98,10 @@ export default function Frame({ children }: { children: React.ReactNode }) {
                   <Link href={x.href} className="tab" aria-current={path === x.href ? "page" : undefined}><Icon name={x.icon} />{x.label}</Link>
                 </li>
               ))}
+            </ul>
+            <p className="nav-label">Developers</p>
+            <ul className="nav">
+              <li><Link href="/developers" className="tab" aria-current={path === "/developers" ? "page" : undefined}><Icon name="code" />API</Link></li>
             </ul>
             <p className="nav-label">Testing</p>
             <ul className="nav">
