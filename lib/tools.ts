@@ -15,6 +15,8 @@ import {
   type BusinessHours,
 } from "./time.ts";
 import { sendOneTimeCode, sendResetLink, unlockAccount } from "./tools/access.ts";
+import { watch } from "./updates.ts";
+import { watchCase } from "./tools/watching.ts";
 import { freezeCard, getCard, orderReplacement } from "./tools/cards.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
 import { findPayments, getReversalStatus, requestReversal } from "./tools/payments.ts";
@@ -238,6 +240,9 @@ const escalateToHuman = {
       values (${reference}, ${ctx.conv.id}, ${ctx.user?.business_id ?? null}, ${ctx.user?.id ?? null}, ${urgency},
               ${input.trigger}, ${sql.json(summary)}, ${due.at}, ${action ? sql.json(action) : null})`;
     await audit(ctx, { kind: "handoff", tool: "escalate_to_human", summary: `escalate_to_human · ${reference} · ${urgency}`, input, result: summary });
+    if (ctx.user) {
+      await watch(sql, { conversationId: ctx.conv.id, holderId: ctx.user.business_id, userId: ctx.user.id, kind: "case", reference, label: `case with our team (${TRIGGERS[input.trigger].label.toLowerCase()})`, status: "open", expectedBy: due.at });
+    }
     ctx.emit({ type: "handoff", reference, urgency, respond: due.text });
     return {
       ok: true,
@@ -700,6 +705,7 @@ const initiateRecall = {
       await sql`insert into recalls (reference, transfer_id, business_id, conversation_id, user_id, amount, currency, status)
         values (${reference}, ${t.id}, ${user.business_id}, ${ctx.conv.id}, ${user.id}, ${t.amount}, ${t.currency}, 'awaiting_approval')`;
       await audit(ctx, { kind: "refusal", tool: T, summary: `${T} · refused: above cap ${capText}`, input, result: { prepared: reference }, refusal_reason: `Above the ${capText} recall cap` });
+      await watch(sql, { conversationId: ctx.conv.id, holderId: user.business_id, userId: user.id, kind: "recall", reference, label: `recall of the ${amount} payout to ${t.recipient_name}`, status: "awaiting_approval" });
       return {
         ok: false,
         reference,
@@ -709,6 +715,7 @@ const initiateRecall = {
     await sql`insert into recalls (reference, transfer_id, business_id, conversation_id, user_id, amount, currency, status)
       values (${reference}, ${t.id}, ${user.business_id}, ${ctx.conv.id}, ${user.id}, ${t.amount}, ${t.currency}, 'requested')`;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${t.id} · recall ${reference} requested`, input, result: { reference, amount } });
+    await watch(sql, { conversationId: ctx.conv.id, holderId: user.business_id, userId: user.id, kind: "recall", reference, label: `recall of the ${amount} payout to ${t.recipient_name}`, status: "requested" });
     return {
       ok: true,
       reference,
@@ -830,7 +837,8 @@ const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHu
   sendOneTimeCode, sendResetLink, unlockAccount,
   getCard, freezeCard, orderReplacement, listTransactions, openDispute,
   findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits,
-  getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds];
+  getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds,
+  watchCase];
 
 /** Tool definitions for the model. Order is fixed so the prompt cache holds. */
 export function toolDefinitions(): Anthropic.Beta.BetaToolUnion[] {

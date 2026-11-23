@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { watch } from "../updates.ts";
 import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type ToolResult } from "../toolkit.ts";
 import type { Rules } from "../rules.ts";
 import { money } from "../format.ts";
@@ -96,6 +97,7 @@ export const requestDeferral = {
     await ctx.sql`insert into deferral_requests (reference, loan_id, holder_id, conversation_id, months, decision_by)
       values (${reference}, ${l.id}, ${user.business_id}, ${ctx.conv.id}, ${months}, ${decisionBy})`;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${l.id} · ${reference} logged for the lending team`, input, result: { reference } });
+    await watch(ctx.sql, { conversationId: ctx.conv.id, holderId: user.business_id, userId: user.id, kind: "deferral", reference, label: `request to defer a payment on your ${l.product.toLowerCase()}`, status: "requested", expectedBy: decisionBy });
     return { ok: true, reference, data: { reference, decision_by: longDate(decisionBy), note: "Say it's a request, not an approval; the team decides by that date. Then hand off (trigger loan_hardship) so the specialist team has the case." } };
   },
 };

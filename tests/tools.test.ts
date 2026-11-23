@@ -739,3 +739,49 @@ test("merchant review hold: On hold, no reason, anywhere", { skip }, async () =>
   assert.match(JSON.stringify(payout), /On hold/);
   assert.doesNotMatch(JSON.stringify(payout) + JSON.stringify(holds), /chargeback|risk review/i);
 });
+
+// ---------------------------------------------------------------- use case 17: proactive status updates
+
+test("use case 17: a reversal that completes after the chat ends sends one update to the phone on file", { skip }, async () => {
+  const { runUpdates, SIM_REVERSAL_MINUTES } = await import("../lib/updates.ts");
+  await seed(sql!, MONDAY);
+  const s = await session("chioma", MONDAY, true);
+  await call(s, "request_reversal", { payment_id: "PAY-61001" });
+  await confirmPending(s);
+  await call(s, "request_reversal", { payment_id: "PAY-61001" });
+  await runUpdates(sql!, new Date(MONDAY.getTime() + 60_000));
+  assert.equal((await sql!`select count(*)::int as n from outbox`)[0].n, 0, "nothing until something changes");
+  const later = new Date(MONDAY.getTime() + (SIM_REVERSAL_MINUTES + 1) * 60_000);
+  await runUpdates(sql!, later);
+  await runUpdates(sql!, new Date(later.getTime() + 60_000));
+  const msgs = await sql!`select sent_to, body from outbox where user_id = 'chioma'`;
+  assert.equal(msgs.length, 1);
+  assert.equal(msgs[0].sent_to, "•••• 0142");
+  assert.match(msgs[0].body, /REV-8101.*complete/);
+  assert.doesNotMatch(msgs[0].body, /http|sign in|[?]|0123456789/i);
+  assert.equal((await sql!`select active from case_watches where reference = 'REV-8101'`)[0].active, false, "closed cases stop being watched");
+});
+
+test("use case 17: a case past its expected date with no change gets one honest late update", { skip }, async () => {
+  const { runUpdates } = await import("../lib/updates.ts");
+  const s = await session("emeka", MONDAY, true);
+  await call(s, "request_deferral", {});
+  await confirmPending(s);
+  await call(s, "request_deferral", {});
+  const tenDays = new Date(MONDAY.getTime() + 10 * 86_400_000);
+  await runUpdates(sql!, tenDays);
+  await runUpdates(sql!, new Date(tenDays.getTime() + 2 * 86_400_000));
+  const msgs = await sql!`select body from outbox where user_id = 'emeka'`;
+  assert.equal(msgs.length, 1);
+  assert.match(msgs[0].body, /taking longer than expected/);
+});
+
+test("use case 17: no proactive message to a customer on a review hold", { skip }, async () => {
+  const { runUpdates, watch } = await import("../lib/updates.ts");
+  const s = await session("lena", MONDAY);
+  await call(s, "escalate_to_human", { trigger: "review_hold", urgency: "high", request: "Payout stuck", checked: "PO-88177 on hold", did: "None", needed: "Specialist review", told: "A specialist team will be in touch", flags: ["review hold"] });
+  await sql!`update escalations set status = 'resolved' where business_id = 'northfield'`;
+  await runUpdates(sql!, new Date(MONDAY.getTime() + 3_600_000));
+  assert.equal((await sql!`select count(*)::int as n from outbox where user_id = 'lena'`)[0].n, 0);
+  void watch;
+});

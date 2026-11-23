@@ -200,7 +200,27 @@ function IdentityForm({ disabled, onSubmit }: { disabled: boolean; onSubmit: (a:
   );
 }
 
-function Activity({ rows, running, onClose }: { rows: ActivityRow[]; running: { id: string; name: string }[]; onClose?: () => void }) {
+interface OutboxMsg { id: number; channel: string; sent_to: string; body: string; sent_at: string }
+
+/** Use case 17: the messages sent to this customer's phone on file (simulated). */
+function Outbox({ messages }: { messages: OutboxMsg[] }) {
+  return (
+    <div className="activity-list" aria-live="polite">
+      {messages.length === 0 && (
+        <div className="empty">Status updates Alexis sends to this customer's phone on file appear here: when a reversal, dispute, recall or case they're waiting on changes, or runs late.</div>
+      )}
+      {messages.map((m) => (
+        <div key={m.id} className="sms outbox-msg">
+          <span className="label">{m.channel} to {m.sent_to} · {new Date(m.sent_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+          <span>{m.body}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Activity({ rows, running, onClose, outbox }: { rows: ActivityRow[]; running: { id: string; name: string }[]; onClose?: () => void; outbox: OutboxMsg[] }) {
+  const [tab, setTab] = useState<"activity" | "outbox">("activity");
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -211,14 +231,19 @@ function Activity({ rows, running, onClose }: { rows: ActivityRow[]; running: { 
   const doneIds = new Set(rows.map((r) => r.tool_use_id));
   return (
     <section className="panel activity" aria-label="What Alexis is doing">
-      <div className="panel-head" style={{ justifyContent: "space-between" }}>
-        <span className="panel-title">What Alexis is doing</span>
+      <div className="panel-head" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+        <span className="case-tabs" style={{ padding: 0 }}>
+          <button className="tab" aria-current={tab === "activity" ? "page" : undefined} onClick={() => setTab("activity")}>What Alexis is doing</button>
+          <button className="tab" aria-current={tab === "outbox" ? "page" : undefined} onClick={() => setTab("outbox")}>
+            Messages to the customer{outbox.length ? ` (${outbox.length})` : ""}
+          </button>
+        </span>
         <span className="counter">
           <span><b>{lookups}</b> lookups</span><span><b>{actions}</b> actions</span><span><b>{refusals}</b> refusals</span>
         </span>
         {onClose && <button className="btn" onClick={onClose}>Back to chat</button>}
       </div>
-      <div className="activity-list" ref={listRef} aria-live="polite">
+      {tab === "outbox" ? <Outbox messages={outbox} /> : <div className="activity-list" ref={listRef} aria-live="polite">
         {rows.length === 0 && running.length === 0 && <div className="empty">Each lookup, refusal and action appears here as Alexis works.</div>}
         {rows.map((r) => {
           const time = new Date(r.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -238,7 +263,7 @@ function Activity({ rows, running, onClose }: { rows: ActivityRow[]; running: { 
             <div className="row-line"><span className="spinner" aria-hidden="true" /><span className="row-text">{t.name} · running</span></div>
           </div>
         ))}
-      </div>
+      </div>}
     </section>
   );
 }
@@ -254,6 +279,7 @@ export default function Chat() {
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [outbox, setOutbox] = useState<OutboxMsg[]>([]);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -281,6 +307,18 @@ export default function Chat() {
   }, []);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
+  // Proactive updates: poll this customer's simulated phone (also runs the watches on the server).
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      fetch(`/api/outbox?user=${typingUserId}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j) => { if (live) setOutbox(j.messages ?? []); })
+        .catch(() => {});
+    load();
+    const t = setInterval(() => document.visibilityState === "visible" && load(), 5000);
+    return () => { live = false; clearInterval(t); };
+  }, [typingUserId]);
   useEffect(() => {
     fetch("/api/samples", { cache: "no-store" }).then((r) => r.json()).then((j) => setSamples(j.samples ?? [])).catch(() => {});
   }, []);
@@ -607,7 +645,7 @@ export default function Chat() {
         </div>
       </section>
 
-      <Activity rows={rows} running={running} />
+      <Activity rows={rows} running={running} outbox={outbox} />
     </div>
   );
 }

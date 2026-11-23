@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { watch } from "../updates.ts";
 import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type ToolResult } from "../toolkit.ts";
 import type { Rules } from "../rules.ts";
 import { money, statusLabel } from "../format.ts";
@@ -105,6 +106,7 @@ export const openDispute = {
     await ctx.sql`insert into disputes (reference, transaction_id, holder_id, conversation_id, amount, currency, reason)
       values (${reference}, ${id}, ${user.business_id}, ${ctx.conv.id}, ${tx.amount}, ${tx.currency}, ${input.reason})`;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${id} · ${reference} opened`, input, result: { reference, amount } });
+    await watch(ctx.sql, { conversationId: ctx.conv.id, holderId: user.business_id, userId: user.id, kind: "dispute", reference, label: `dispute on the ${amount} payment to ${tx.merchant_name ?? tx.descriptor}`, status: "open", expectedBy: new Date(ctx.now.getTime() + 14 * 86_400_000) });
     return { ok: true, reference, data: { reference, transaction: id, amount, process: rules.get("dispute_process")?.value, note: "Give the reference and the expected timeline; don't predict the outcome or say who is liable." } };
   },
 };

@@ -234,6 +234,7 @@ a { color: var(--brand-accent); }
 
 /* One-time code: the simulated text message and its form */
 .code-box { margin-top: var(--space-3); white-space: normal; }
+.outbox-msg { animation: rise 150ms ease-out; }
 .sms { display: grid; gap: 2px; padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px dashed var(--border-strong); font-size: var(--size-sm); }
 
 /* Identity and handoff */

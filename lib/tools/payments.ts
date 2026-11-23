@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { watch } from "../updates.ts";
 import { audit, confirmFirst, refuse, ruleRead, type Tier, type ToolCtx, type ToolResult } from "../toolkit.ts";
 import type { Rules } from "../rules.ts";
 import { money } from "../format.ts";
@@ -155,6 +156,7 @@ export const requestReversal = {
     await ctx.sql`insert into reversals (reference, payment_id, holder_id, conversation_id, amount, currency, status, breach, requested_at)
       values (${reference}, ${p.id}, ${user.business_id}, ${ctx.conv.id}, ${p.amount}, ${p.currency}, 'requested', ${pastWindow}, ${ctx.now})`;
     await audit(ctx, { kind: "action", tool: T, summary: `${T} · ${p.id} · ${reference} requested${pastWindow ? " · breach logged" : ""}`, input, result: { reference, amount, breach: pastWindow } });
+    await watch(ctx.sql, { conversationId: ctx.conv.id, holderId: user.business_id, userId: user.id, kind: "reversal", reference, label: `reversal of ${amount} for the failed payment at ${p.merchant_name}`, status: "requested", expectedBy: new Date(ctx.now.getTime() + hours * 3_600_000) });
     return {
       ok: true,
       reference,

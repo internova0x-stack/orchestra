@@ -339,6 +339,33 @@ create table if not exists merchant_holds (
   created_at timestamptz not null
 );
 
+-- Use case 17: proactive status updates. Watches on open cases and the messages sent to customers.
+create table if not exists case_watches (
+  id bigserial primary key,
+  conversation_id uuid references conversations(id) on delete cascade,
+  holder_id text not null references businesses(id) on delete cascade,
+  user_id text references business_users(id) on delete set null,
+  kind text not null check (kind in ('reversal','recall','dispute','deferral','case','verification')),
+  reference text not null,
+  label text not null,
+  last_status text not null,
+  expected_by timestamptz,
+  late_notified boolean not null default false,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (kind, reference)
+);
+create table if not exists outbox (
+  id bigserial primary key,
+  holder_id text not null references businesses(id) on delete cascade,
+  user_id text references business_users(id) on delete set null,
+  watch_id bigint references case_watches(id) on delete cascade,
+  channel text not null,
+  sent_to text not null,
+  body text not null,
+  sent_at timestamptz not null default now()
+);
+
 create sequence if not exists escalation_seq start 1042;
 create sequence if not exists recall_seq start 5001;
 create sequence if not exists proof_seq start 4101;
@@ -365,6 +392,8 @@ create index if not exists audit_log_conversation on audit_log (conversation_id,
 /** Tables in dependency order, children first, for wiping on Reset demo. */
 export const TABLES_TO_WIPE = [
   "audit_log",
+  "outbox",
+  "case_watches",
   "deferral_requests",
   "loans",
   "merchant_holds",
