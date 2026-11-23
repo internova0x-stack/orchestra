@@ -265,6 +265,14 @@ create table if not exists crm_connectors (
   updated_by text,
   updated_at timestamptz
 );
+create table if not exists crm_records (
+  conversation_id uuid not null references conversations(id) on delete cascade,
+  kind text not null,
+  ticket_id text not null,
+  reason text,
+  created_at timestamptz not null default now(),
+  primary key (conversation_id, kind)
+);
 create table if not exists crm_sandbox_calls (
   id bigserial primary key,
   kind text not null,

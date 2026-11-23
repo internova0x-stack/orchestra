@@ -86,7 +86,7 @@ export function ruleClassify(text: string): AnalysisOut {
   return {
     category: fraud ? "Fraud and scams" : (refs.map((r) => BY_REF[r.split("-")[0]]).find(Boolean) ?? categoryOf([], [], text)),
     urgency: fraud ? "urgent" : /\b(urgent|asap|immediately|still (hasn't|not)|days? (late|ago))\b/i.test(text) ? "high" : "normal",
-    summary: text.replace(/\s+/g, " ").slice(0, 140),
+    summary: (text.split(/\nCustomer: /).pop() ?? text).replace(/^Subject: .*\n?/, "").replace(/\s+/g, " ").slice(0, 140),
     references: refs,
     amount: text.match(/[$£₦]\s?[\d,]+(\.\d+)?/)?.[0] ?? null,
     fraud_signal: fraud,

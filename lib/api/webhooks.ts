@@ -73,7 +73,7 @@ export async function deliver(sql: Sql, deliveryId: number): Promise<void> {
 }
 
 /** Run work after the response where the platform allows it (Next's after()), otherwise straight away. */
-async function later(work: () => Promise<void>) {
+export async function later(work: () => Promise<void>) {
   try {
     const { after } = await import("next/server");
     after(work);
@@ -87,6 +87,10 @@ async function later(work: () => Promise<void>) {
  * the caller: a webhook problem must not break a conversation.
  */
 export async function emitEvent(sql: Sql, event: WebhookEvent, data: Record<string, unknown>): Promise<void> {
+  // Data entry into the bank's CRM follows the same events (lib/crm/dataEntry.ts), after the response.
+  if (event === "case.created" || event === "case.updated") {
+    await later(async () => { const { dataEntryOnEvent } = await import("../crm/dataEntry.ts"); await dataEntryOnEvent(sql, event, data); });
+  }
   try {
     const endpoints = await sql<{ id: string }[]>`select id from webhook_endpoints where active and ${event} = any(events)`;
     if (!endpoints.length) return;

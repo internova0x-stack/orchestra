@@ -65,6 +65,9 @@ export function zendesk(cfg: { subdomain: string; email: string; token: string }
       await req("PUT", `/api/v2/tickets/${enc(id)}.json`, { ticket: { comment: { body: text, public: true } } });
       return { public: true };
     },
+    async addNote(id, text, opts) {
+      await req("PUT", `/api/v2/tickets/${enc(id)}.json`, { ticket: { comment: { body: text, public: false }, ...(opts?.solve ? { status: "solved" } : {}) } });
+    },
     async createTicket(t: NewTicket) {
       const { ticket } = await req<{ ticket: { id: number } }>("POST", "/api/v2/tickets.json", {
         ticket: {
@@ -109,6 +112,10 @@ export function freshdesk(cfg: { domain: string; apiKey: string }, fetcher: Fetc
     async reply(id, text) {
       await req("POST", `/api/v2/tickets/${enc(id)}/reply`, { body: text.replace(/\n/g, "<br>") });
       return { public: true };
+    },
+    async addNote(id, text, opts) {
+      await req("POST", `/api/v2/tickets/${enc(id)}/notes`, { body: text.replace(/\n/g, "<br>"), private: true });
+      if (opts?.solve) await req("PUT", `/api/v2/tickets/${enc(id)}`, { status: 4 });
     },
     async createTicket(t) {
       const created = await req<{ id: number }>("POST", "/api/v2/tickets", {
@@ -169,6 +176,10 @@ export function salesforce(cfg: { instanceUrl: string; accessToken?: string; cli
       await req("POST", `${SF}/sobjects/CaseComment`, { ParentId: sfId(id), CommentBody: text, IsPublished: true });
       return { public: true };
     },
+    async addNote(id, text, opts) {
+      await req("POST", `${SF}/sobjects/CaseComment`, { ParentId: sfId(id), CommentBody: text, IsPublished: false });
+      if (opts?.solve) await req("PATCH", `${SF}/sobjects/Case/${sfId(id)}`, { Status: "Closed" });
+    },
     async createTicket(t) {
       const created = await req<{ id: string }>("POST", `${SF}/sobjects/Case`, {
         Subject: t.subject, Description: t.note, Origin: "Web", Priority: SF_PRIORITY[t.priority], Status: t.status === "solved" ? "Closed" : "New",
@@ -217,6 +228,10 @@ export function hubspot(cfg: { accessToken: string }, fetcher: Fetch = fetch): C
       // the reply is recorded on the ticket as a note for the agent to send.
       await note(id, `Reply to send (from ${author}, via Orchestra):\n${text}`);
       return { public: false };
+    },
+    async addNote(id, text, opts) {
+      await note(id, text);
+      if (opts?.solve) await req("PATCH", `/crm/v3/objects/tickets/${enc(id)}`, { properties: { hs_pipeline_stage: "4" } });
     },
     async createTicket(t) {
       const created = await req<{ id: string }>("POST", "/crm/v3/objects/tickets", {

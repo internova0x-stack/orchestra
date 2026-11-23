@@ -117,6 +117,18 @@ bank's transaction. An action the bank refuses (`accepted: false`) becomes a han
 cards, transactions, payments, timelines, loans, payouts, holds, bills, USSD and limits, and the freeze, unlock and
 bill-refund actions.
 
+## Data entry (Nov 23, Tomi: "then 3")
+
+With "Data entry" ticked for a connector (API page), Orchestra keeps the bank's CRM up to date about the conversations
+it handles itself (`lib/crm/dataEntry.ts`, `crm_records`): a handoff opens a ticket in the team's group with the
+handoff summary as case notes and the customer's contact details on file; later steps (decision, pick-up, move,
+overdue, resolved) are added as internal notes and resolving closes the ticket; a conversation Alexis resolved alone
+is recorded once as a solved ticket with case notes (Claude writes them from the transcript and activity log:
+asked, found, done, outcome, references; a plain version from the log when the AI service is down). Handoff and
+update events trigger it (alongside the webhooks); resolved conversations are picked up by the Inbox's refresh, a
+few at a time, each claimed first so two refreshes never open two tickets. Listened tickets are skipped (they already
+live in the helpdesk). Every write, and every failure, is in the activity log. One new test.
+
 ## CRM connectors (Nov 23, Tomi: "can we have 4 different connectors?")
 
 One interface (`lib/crm/contract.ts`) and four connectors (`lib/crm/connectors.ts`), each written to its product's

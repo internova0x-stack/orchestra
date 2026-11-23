@@ -1848,3 +1848,41 @@ test("CRM connectors: each of the four reads its ticket, and writes tags, priori
   assert.equal(salesforce({ instanceUrl: "https://x", accessToken: "t" }).ticketIdFrom({ caseId: "500ABC" }), "500ABC");
   assert.equal(hubspot({ accessToken: "t" }).ticketIdFrom([{ objectId: 9 }]), "9");
 });
+
+test("data entry: a handoff opens a CRM ticket with its case notes; later steps are added; a resolved conversation is recorded once", { skip }, async () => {
+  const { saveConnector } = await import("../lib/crm/service.ts");
+  const { dataEntryOnEvent, recordResolved } = await import("../lib/crm/dataEntry.ts");
+  await seed(sql!, MONDAY);
+  await saveConnector(sql!, "zendesk", { mode: "sandbox", data_entry: true, groups: { "Payments team": "360001" } }, "Bayo");
+  const s = await session("ada", new Date());
+  await sql!`update conversations set messages = ${sql!.json([{ role: "user", content: "Where is PO-88102?" }, { role: "assistant", content: [{ type: "text", text: "It's late; I've passed it to the team." }] }] as never)} where id = ${s.conv.id}`;
+  await call(s, "get_transfer_status", { reference: "PO-88102" });
+  const esc = await call(s, "escalate_to_human", { trigger: "payout_past_window", urgency: "normal", request: "Where is PO-88102", checked: "PO-88102 late", did: "None", needed: "Chase the bank", told: "The team will pick it up" });
+  const [e] = await sql!`select team, summary, urgency, respond_by from escalations where reference = ${esc.reference!}`;
+  await dataEntryOnEvent(sql!, "case.created", { reference: esc.reference, conversation_id: s.conv.id, urgency: e.urgency, team: e.team, category: "Payouts", respond_by: e.respond_by, summary: e.summary });
+  const [rec] = await sql!`select ticket_id from crm_records where conversation_id = ${s.conv.id} and kind = 'zendesk'`;
+  assert.equal(rec.ticket_id, "1099");
+  const post = (await sql!`select body from crm_sandbox_calls where kind = 'zendesk' and method = 'POST' order by id desc limit 1`)[0].body.ticket;
+  assert.equal(post.group_id, 360001, "the Payments team's group");
+  assert.equal(post.requester.email, "ada@brightline.example.com", "the customer on file");
+  assert.match(post.comment.body, /Chase the bank/);
+  assert.equal(post.comment.public, false);
+  // A second handoff event for the same conversation adds to the ticket instead of opening another.
+  await dataEntryOnEvent(sql!, "case.updated", { reference: esc.reference, status: "resolved", by: "Ife Adeyemi", note: "Funds arrived" });
+  const put = (await sql!`select path, body from crm_sandbox_calls where kind = 'zendesk' and method = 'PUT' order by id desc limit 1`)[0];
+  assert.equal(put.path, "/api/v2/tickets/1099.json");
+  assert.match(put.body.ticket.comment.body, /resolved by Ife Adeyemi: Funds arrived/);
+  assert.equal(put.body.ticket.status, "solved");
+  assert.equal((await sql!`select count(*)::int as n from crm_records where conversation_id = ${s.conv.id}`)[0].n, 1);
+  // Conversations Alexis resolved on her own: recorded once each, as solved tickets with case notes.
+  const notes = async () => ({ notes: { subject: "Balance question", asked: "Balance", found: "USD 10,000", done: "Nothing: information only", outcome: "Answered", references: [] } });
+  const n1 = await recordResolved(sql!, { notes, limit: 50, now: new Date(Date.now() + 3 * 3_600_000) });
+  const n2 = await recordResolved(sql!, { notes, limit: 50, now: new Date(Date.now() + 3 * 3_600_000) });
+  assert.equal(n2, 0, "never twice");
+  if (n1 > 0) {
+    const solved = (await sql!`select body from crm_sandbox_calls where kind = 'zendesk' and method = 'POST' order by id desc limit 1`)[0].body.ticket;
+    assert.equal(solved.status, "solved");
+    assert.match(solved.comment.body, /Recorded by Orchestra \(AI\)/);
+  }
+  await saveConnector(sql!, "zendesk", { mode: "off", data_entry: false }, "Bayo");
+});

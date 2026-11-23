@@ -323,7 +323,7 @@ export default function InboxPage() {
                       </form>
                     ) : (
                       <div className="watch-note label">
-                        {takenBy ? `Only ${takenBy} can reply while they're handling it.` : staff ? "Take over to reply to the customer yourself." : "Sign in above to take over and reply."}
+                        {c.listen ? `Reply in ${SOURCE_NAME[c.listen.source] ?? "the helpdesk"}: the draft above is ready to copy.` : takenBy ? `Only ${takenBy} can reply while they're handling it.` : staff ? "Take over to reply to the customer yourself." : "Sign in above to take over and reply."}
                       </div>
                     )}
                   </div>
