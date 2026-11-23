@@ -154,7 +154,6 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           <header className="topbar">
             <h1 className="page-title">{current}</h1>
             <div className="topbar-right">
-              <a className="btn btn-link" href="/customer" target="_blank" rel="noopener">Open customer app ↗</a>
               <button className="btn" onClick={switchTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
                 {theme === "dark" ? "Light" : "Dark"}
               </button>
