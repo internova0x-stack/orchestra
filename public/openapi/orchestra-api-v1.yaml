@@ -221,42 +221,6 @@ paths:
         "400": { description: Missing source, external_id or messages }
         "409": { description: Listen mode is switched off on the Rules screen }
 
-  /connectors/{kind}/webhook:
-    post:
-      tags: [Listen]
-      summary: A CRM connector's webhook (Zendesk, HubSpot)
-      description: |
-        Your helpdesk calls this when a ticket is created or the customer replies, with the ticket's id in its own
-        format: Zendesk `{"ticket_id": "{{ticket.id}}"}`,
-        HubSpot `[{"objectId": ...}]`. Orchestra reads the ticket with the connector,
-        analyses it (listen mode) and, when write-back is on, writes tags, priority, the team's group or queue and an
-        internal note into the ticket. Switch connectors on, map teams to groups and try each in the sandbox on the
-        console's API page. The key may be sent as `?key=orc_…` where the helpdesk can't set a header.
-      operationId: connectorWebhook
-      parameters:
-        - { name: kind, in: path, required: true, schema: { type: string, enum: [zendesk, hubspot] } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { type: [object, array] }
-            example: { ticket_id: "1001" }
-      responses:
-        "200":
-          description: Read, analysed and (when on) written back
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok: { type: boolean }
-                  conversation_id: { type: string }
-                  analysed: { type: boolean }
-                  written_back: { type: boolean }
-        "400": { description: No ticket id in the body }
-        "409": { description: The connector is off, or listen mode is switched off }
-        "502": { description: The helpdesk couldn't be reached }
-
   /events:
     post:
       tags: [Events]

@@ -20,9 +20,12 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   that opens the product's sign-in window, store the refresh token encrypted like today's details, renew
   access tokens, and where the API allows it create the webhook automatically so step 2 disappears.
   Today's typed-token connect stays for the pilot.
-- **Freshdesk and Salesforce connectors** (owner, Nov 23: moved to the backlog). The code stays
+- **All four CRM connectors: Zendesk, HubSpot, Freshdesk, Salesforce** (owner, Nov 23: Freshdesk and
+  Salesforce moved to the backlog, then Zendesk and HubSpot too). Zendesk and HubSpot come back with
+  "Sign in with…" above; the typed-details connect, step 2's webhook address and the demos are built and
+  tested, ready for when one is offered again. The code stays
   (`lib/crm/connectors.ts`, tested against the stand-in) but they aren't offered: `OFFERED_KINDS` in
-  `lib/crm/contract.ts` lists Zendesk and HubSpot, so the API page doesn't show them, their webhooks
+  `lib/crm/contract.ts` is empty, so the API page doesn't show them, their webhooks
   answer 404 and data entry skips them. To bring one back: add it to `OFFERED_KINDS` after checking it.
   Freshdesk: its API key sign-in and where the key is were confirmed in its docs (Nov 23); its docs also
   list OAuth scopes, so "Sign in with Freshdesk" through Freshworks' developer platform is possible;

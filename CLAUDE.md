@@ -70,8 +70,8 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.
 - Listen mode: `lib/listen.ts` (`ingestInteraction` from `/api/v1/interactions` and the CRM connectors; conversations
   with `origin = 'listen'`, channel 'helpdesk', `listen` jsonb with the match and analysis; never replies or acts).
-- CRM connectors: `lib/crm/` (contract, four connectors to published APIs of which only Zendesk and HubSpot are offered
-  (`OFFERED_KINDS`; Freshdesk and Salesforce are in the backlog, owner Nov 23), the sandbox stand-in, `service.ts`:
+- CRM connectors: `lib/crm/` (contract, four connectors to published APIs, none offered for now
+  (`OFFERED_KINDS` is empty: all four are in the backlog, owner Nov 23; tests add one for their duration), the sandbox stand-in, `service.ts`:
   settings in `crm_connectors`; a bank connects its own account on the API page (`connectWithCredentials`: checked with the product, then
   kept AES-256-GCM encrypted by `lib/crm/credentials.ts`, key `CREDENTIALS_KEY` or derived from the database address; only the account and
   last 4 go back to the browser; Disconnect forgets them), env vars only for the Orchestra team's own test accounts; demos (mode 'sandbox')

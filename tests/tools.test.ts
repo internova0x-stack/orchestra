@@ -1906,8 +1906,12 @@ test("CRM connectors: each of the four reads its ticket, and writes tags, priori
   assert.equal(hubspot({ accessToken: "t" }).ticketIdFrom([{ objectId: 9 }]), "9");
 });
 
-test("data entry: a handoff opens a CRM ticket with its case notes; later steps are added; a resolved conversation is recorded once", { skip }, async () => {
+test("data entry: a handoff opens a CRM ticket with its case notes; later steps are added; a resolved conversation is recorded once", { skip }, async (t) => {
   const { saveConnector } = await import("../lib/crm/service.ts");
+  // The connectors are in the backlog (none offered); this test offers Zendesk while it runs.
+  const { OFFERED_KINDS } = await import("../lib/crm/contract.ts");
+  OFFERED_KINDS.push("zendesk");
+  t.after(() => { OFFERED_KINDS.splice(OFFERED_KINDS.indexOf("zendesk"), 1); });
   const { dataEntryOnEvent, recordResolved } = await import("../lib/crm/dataEntry.ts");
   await seed(sql!, MONDAY);
   await saveConnector(sql!, "zendesk", { mode: "sandbox", data_entry: true, groups: { "Payments team": "360001" } }, "Bayo");
