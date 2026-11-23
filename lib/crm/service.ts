@@ -137,7 +137,7 @@ export async function handleCrmWebhook(sql: Sql, kind: CrmKind, body: unknown, o
   const out = await ingestInteraction(sql, ticket, { classify: opts.classify, draft: opts.draft });
   if (!out.ok) return { ok: false, error: out.error, message: out.message, status: 409 };
   if (!out.analysis || !c.settings.write_back) return { ok: true, conversation_id: out.conversation_id, analysed: Boolean(out.analysis), written_back: false };
-  const w = writeBackFor(out.analysis, c.settings.groups, opts.consoleBase ? `${opts.consoleBase}/?c=${out.conversation_id}` : null);
+  const w = writeBackFor(out.analysis, c.settings.groups, opts.consoleBase ? `${opts.consoleBase}/messages?c=${out.conversation_id}` : null);
   try {
     await c.conn.writeBack(id, w);
   } catch (err) {

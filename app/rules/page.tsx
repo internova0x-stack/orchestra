@@ -43,7 +43,7 @@ function ImpactList({ ruleId }: { ruleId: string }) {
       <ul>
         {rows.map((r) => (
           <li key={r.conversation_id}>
-            <a className="case-link" href={`/?c=${r.conversation_id}`}>{r.business ?? "Unverified customer"}{r.customer ? ` · ${r.customer}` : ""}</a>
+            <a className="case-link" href={`/messages?c=${r.conversation_id}`}>{r.business ?? "Unverified customer"}{r.customer ? ` · ${r.customer}` : ""}</a>
             <span className="label"> · {when(r.at)} · {r.used.replace(/^rule · /, "")}{r.country ? ` · ${r.country}` : ""}</span>
           </li>
         ))}

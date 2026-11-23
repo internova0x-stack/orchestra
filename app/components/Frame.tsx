@@ -21,13 +21,13 @@ const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidde
 // Each screen and the permission that shows it (lib/auth.ts). The server checks every request as well.
 const TABS = [
   { href: "/dashboard", label: "Dashboard", icon: "chart", perm: "dashboard_view" },
-  { href: "/", label: "Messages", icon: "inbox", perm: "inbox_view" },
+  { href: "/messages", label: "Messages", icon: "inbox", perm: "inbox_view" },
   { href: "/staff", label: "Staff queue", icon: "people", perm: "staff_queue_view" },
   { href: "/rules", label: "Rules", icon: "sliders", perm: "rules_view" },
   { href: "/billing", label: "Plan and usage", icon: "receipt", perm: "billing_view" },
   { href: "/team", label: "Team", icon: "team", perm: "team_manage" },
 ];
-const PAGE_PERM: Record<string, string> = { ...Object.fromEntries(TABS.map((t) => [t.href, t.perm])), "/developers": "api_view", "/account": "" };
+const PAGE_PERM: Record<string, string> = { ...Object.fromEntries(TABS.map((t) => [t.href, t.perm])), "/": "", "/developers": "api_view", "/account": "" };
 interface Me { id: string; name: string; email: string | null; role: string; roleName: string; must_change: boolean }
 
 import { announceReset } from "./events";
@@ -40,6 +40,10 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   const [resetting, setResetting] = useState(false);
   const [service, setService] = useState<{ alexisOn: boolean; outage: string | null }>({ alexisOn: true, outage: null });
   const [me, setMe] = useState<Me | null>(null);
+  // The sidebar folds to its icons; the choice is kept on this device.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => { try { setCollapsed(localStorage.getItem("orchestra-sidebar") === "collapsed"); } catch {} }, []);
+  const toggleSidebar = () => setCollapsed((c) => { try { localStorage.setItem("orchestra-sidebar", c ? "open" : "collapsed"); } catch {} return !c; });
   const [perms, setPerms] = useState<string[]>([]);
   const outside = path.startsWith("/customer") || path === "/login" || path === "/signin";
 
@@ -52,9 +56,13 @@ export default function Frame({ children }: { children: React.ReactNode }) {
       setMe(j.me ?? null);
       setPerms(j.permissions ?? []);
       if (j.me?.must_change && path !== "/account") window.location.assign("/account?first=1");
-      // A role without the Inbox (management, IT) starts on its first screen.
+      // The console's address starts each person on their first screen: the Dashboard (Tomi, Nov 23), or the first
+      // one their role has. An old conversation link (/?c=…) goes to Messages.
       const p: string[] = j.permissions ?? [];
-      if (path === "/" && !p.includes("inbox_view")) window.location.replace(TABS.find((t) => p.includes(t.perm))?.href ?? (p.includes("api_view") ? "/developers" : "/account"));
+      if (path === "/") {
+        const c = new URLSearchParams(window.location.search).get("c");
+        window.location.replace(c && p.includes("inbox_view") ? `/messages?c=${encodeURIComponent(c)}` : TABS.find((t) => p.includes(t.perm))?.href ?? (p.includes("api_view") ? "/developers" : "/account"));
+      }
     }).catch(() => {});
   }, [path, outside]);
 
@@ -114,7 +122,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   const current = TABS.find((x) => x.href === path)?.label ?? (path === "/developers" ? "API" : path === "/account" ? "Your account" : "Support console");
 
   return (
-    <div className="app">
+    <div className={`app${collapsed ? " sidebar-collapsed" : ""}`}>
       <div className="banner" role="note">Prototype - simulated data</div>
       <div className="shell">
         {/* Sidebar (design system: ds-sidebar) */}
@@ -122,28 +130,32 @@ export default function Frame({ children }: { children: React.ReactNode }) {
           <div className="workspace">
             <span className="workspace-mark" aria-hidden="true">O</span>
             <span className="workspace-name">Orchestra <span>AI</span></span>
+            <button className="sidebar-toggle" onClick={toggleSidebar} aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand" : "Collapse"}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" />{collapsed ? <path d="m13 10 2 2-2 2" /> : <path d="m15 10-2 2 2 2" />}</svg>
+            </button>
           </div>
           <nav aria-label="Screens">
             <ul className="nav">
               {TABS.filter((x) => perms.includes(x.perm)).map((x) => (
                 <li key={x.href}>
-                  <Link href={x.href} className="tab" aria-current={path === x.href ? "page" : undefined}><Icon name={x.icon} />{x.label}</Link>
+                  <Link href={x.href} className="tab" title={collapsed ? x.label : undefined} aria-current={path === x.href ? "page" : undefined}><Icon name={x.icon} /><span className="tab-label">{x.label}</span></Link>
                 </li>
               ))}
             </ul>
             {perms.includes("api_view") && <>
               <p className="nav-label">Developers</p>
               <ul className="nav">
-                <li><Link href="/developers" className="tab" aria-current={path === "/developers" ? "page" : undefined}><Icon name="code" />API</Link></li>
+                <li><Link href="/developers" className="tab" title={collapsed ? "API" : undefined} aria-current={path === "/developers" ? "page" : undefined}><Icon name="code" /><span className="tab-label">API</span></Link></li>
               </ul>
             </>}
             <p className="nav-label">Testing</p>
             <ul className="nav">
-              <li><a className="tab" href="/customer" target="_blank" rel="noopener"><Icon name="external" />Customer app</a></li>
+              <li><a className="tab" href="/customer" target="_blank" rel="noopener" title={collapsed ? "Customer app" : undefined}><Icon name="external" /><span className="tab-label">Customer app</span></a></li>
             </ul>
           </nav>
           {me && (
             <div className="me">
+              <Link href="/account" className="me-avatar" title={`${me.name} · ${me.roleName}`} aria-hidden={!collapsed}>{me.name.charAt(0)}</Link>
               <Link href="/account" className="me-name">{me.name}</Link>
               <span className="label">{me.roleName}</span>
               <button className="btn btn-link" onClick={signOut}>Sign out</button>

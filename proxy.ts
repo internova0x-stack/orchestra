@@ -5,7 +5,7 @@ import { PASS_COOKIE, passToken } from "./lib/sitePassword";
 // SITE_PASSWORD is set in Vercel. Without it the site stays open (a local copy, or before it's set).
 // Console screens need a signed-in member of the team (lib/auth.ts); without the session cookie they go straight to
 // the sign-in page. The cookie itself is checked on the server by every console request.
-const CONSOLE_PAGES = ["/", "/staff", "/rules", "/dashboard", "/billing", "/developers", "/team", "/account"];
+const CONSOLE_PAGES = ["/", "/messages", "/staff", "/rules", "/dashboard", "/billing", "/developers", "/team", "/account"];
 
 function needsSignIn(request: NextRequest): NextResponse | null {
   const { pathname, search } = request.nextUrl;

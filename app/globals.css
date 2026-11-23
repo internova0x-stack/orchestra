@@ -705,3 +705,21 @@ a { color: var(--brand-accent); }
 .topbar-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--info-bg); color: var(--info); font-weight: 700; }
 .topbar-role { padding: 2px 10px; border-radius: 999px; font-size: var(--size-xs); background: var(--info-bg); color: var(--info); border: 1px solid var(--info-line); }
 @media (max-width: 700px) { .topbar-me span:not(.topbar-avatar) { display: none; } }
+/* A collapsible sidebar (Nov 23): icons only when folded, the choice kept on the device */
+.sidebar { display: flex; flex-direction: column; transition: width .15s ease; }
+.workspace { position: relative; }
+.sidebar-toggle { margin-left: auto; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: none; color: var(--text-2); cursor: pointer; }
+.sidebar-toggle:hover { background: var(--surface-sunk); color: var(--text-1); }
+.sidebar-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.me-avatar { display: none; width: 32px; height: 32px; border-radius: 50%; place-items: center; background: var(--info-bg); color: var(--info); font-weight: 700; text-decoration: none; }
+.sidebar-collapsed .sidebar { width: 64px; padding-left: var(--space-2); padding-right: var(--space-2); }
+.sidebar-collapsed .workspace { flex-direction: column; height: auto; gap: var(--space-2); padding: 0; }
+.sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+.sidebar-collapsed .workspace-name, .sidebar-collapsed .nav-label, .sidebar-collapsed .tab-label,
+.sidebar-collapsed .me-name, .sidebar-collapsed .me .label { display: none; }
+.sidebar-collapsed .nav .tab { justify-content: center; padding-left: 0; padding-right: 0; }
+.sidebar-collapsed .nav { margin-bottom: var(--space-4); }
+.sidebar-collapsed .me { align-items: center; padding: var(--space-2) 0; }
+.sidebar-collapsed .me-avatar { display: grid; }
+.sidebar-collapsed .me .btn-link { font-size: var(--size-xs); align-self: center; }
+@media (max-width: 899px) { .sidebar-toggle, .me-avatar { display: none !important; } .sidebar-collapsed .sidebar { width: auto; } .sidebar-collapsed .tab-label { display: inline; } }
