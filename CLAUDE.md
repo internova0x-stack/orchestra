@@ -82,6 +82,10 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   `widget_conversations_per_hour` limits new conversations per visitor (hashed address, `widget_visitor`). Messages shows
   them as channel "Website chat" (`web`). Chat pieces shared with the customer app: `app/components/chatParts.tsx`.
   API page → Channels → Website chat; `/try-widget` is a sample bank website with it on.
+- Your own chat (Nov 25): API page → Channels → Your own chat explains plugging a bank's existing chat into the Channel API;
+  `/try-your-chat` plays a customer in a stand-in chat beside each request and answer (and curl), through
+  `/api/admin/channel-test` (the /api/v1 functions for a signed-in person, only on conversations it opened: `external_ref`
+  'API test page').
 - Checkout payments (Nov 25, a payment company's payers, who hold no account): Bank Connector `findCheckoutPayments`,
   `getCheckoutPayment`, `getTransferStatus` (the payment company runs the NIBSS NIP status query; Orchestra never calls
   NIBSS), `resendMerchantNotification`, `refundCheckoutPayment`; simulated in `checkout_payments`, `checkout_refunds`,

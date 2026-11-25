@@ -5,7 +5,7 @@ import { PASS_COOKIE, passToken } from "./lib/sitePassword";
 // SITE_PASSWORD is set in Vercel. Without it the site stays open (a local copy, or before it's set).
 // Console screens need a signed-in member of the team (lib/auth.ts); without the session cookie they go straight to
 // the sign-in page. The cookie itself is checked on the server by every console request.
-const CONSOLE_PAGES = ["/", "/messages", "/cases", "/staff", "/rules", "/dashboard", "/billing", "/developers", "/team", "/account", "/try-widget"];
+const CONSOLE_PAGES = ["/", "/messages", "/cases", "/staff", "/rules", "/dashboard", "/billing", "/developers", "/team", "/account", "/try-widget", "/try-your-chat"];
 
 // The website chat's frame (/w/{key}) may be shown only inside the widget's listed websites (and Orchestra's own
 // try-it page): browsers refuse it anywhere else. The list comes from the widget's settings, cached for 30 seconds.

@@ -908,3 +908,19 @@ h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .
 .try-cards div { display: grid; gap: var(--space-1); padding: var(--space-4); background: #fff; border: 1px solid #dfe4e0; border-radius: 12px; font-size: var(--size-sm); }
 .dev-code.wrap { white-space: pre-wrap; word-break: break-all; }
 .int-actions a.btn { text-decoration: none; }
+
+/* ---------- Test your own chat (/try-your-chat): a stand-in chat beside the API calls it makes ---------- */
+.ych { padding: var(--space-6) var(--space-8); display: grid; gap: var(--space-4); }
+.ych-intro { max-width: 90ch; }
+.ych-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: var(--space-4); align-items: start; }
+.ych-chat { display: flex; flex-direction: column; height: calc(100vh - 220px); min-height: 520px; }
+.ych-chat .messages { padding: var(--space-4); }
+.ych-start { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--edge); }
+.ych-start .tester-field { flex: 1; min-width: 220px; }
+.ych-calls { height: calc(100vh - 220px); min-height: 520px; display: flex; flex-direction: column; }
+.ych-list { overflow-y: auto; padding: var(--space-4); display: grid; gap: var(--space-4); align-content: start; }
+.ych-call { display: grid; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--edge); }
+.ych-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ych-path { font-family: var(--font-mono); font-size: var(--size-xs); overflow-wrap: anywhere; }
+.ych-call .dev-code { max-height: 260px; overflow: auto; margin: 0; }
+@media (max-width: 900px) { .ych { padding: var(--space-4); } .ych-grid { grid-template-columns: 1fr; } .ych-chat, .ych-calls { height: auto; } .ych-chat .messages { min-height: 320px; } }

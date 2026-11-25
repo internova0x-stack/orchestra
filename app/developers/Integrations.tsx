@@ -172,6 +172,13 @@ export default function Integrations() {
           ...(canManage && chat.set && chat.live ? [{ label: "Pause", run: () => call("/api/admin/widget", { action: "live", live: false }, "POST", () => "Website chat paused: the button no longer appears.") }] : [])],
       });
     }
+    out.push({
+      id: "ownchat", tab: "channels", name: "Your own chat", letter: "Y", tile: 5,
+      sub: `Channel · your app's or website's existing chat sends messages to Alexis through the Channel API · ${keys.some((k) => !k.revoked_at) ? "an API key is ready" : "needs an API key"}`,
+      state: "off", chip: null,
+      primary: { label: "Test it", run: () => window.open("/try-your-chat", "_blank", "noopener") },
+      menu: [{ label: "How it works", run: () => open("ownchat") }, { label: "Test it", run: () => window.open("/try-your-chat", "_blank", "noopener") }],
+    });
     for (const c of conns) {
       const h = c.health;
       const short = c.name.split(" ")[0];
@@ -315,6 +322,7 @@ export default function Integrations() {
           <WidgetPanel w={chat} canManage={canManage} busy={busy} onSecret={(value) => setSecret({ label: "Signing secret for signed-in customers.", value })}
             act={(body, ok) => call("/api/admin/widget", body, "POST", ok) as Promise<Record<string, unknown> | null>} />
         )}
+        {!adding && selected === "ownchat" && <OwnChatPanel hasKey={keys.some((k) => !k.revoked_at)} />}
         {!adding && selected.startsWith("key:") && (() => {
           const k = keys.find((x) => `key:${x.id}` === selected);
           return k ? (
@@ -793,6 +801,38 @@ const token = body + "." + createHmac("sha256", process.env.ORCHESTRA_WIDGET_SEC
         <details className="int-details"><summary>Code for your developer</summary><pre className="dev-code">{tokenCode}</pre><CopyButton text={tokenCode} /></details>
         {canManage && <div className="int-actions"><button className="btn int-danger" disabled={busy} onClick={() => act({ action: "remove" }, () => "Website chat removed: its line no longer works on any website.")}>Remove the website chat</button></div>}
       </>}
+    </div>
+  );
+}
+
+/** API page → Channels → Your own chat: plug Alexis into a chat the bank already has, with the Channel API. */
+function OwnChatPanel({ hasKey }: { hasKey: boolean }) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const code = `// Your server, when a customer opens your chat
+const ORCHESTRA = "${origin}/api/v1";
+const headers = { Authorization: "Bearer " + process.env.ORCHESTRA_API_KEY, "Content-Type": "application/json" };
+const open = await fetch(ORCHESTRA + "/conversations", { method: "POST", headers,
+  body: JSON.stringify({ channel: "app", verified_user_id: customer.id }) }).then((r) => r.json());
+// show open.greeting; keep open.conversation_id with your chat
+
+// Each time the customer sends something (text, or the answer to a button or form)
+const turn = await fetch(ORCHESTRA + "/conversations/" + conversationId + "/messages", { method: "POST", headers,
+  body: JSON.stringify({ text: customerText }) }).then((r) => r.json());
+// turn.reply: Alexis's words · turn.needs: buttons or forms to show · turn.handoff: passed to the team
+// turn.handled_by: someone from the team has taken over (their replies come by webhook)`;
+  return (
+    <div>
+      <PanelHead letter="Y" tile={5} name="Your own chat" sub="Keep the chat you already have. Your server passes each customer message to Alexis and shows her reply in your design." />
+      <ol className="dev-list">
+        <li><b>Create an API key</b> (API keys tab) and keep it on your server only. {hasKey ? "✓ You have one." : ""}</li>
+        <li><b>Open a conversation</b> when a customer starts chatting. Pass their id if your app has signed them in: they arrive verified.</li>
+        <li><b>Send each message</b> and show what comes back: the reply, and anything in <span className="ref">needs</span> (Yes/Cancel buttons, a code box, or the identity form).</li>
+        <li><b>Team replies</b>: add a webhook (Webhooks tab) for <span className="ref">message.created</span> and <span className="ref">conversation.taken_over</span>, or check <span className="ref">GET /conversations/{"{id}"}</span>.</li>
+      </ol>
+      <div className="int-actions"><a className="btn btn-primary" href="/try-your-chat" target="_blank" rel="noopener">Test it as a customer</a><a className="btn" href="/openapi/orchestra-api-v1.yaml" download>Download the API reference</a></div>
+      <p className="label">The test page shows each request your server would send and the answer it gets back, with the same call as curl.</p>
+      <details className="int-details"><summary>Code for your developer (JavaScript)</summary><pre className="dev-code">{code}</pre><CopyButton text={code} /></details>
+      <p className="label">Using a helpdesk&apos;s chat (Intercom, Zendesk and similar)? That needs the helpdesk connectors, which aren&apos;t offered yet.</p>
     </div>
   );
 }

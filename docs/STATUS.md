@@ -364,6 +364,11 @@ take-over, hand-back and every check as in the app. `/try-widget` is a sample ba
 signed in as a sample customer. Checked: four new tests (website list, tokens, settings, starting conversations and the
 limit); in a browser, set up and go live, a chat on the sample page (with a stand-in for the model), signed in as Ada,
 phone width, a listed outside website (chat opens) and an unlisted one (the browser refuses the frame), and the
-Website chat label in Messages. Not built yet: option 2 of the preview ("use your own chat": a test page and code kit
-for the Channel API, which already exists).
+Website chat label in Messages.
+
+Option 2, your own chat (Tomi: "next"): API page → Channels → Your own chat gives the four steps (an API key, open a
+conversation, send each message and show `needs`, team replies by webhook), JavaScript for the developer, and
+"Test it as a customer" (`/try-your-chat`): a stand-in chat beside each request the bank's server would send and the
+answer it gets, with the same call as curl. Checked in a browser with a stand-in for the model; the test route refuses
+any conversation it didn't open.
 

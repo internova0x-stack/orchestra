@@ -27,7 +27,7 @@ const TABS = [
   { href: "/billing", label: "Plan and usage", icon: "receipt", perm: "billing_view" },
   { href: "/team", label: "Team", icon: "team", perm: "team_manage" },
 ];
-const PAGE_PERM: Record<string, string> = { ...Object.fromEntries(TABS.map((t) => [t.href, t.perm])), "/": "", "/developers": "api_view", "/account": "" };
+const PAGE_PERM: Record<string, string> = { ...Object.fromEntries(TABS.map((t) => [t.href, t.perm])), "/": "", "/developers": "api_view", "/try-your-chat": "api_view", "/account": "" };
 interface Me { id: string; name: string; email: string | null; role: string; roleName: string; must_change: boolean }
 
 import { announceReset } from "./events";
@@ -119,7 +119,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   const allowed = (href: string) => { const p = PAGE_PERM[href]; return p === undefined || p === "" || perms.includes(p); };
   const home = TABS.find((t) => perms.includes(t.perm))?.href ?? "/account";
 
-  const current = TABS.find((x) => x.href === path)?.label ?? (path === "/developers" ? "API" : path === "/account" ? "Your account" : "Support console");
+  const current = TABS.find((x) => x.href === path)?.label ?? (path === "/developers" ? "API" : path === "/try-your-chat" ? "API · Test your own chat" : path === "/account" ? "Your account" : "Support console");
 
   return (
     <div className={`app${collapsed ? " sidebar-collapsed" : ""}`}>
