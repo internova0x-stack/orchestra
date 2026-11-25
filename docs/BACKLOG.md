@@ -46,6 +46,12 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   connected app is still the way, or External Client Apps, and plan "Sign in with Salesforce" with
   Orchestra's own app for many banks (AppExchange review if listed).
 
+- **Tell the team when a case arrives** (Tomi, Nov 25): today a new case shows only on the Cases screen,
+  or reaches the company's own tools if they set up the "case created" webhook. Add a simple option:
+  email the routed team (or a chosen address) when a case opens, at least for high urgency, and again
+  when one goes overdue. Settings on the Rules screen (which urgencies, which address per team). Send
+  through the support email provider (Postmark); the email carries the summary's headline and a link to
+  the case, never account numbers or other customer details beyond what the team's role may see.
 
 ## Built on Nov 23 (after the demo)
 
