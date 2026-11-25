@@ -52,6 +52,11 @@ Everything after the 2-day demo (`docs/DEMO-SPEC.md`), in the PRD's phase order.
   when one goes overdue. Settings on the Rules screen (which urgencies, which address per team). Send
   through the support email provider (Postmark); the email carries the summary's headline and a link to
   the case, never account numbers or other customer details beyond what the team's role may see.
+- **Team members** (Tomi, Nov 25): today a team is only a name in the `route_*` rules; accounts have a role but no
+  team, so every agent sees and can pick up every team's cases. Add a team field (one or more teams) to each
+  account on the Team page, choosing from the teams the routing rules name. Each person's Cases screen opens on
+  their own teams' cases first (the others stay visible and movable); team emails (the item above) go to the
+  team's members unless a team address is set. Roles and permissions don't change.
 
 ## Built on Nov 23 (after the demo)
 
