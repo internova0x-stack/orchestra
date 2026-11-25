@@ -12,7 +12,7 @@ import { RESET_EVENT } from "../components/events";
 interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: string; urgency: string | null; references: string[]; takenOverBy: string | null;
-  channel: "app" | "whatsapp" | "email" | "helpdesk"; subject: string | null;
+  channel: "app" | "web" | "whatsapp" | "email" | "helpdesk"; subject: string | null;
   language: string; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null; startedBy?: "alexis" | null;
   listen?: { source: string; externalId: string; team: string | null; urgency: string | null } | null;
@@ -37,7 +37,7 @@ interface Staff { id: string; name: string; role: string }
 
 const ALL = "all";
 const LANGUAGE_NAME: Record<string, string> = { en: "English", fr: "French", pcm: "Pidgin" };
-const CHANNEL_NAME = { app: "App chat", whatsapp: "WhatsApp", email: "Email", helpdesk: "Helpdesk" } as const;
+const CHANNEL_NAME = { app: "App chat", web: "Website chat", whatsapp: "WhatsApp", email: "Email", helpdesk: "Helpdesk" } as const;
 const SOURCE_NAME: Record<string, string> = { zendesk: "Zendesk", freshdesk: "Freshdesk", salesforce: "Salesforce", hubspot: "HubSpot", email: "Support mailbox", other: "Helpdesk" };
 
 /** Where the customer wrote from, as a small labelled chip. */
@@ -233,7 +233,7 @@ export default function InboxPage() {
               <Filter label="Status" value={status} onChange={setStatus} options={[[ALL, "Status"], ["open", "All open"], ...STATUS_ORDER.map((s) => [s, s] as [string, string])]} />
               <Filter label="Category" value={category} onChange={setCategory} options={[[ALL, "Category"], ...categories.map((s) => [s, `${s} (${inCategory.get(s) ?? 0})`] as [string, string])]} />
               <Filter label="Urgency" value={urgency} onChange={setUrgency} options={[[ALL, "Urgency"], ["urgent", "Urgent"], ["high", "High"], ["normal", "Normal"], ["none", "Not handed off"]]} />
-              <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["whatsapp", "WhatsApp"], ["email", "Email"], ["helpdesk", "Helpdesk (listening)"]]} />
+              <Filter label="Channel" value={channel} onChange={setChannel} options={[[ALL, "Channel"], ["app", "App chat"], ["web", "Website chat"], ["whatsapp", "WhatsApp"], ["email", "Email"], ["helpdesk", "Helpdesk (listening)"]]} />
               <Filter label="Review" value={reviewed} onChange={setReviewed} options={[[ALL, "Review"], ["none", "Not reviewed"], ["good", "Good"], ["needs_work", "Needs work"]]} />
               {activeFilters > 0 && <button className="btn btn-link" onClick={() => { setStatus(ALL); setCategory(ALL); setUrgency(ALL); setChannel(ALL); setReviewed(ALL); }}>Clear filters</button>}
               {canAct && <SampleTicket onSent={load} />}

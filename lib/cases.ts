@@ -148,7 +148,8 @@ export function transcriptOf(messages: Message[] | null): { who: string; text: s
 export interface CaseRow {
   id: string; customer: string | null; business: string | null; verified: boolean;
   category: string; status: CaseStatus; urgency: string | null; references: string[]; takenOverBy: string | null;
-  channel: "app" | "whatsapp" | "email" | "helpdesk"; subject: string | null;
+  /** "web": the website chat widget (a conversation on the app channel started from a bank's website). */
+  channel: "app" | "web" | "whatsapp" | "email" | "helpdesk"; subject: string | null;
   language: string; awaitingTeam: string | null; review: { rating: "good" | "needs_work"; note: string | null; by: string } | null;
   started: string; lastActivity: string; messages: number; firstMessage: string | null;
   /** Set when Alexis started the conversation with a proactive failure message (lib/proactive.ts). */
@@ -205,7 +206,7 @@ export async function listCases(sql: Sql, now = new Date()): Promise<CaseRow[]> 
       awaitingTeam: c.awaiting_team,
       review: c.review_rating ? { rating: c.review_rating, note: c.review_note, by: c.reviewed_by! } : null,
       takenOverBy: c.taken_over_by,
-      channel: c.channel ?? "app",
+      channel: c.origin === "widget" ? "web" : c.channel ?? "app",
       subject: c.email_subject ?? c.listen?.subject ?? null,
       urgency: c.listen?.analysis?.urgency ?? urgencyOf(hs),
       references: hs.map((h) => h.reference),

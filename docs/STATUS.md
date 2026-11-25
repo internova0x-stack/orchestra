@@ -353,3 +353,17 @@ and the reference server. Twelve sample payments cover each case; the customer a
 what's on their receipt. Checked: four new tests (the check, scope and re-send limit, refunds, review hold and NIBSS
 status, the reference server). Not yet tried with the live model in a conversation.
 
+## Website chat widget (Nov 25, Tomi: "build the chat widget")
+
+A bank adds Alexis to its website, or to the web pages its app shows, by pasting one line. API page → Channels →
+Website chat: the chat's title and colour, the websites it may run on, the line to copy, a Live switch, and an
+optional signing secret so customers already signed in to the bank's site arrive verified (the bank's server signs a
+short token; code for their developer is on the page). Browsers show the chat only on the listed websites. Each
+visitor may start 10 conversations an hour (a rule). Conversations appear in Messages as "Website chat", with
+take-over, hand-back and every check as in the app. `/try-widget` is a sample bank website to try it, as a guest or
+signed in as a sample customer. Checked: four new tests (website list, tokens, settings, starting conversations and the
+limit); in a browser, set up and go live, a chat on the sample page (with a stand-in for the model), signed in as Ada,
+phone width, a listed outside website (chat opens) and an unlisted one (the browser refuses the frame), and the
+Website chat label in Messages. Not built yet: option 2 of the preview ("use your own chat": a test page and code kit
+for the Channel API, which already exists).
+

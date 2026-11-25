@@ -871,3 +871,40 @@ h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .
 .int-choice.on { border-color: var(--brand-600); }
 .int-choice > span { display: grid; gap: 2px; }
 .int-choice input { margin-top: 3px; accent-color: var(--brand-600); }
+
+/* ---------- Website chat widget (app/w): the chat inside the frame on a bank's page, in the bank's colour ---------- */
+.wchat { height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: var(--surface-0); color: var(--text-1); font-family: var(--font-ui); }
+.wchat-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--wchat-head); color: var(--wchat-on-head); }
+.wchat-avatar { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: color-mix(in srgb, var(--wchat-on-head) 18%, transparent); }
+.wchat-who { flex: 1; min-width: 0; }
+.wchat-title { font-weight: 600; font-size: var(--size-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wchat-sub { font-size: var(--size-xs); opacity: 0.85; }
+.wchat-close { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: transparent; border: 0; color: inherit; cursor: pointer; }
+.wchat-close:hover, .wchat-close:focus-visible { background: color-mix(in srgb, var(--wchat-on-head) 15%, transparent); }
+.wchat-messages { padding: var(--space-4); }
+.wchat .msg { max-width: 88%; }
+.wchat-composer { padding: var(--space-3); align-items: flex-end; }
+.wchat-composer textarea { min-height: 40px; }
+.wchat-attach { width: 40px; padding: 0; justify-content: center; flex: none; }
+.wchat-foot { font-size: 11px; color: var(--text-2); text-align: center; padding: 0 var(--space-3) var(--space-2); }
+.wchat-off { height: 100vh; display: grid; place-items: center; padding: var(--space-6); text-align: center; color: var(--ink-700); background: #fff; font-family: var(--font-ui); }
+.int-textarea { width: 100%; box-sizing: border-box; padding: var(--space-2) var(--space-3); border: 1px solid var(--edge-strong); border-radius: var(--radius-md); background: var(--surface-sunk); color: var(--text-1); font: inherit; resize: vertical; }
+.wchat-colour input[type="color"] { width: 40px; height: 32px; padding: 2px; border: 0; background: transparent; cursor: pointer; flex: none; }
+.int-details { margin-top: var(--space-3); }
+.int-details summary { cursor: pointer; color: var(--brand-accent); font-size: var(--size-sm); min-height: 24px; }
+
+/* ---------- Try the website chat (/try-widget): a plain sample bank website, light theme ---------- */
+.try { min-height: 100vh; background: #f6f7f4; color: #1d2a2a; font-family: var(--font-ui); }
+.try-tester { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) max(16px, env(safe-area-inset-left, 0px)); background: var(--surface-100); border-bottom: 1px solid var(--border); font-size: var(--size-sm); color: var(--ink-900); }
+.try-tester select { min-height: 36px; padding: 0 var(--space-2); border-radius: var(--radius-md); border: 1px solid var(--border); background: #fff; color: var(--ink-900); }
+.try-off { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-4) max(16px, env(safe-area-inset-left, 0px)); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--warning-050); border: 1px solid var(--warning-200); color: var(--ink-900); }
+.try-site-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); flex-wrap: wrap; padding: var(--space-4) max(16px, env(safe-area-inset-left, 0px)); background: #12332f; color: #fff; }
+.try-logo { font-weight: 700; font-size: 18px; }
+.try-site-head nav { display: flex; gap: var(--space-4); font-size: var(--size-sm); opacity: 0.9; flex-wrap: wrap; }
+.try-site { max-width: 760px; padding: 48px max(16px, env(safe-area-inset-left, 0px)); }
+.try-site h1 { font-size: 34px; line-height: 1.15; margin: 0 0 var(--space-4); text-wrap: balance; }
+.try-site p { font-size: 17px; line-height: 1.55; color: #3d4b4a; margin: 0; max-width: 60ch; }
+.try-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); margin-top: var(--space-8); }
+.try-cards div { display: grid; gap: var(--space-1); padding: var(--space-4); background: #fff; border: 1px solid #dfe4e0; border-radius: 12px; font-size: var(--size-sm); }
+.dev-code.wrap { white-space: pre-wrap; word-break: break-all; }
+.int-actions a.btn { text-decoration: none; }

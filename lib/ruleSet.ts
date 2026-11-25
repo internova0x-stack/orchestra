@@ -321,6 +321,7 @@ export const RULE_SET: RuleSeed[] = [
 
   // Operations (Nov 23): the switch for Alexis herself, and outage mode with the notice customers see.
   l("alexis_enabled", "Operations", "Alexis answers customers (off: every message goes to the team)", "on"),
+  l("widget_conversations_per_hour", "Operations", "Website chat: new conversations one visitor may start in an hour", "10"),
   l("outage_mode", "Operations", "Outage mode (Alexis and the customer app show the notice below)", "off"),
   a("outage_notice", "Operations", "Outage notice", "Card payments and payouts are delayed while we fix a problem with a payment partner. No money is lost, and delayed payments will complete once it's fixed. We'll update this notice.", "sample"),
 

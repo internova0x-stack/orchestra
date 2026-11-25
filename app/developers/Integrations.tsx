@@ -46,6 +46,7 @@ export default function Integrations() {
   const [events, setEvents] = useState<string[]>([]);
   const [bankInfo, setBankInfo] = useState<Bank | null>(null);
   const [email, setEmail] = useState<EmailState | null>(null);
+  const [chat, setChat] = useState<WidgetState | null>(null);
   const [canManage, setCanManage] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
   const [q, setQ] = useState("");
@@ -64,13 +65,14 @@ export default function Integrations() {
   const load = useCallback(async () => {
     const mine = ++seq.current;
     const get = (u: string) => fetch(u, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    const [c, k, w, b, me, em] = await Promise.all([get("/api/admin/connectors"), get("/api/admin/keys"), get("/api/admin/webhooks"), get("/api/admin/bank"), get("/api/staff/users"), get("/api/admin/email")]);
+    const [c, k, w, b, me, em, wg] = await Promise.all([get("/api/admin/connectors"), get("/api/admin/keys"), get("/api/admin/webhooks"), get("/api/admin/bank"), get("/api/staff/users"), get("/api/admin/email"), get("/api/admin/widget")]);
     if (mine !== seq.current) return false;
     if (c) setConns(c.connectors ?? []);
     if (k) setKeys(k.keys ?? []);
     if (w) { setEndpoints(w.endpoints ?? []); setDeliveries(w.deliveries ?? []); setEvents(w.events ?? []); }
     if (b) setBankInfo(b.mode ? b : null);
     if (em && typeof em.connected === "boolean") setEmail(em);
+    if (wg && typeof wg.set === "boolean") setChat(wg);
     if (me) setCanManage((me.permissions ?? []).includes("api_manage"));
     const ok = Boolean(c || b);
     setLoadFailed(!ok);
@@ -157,6 +159,19 @@ export default function Integrations() {
           ...(canManage && email.connected ? [{ label: "Disconnect", run: () => call("/api/admin/email", { action: "disconnect" }, "POST", () => "Support email disconnected."), danger: true }] : [])],
       });
     }
+    if (chat) {
+      out.push({
+        id: "widget", tab: "channels", name: "Website chat", letter: "C", tile: 5,
+        sub: !chat.set ? "Channel · a chat button for your website or your app's web pages · not set up"
+          : `Channel · "${chat.title}" · ${chat.origins?.length ? chat.origins.map((o) => o.replace(/^https?:\/\//, "")).join(", ") : "no websites listed yet"}`,
+        state: chat.set && chat.live ? "active" : "off",
+        chip: chat.set && chat.live ? { text: "✓ Live", tone: "ok" } : chat.set ? { text: "Paused", tone: "warn" } : null,
+        primary: !canManage ? null : !chat.set ? { label: "Set up", run: () => open("widget") } : !chat.live ? { label: "Go live", run: () => call("/api/admin/widget", { action: "live", live: true }, "POST", () => "Website chat is live.") } : null,
+        menu: [{ label: chat.set ? "Settings" : "Set up", run: () => open("widget") },
+          ...(chat.set ? [{ label: "Try it on a sample page", run: () => window.open("/try-widget", "_blank", "noopener") }] : []),
+          ...(canManage && chat.set && chat.live ? [{ label: "Pause", run: () => call("/api/admin/widget", { action: "live", live: false }, "POST", () => "Website chat paused: the button no longer appears.") }] : [])],
+      });
+    }
     for (const c of conns) {
       const h = c.health;
       const short = c.name.split(" ")[0];
@@ -209,7 +224,7 @@ export default function Integrations() {
       });
     }
     return out;
-  }, [bankInfo, email, conns, endpoints, deliveries, keys, canManage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bankInfo, email, chat, conns, endpoints, deliveries, keys, canManage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shown = items.filter((i) => (tab === "all" || i.tab === tab) && (!q.trim() || `${i.name} ${i.sub}`.toLowerCase().includes(q.trim().toLowerCase())));
   const groups: [string, Item[]][] = [
@@ -295,6 +310,10 @@ export default function Integrations() {
         {!adding && selected === "email" && email && (
           <EmailPanel e={email} canManage={canManage} busy={busy} onReload={() => load()}
             act={(body, ok) => call("/api/admin/email", body, "POST", ok) as Promise<Record<string, unknown> | null>} />
+        )}
+        {!adding && selected === "widget" && chat && (
+          <WidgetPanel w={chat} canManage={canManage} busy={busy} onSecret={(value) => setSecret({ label: "Signing secret for signed-in customers.", value })}
+            act={(body, ok) => call("/api/admin/widget", body, "POST", ok) as Promise<Record<string, unknown> | null>} />
         )}
         {!adding && selected.startsWith("key:") && (() => {
           const k = keys.find((x) => `key:${x.id}` === selected);
@@ -705,5 +724,75 @@ function AddWebhook({ events, busy, onAdd }: { events: string[]; busy: boolean; 
       </fieldset>
       <button className="btn btn-primary" type="submit" disabled={busy || !url.trim() || !chosen.length}>Add endpoint</button>
     </form>
+  );
+}
+
+interface WidgetState { set: boolean; key?: string; title?: string; colour?: string; origins?: string[]; live?: boolean; secretLast4?: string | null }
+
+/** API page → Channels → Website chat (lib/widget.ts): the bank's chat button for its website or app web pages. */
+function WidgetPanel({ w, canManage, busy, act, onSecret }: {
+  w: WidgetState; canManage: boolean; busy: boolean; onSecret: (secret: string) => void;
+  act: (body: object, ok?: (j: Record<string, unknown>) => string | null) => Promise<Record<string, unknown> | null>;
+}) {
+  const [title, setTitle] = useState(w.title ?? "");
+  const [colour, setColour] = useState(w.colour ?? "#4F3BF3");
+  const [sites, setSites] = useState((w.origins ?? []).join("\n"));
+  useEffect(() => { setTitle(w.title ?? ""); setColour(w.colour ?? "#4F3BF3"); setSites((w.origins ?? []).join("\n")); }, [w.title, w.colour, w.origins?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const snippet = `<script src="${origin}/widget.js" data-key="${w.key}" async></script>`;
+  const head = <PanelHead letter="C" tile={5} name="Website chat" sub={!w.set ? "A chat button on your website or your app's web pages. Alexis answers, your team takes over in Messages." : w.live ? "Live on the websites below" : "Paused: the button doesn't appear"} />;
+  if (!canManage && !w.set) return <div>{head}<p className="label">An operations or IT admin sets up the website chat.</p></div>;
+  const hex = /^#[0-9a-f]{6}$/i.test(colour) ? colour : "#4F3BF3";
+  const tokenCode = `// On your server, for a customer who is signed in to your website
+import { createHmac } from "node:crypto";
+const body = Buffer.from(JSON.stringify({
+  sub: customer.id,                              // their id in your bank's records
+  exp: Math.floor(Date.now() / 1000) + 600,      // good for 10 minutes (at most 1 hour)
+})).toString("base64url");
+const token = body + "." + createHmac("sha256", process.env.ORCHESTRA_WIDGET_SECRET)
+  .update(body).digest("base64url");
+
+// In the page: data-customer-token="<token>" on the script tag,
+// or OrchestraChat.identify(token) right after the customer signs in.`;
+
+  return (
+    <div>
+      {head}
+      {canManage && (
+        <form className="int-form" onSubmit={(e) => { e.preventDefault(); act({ action: "save", title, colour: hex, origins: sites }, () => w.set ? "Saved." : "Set up. Now paste the line below on your website, then go live."); }}>
+          <h4 className="int-lbl">{w.set ? "Name and look" : "1 · Name and look"}</h4>
+          <label className="int-field"><span>Chat title</span>
+            <span className="int-input"><input value={title} maxLength={60} placeholder="Support" onChange={(e) => setTitle(e.target.value)} /></span>
+            <span className="label">Shown at the top of the chat, for example your bank&apos;s name and &quot;support&quot;.</span></label>
+          <label className="int-field"><span>Colour</span>
+            <span className="int-input wchat-colour"><input type="color" value={hex} onChange={(e) => setColour(e.target.value.toUpperCase())} aria-label="Pick the colour" />
+              <input value={colour} maxLength={7} onChange={(e) => setColour(e.target.value)} aria-label="Colour as a hex code" /></span>
+            <span className="label">The chat button, the top bar and the buttons inside. Text on it stays readable whatever you choose.</span></label>
+          <h4 className="int-lbl">{w.set ? "Websites it may run on" : "2 · Websites it may run on"}</h4>
+          <label className="int-field"><span className="sr-only">Websites</span>
+            <textarea className="int-textarea" rows={3} value={sites} placeholder={"www.yourbank.com\napp.yourbank.com"} onChange={(e) => setSites(e.target.value)} />
+            <span className="label">One per line. The chat opens only on these addresses, so nobody can copy it onto another site. Each page of a website is covered.</span></label>
+          <div className="int-actions"><button className="btn btn-primary" disabled={busy}>{w.set ? "Save" : "Set up the chat"}</button></div>
+        </form>
+      )}
+      {w.set && <>
+        <h4 className="int-lbl">Paste this line on your website</h4>
+        <p className="label">Before the closing &lt;/body&gt; tag, on every page that should show the chat button. In an app, put it on the web pages your app shows (its help screen, for example).</p>
+        <pre className="dev-code wrap">{snippet}</pre>
+        <div className="int-actions"><CopyButton text={snippet} /><a className="btn" href="/try-widget" target="_blank" rel="noopener">Try it on a sample page</a></div>
+        {canManage && <Toggle on={Boolean(w.live)} label="Live" disabled={busy}
+          hint={w.live ? "The chat button shows on the listed websites. Pause hides it at once (no change to your site needed)." : "Paused: the button doesn't appear anywhere. Go live to show it (the sample page needs it live too)."}
+          onChange={(v) => act({ action: "live", live: v }, () => v ? "Website chat is live." : "Website chat paused.")} />}
+        <h4 className="int-lbl">Customers who are already signed in (optional)</h4>
+        <p className="label">Without this, Alexis checks who the customer is with the identity form, as in the app. If your website knows who is signed in, your server can vouch for them: it signs a short token with this secret and the customer arrives verified.</p>
+        <p className="label">{w.secretLast4 ? <>Signing secret ending <span className="ref">{w.secretLast4}</span>. Keep it on your server only, never in a web page.</> : "No signing secret yet."}</p>
+        {canManage && <div className="int-actions"><button className="btn" disabled={busy} onClick={async () => {
+          const j = await act({ action: "secret" }, () => w.secretLast4 ? "New secret created: the old one no longer works." : "Signing secret created.");
+          if (j?.secret) onSecret(String(j.secret));
+        }}>{w.secretLast4 ? "Replace the secret" : "Create a signing secret"}</button></div>}
+        <details className="int-details"><summary>Code for your developer</summary><pre className="dev-code">{tokenCode}</pre><CopyButton text={tokenCode} /></details>
+        {canManage && <div className="int-actions"><button className="btn int-danger" disabled={busy} onClick={() => act({ action: "remove" }, () => "Website chat removed: its line no longer works on any website.")}>Remove the website chat</button></div>}
+      </>}
+    </div>
   );
 }

@@ -282,6 +282,22 @@ alter table crm_connectors add column if not exists connected_by text;
 alter table crm_connectors add column if not exists connected_at timestamptz;
 -- The email channel (Nov 23): the bank's support address forwarded to Orchestra (Postmark inbound), replies sent from
 -- that address once its domain's DNS records are in place. One row. Practice mode (no Postmark keys) records instead.
+-- Website chat widget (Nov 25, lib/widget.ts): one per institution, kept by Reset demo.
+create table if not exists chat_widget (
+  id int primary key default 1 check (id = 1),
+  key text not null unique,
+  title text not null,
+  colour text not null,
+  origins text[] not null default '{}',
+  secret_sealed text,
+  secret_last4 text,
+  live boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table conversations add column if not exists widget_visitor text;
+create index if not exists conversations_widget_visitor on conversations (widget_visitor, created_at) where widget_visitor is not null;
+
 create table if not exists email_channel (
   id int primary key default 1 check (id = 1),
   address text,

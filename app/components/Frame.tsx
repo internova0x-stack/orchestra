@@ -45,7 +45,7 @@ export default function Frame({ children }: { children: React.ReactNode }) {
   useEffect(() => { try { setCollapsed(localStorage.getItem("orchestra-sidebar") === "collapsed"); } catch {} }, []);
   const toggleSidebar = () => setCollapsed((c) => { try { localStorage.setItem("orchestra-sidebar", c ? "open" : "collapsed"); } catch {} return !c; });
   const [perms, setPerms] = useState<string[]>([]);
-  const outside = path.startsWith("/customer") || path.startsWith("/e/") || path === "/login" || path === "/signin";
+  const outside = path.startsWith("/customer") || path.startsWith("/e/") || path.startsWith("/w/") || path === "/try-widget" || path === "/login" || path === "/signin";
 
   // Who is signed in, and what their role allows. Not signed in: to the sign-in page.
   useEffect(() => {

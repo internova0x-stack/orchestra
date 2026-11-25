@@ -5,7 +5,30 @@ import { PASS_COOKIE, passToken } from "./lib/sitePassword";
 // SITE_PASSWORD is set in Vercel. Without it the site stays open (a local copy, or before it's set).
 // Console screens need a signed-in member of the team (lib/auth.ts); without the session cookie they go straight to
 // the sign-in page. The cookie itself is checked on the server by every console request.
-const CONSOLE_PAGES = ["/", "/messages", "/cases", "/staff", "/rules", "/dashboard", "/billing", "/developers", "/team", "/account"];
+const CONSOLE_PAGES = ["/", "/messages", "/cases", "/staff", "/rules", "/dashboard", "/billing", "/developers", "/team", "/account", "/try-widget"];
+
+// The website chat's frame (/w/{key}) may be shown only inside the widget's listed websites (and Orchestra's own
+// try-it page): browsers refuse it anywhere else. The list comes from the widget's settings, cached for 30 seconds.
+const frameCache = new Map<string, { at: number; value: string }>();
+async function frameAncestors(request: NextRequest, key: string): Promise<string> {
+  const hit = frameCache.get(key);
+  if (hit && Date.now() - hit.at < 30_000) return hit.value;
+  let origins: string[] = [];
+  try {
+    const r = await fetch(new URL(`/api/w/${encodeURIComponent(key)}/frame`, request.url), { cache: "no-store" });
+    if (r.ok) origins = ((await r.json()) as { origins?: string[] }).origins ?? [];
+  } catch {}
+  const value = ["'self'", ...origins.filter((o) => /^https?:\/\/[a-z0-9.\-:]+$/i.test(o))].join(" ");
+  frameCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+async function widgetFrame(request: NextRequest): Promise<NextResponse> {
+  const key = request.nextUrl.pathname.split("/")[2] ?? "";
+  const res = NextResponse.next();
+  res.headers.set("Content-Security-Policy", `frame-ancestors ${await frameAncestors(request, key)}`);
+  return res;
+}
 
 function needsSignIn(request: NextRequest): NextResponse | null {
   const { pathname, search } = request.nextUrl;
@@ -16,6 +39,9 @@ function needsSignIn(request: NextRequest): NextResponse | null {
 }
 
 export async function proxy(request: NextRequest) {
+  // The website chat widget is public: its frame, its script and its routes check the widget's own key.
+  if (request.nextUrl.pathname.startsWith("/w/")) return widgetFrame(request);
+  if (request.nextUrl.pathname.startsWith("/api/w/") || request.nextUrl.pathname === "/widget.js") return NextResponse.next();
   const password = process.env.SITE_PASSWORD;
   if (!password) return needsSignIn(request) ?? NextResponse.next();
   const { pathname, search } = request.nextUrl;

@@ -72,6 +72,16 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   loops dropped; drafts first = `awaiting_team 'email_drafts'`, or Alexis replies), team replies emailed from
   `emitEvent('message.created')`, forms as a one-use 24-hour link to `/e/{token}` (outside the site password and the
   console frame). API page → Channels → Support email (`/api/admin/email`). Email conversations have `origin = 'email'`.
+- Website chat widget (Nov 25, Tomi: "build the chat widget"): `lib/widget.ts`, one `chat_widget` row (key `wk_…`, title, colour,
+  listed websites, signing secret sealed like CRM credentials, live switch; kept by Reset demo). The bank pastes
+  `public/widget.js` (a button in a shadow root, the chat in a frame of `/w/{key}`, `app/w/[key]`); `proxy.ts` lets `/w/`,
+  `/api/w/` and `/widget.js` through and sets `frame-ancestors 'self'` + the listed websites on `/w/` (read from
+  `/api/w/{key}/frame`, cached 30 s). Routes `/api/w/{key}` (look, public), `start`, `chat`, `conversation/{id}`, `proof`
+  touch only conversations with `origin = 'widget'` while the widget is live. A signed-in customer arrives verified with a
+  token the bank's server signs (HMAC of {sub, exp ≤ 1 h}, `readCustomerToken`); a bad token is refused. Rule
+  `widget_conversations_per_hour` limits new conversations per visitor (hashed address, `widget_visitor`). Messages shows
+  them as channel "Website chat" (`web`). Chat pieces shared with the customer app: `app/components/chatParts.tsx`.
+  API page → Channels → Website chat; `/try-widget` is a sample bank website with it on.
 - Checkout payments (Nov 25, a payment company's payers, who hold no account): Bank Connector `findCheckoutPayments`,
   `getCheckoutPayment`, `getTransferStatus` (the payment company runs the NIBSS NIP status query; Orchestra never calls
   NIBSS), `resendMerchantNotification`, `refundCheckoutPayment`; simulated in `checkout_payments`, `checkout_refunds`,

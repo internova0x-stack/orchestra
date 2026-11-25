@@ -27,7 +27,7 @@ export interface ChannelReply {
 
 export async function openConversation(
   sql: Sql,
-  input: { channel?: string; verified_user_id?: string; external_ref?: string; language?: string; subject?: string },
+  input: { channel?: string; verified_user_id?: string; external_ref?: string; language?: string; subject?: string; origin?: "widget"; via?: string },
 ): Promise<{ conversation_id: string; greeting: string | null } | { error: string }> {
   const channel: Channel = CHANNELS.includes(input.channel as Channel) ? (input.channel as Channel) : "app";
   const id = randomUUID();
@@ -40,12 +40,12 @@ export async function openConversation(
   }
   const language = input.language && LANGUAGES[input.language] ? input.language : "en";
   await createConversation(sql, id, verified, channel, input.subject ?? null);
-  await sql`update conversations set language = ${language}, external_ref = ${input.external_ref?.slice(0, 200) ?? null}
+  await sql`update conversations set language = ${language}, external_ref = ${input.external_ref?.slice(0, 200) ?? null}, origin = coalesce(${input.origin ?? null}, origin)
     ${verified ? sql`, verified_user_id = ${verified}, verified_at = now(), last_activity = now()` : sql``}
     where id = ${id}`;
   if (verified) {
     await sql`insert into audit_log (conversation_id, user_id, tool_use_id, kind, tool, summary)
-      values (${id}, ${verified}, ${`api-${id}`}, 'identity', 'verify_identity', 'verified by the bank (signed in to its app) · Channel API')`;
+      values (${id}, ${verified}, ${`api-${id}`}, 'identity', 'verify_identity', ${`verified by the bank (signed in to its ${input.via ? "website" : "app"}) · ${input.via ?? "Channel API"}`})`;
   }
   return { conversation_id: id, greeting: channel === "email" ? null : GREETINGS[language] ?? GREETINGS.en };
 }
