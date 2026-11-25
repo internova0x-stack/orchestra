@@ -24,6 +24,7 @@ import { findCase } from "./tools/resume.ts";
 import { draftClaimPack } from "./tools/claims.ts";
 import { draftCaseNotes, draftReply, summariseCase } from "./tools/staffmode.ts";
 import { getBillPaymentStatus, getUssdSession, refundBillPayment } from "./tools/nigeria.ts";
+import { checkPaymentEvidence, checkTransferStatus, getCheckoutPayment, refundCheckoutPayment, resendMerchantNotification } from "./tools/checkout.ts";
 import { freezeCard, getCard, orderReplacement, unfreezeCard, changeCardSettings } from "./tools/cards.ts";
 import { routeCase } from "./routing.ts";
 import { listTransactions, openDispute } from "./tools/transactions.ts";
@@ -61,7 +62,7 @@ const verifyIdentity: ToolDef<z.ZodObject<{}>> = {
   name: "verify_identity",
   tier: 0,
   description:
-    "Confirm who you are speaking with before sharing anything about an account. Shows the customer a short secure form (full name, date of birth and the business's registration number); the answers go straight to the bank's check and never to you. Returns whether they are verified, their first name, business and role (view_only or payment_rights). Call it again later to see the current result.",
+    "Confirm who you are speaking with before sharing anything about an account. Not for someone who paid a merchant and has no account with us (a payer at a merchant's checkout): use check_payment_evidence for them. Shows the customer a short secure form (full name, date of birth and the business's registration number); the answers go straight to the bank's check and never to you. Returns whether they are verified, their first name, business and role (view_only or payment_rights). Call it again later to see the current result.",
   schema: z.object({}),
   async run(_input, ctx, rules) {
     if (ctx.user) {
@@ -151,6 +152,11 @@ const TRIGGERS = {
   wrong_recipient: { urgency: "high", label: "Money sent to the wrong recipient: contact the receiving bank" },
   bill_payment_problem: { urgency: "normal", label: "Bill or airtime payment delivered per the provider but not received, or a wrong number" },
   agent_cash_problem: { urgency: "high", label: "Cash problem at an agent location" },
+  payer_not_matched: { urgency: "normal", label: "Someone who paid a merchant couldn't be matched to a payment" },
+  merchant_not_delivering: { urgency: "normal", label: "Paid, but the merchant hasn't delivered" },
+  transfer_unmatched: { urgency: "high", label: "Money received but not matched to a checkout" },
+  checkout_refund_over_cap: { urgency: "normal", label: "Refund to a payer above the cap" },
+  checkout_payment_problem: { urgency: "normal", label: "Checkout payment needs the team (reversal overdue, refund refused)" },
 } as const;
 
 type Trigger = keyof typeof TRIGGERS;
@@ -858,7 +864,8 @@ const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHu
   findPayments, getReversalStatus, requestReversal, waiveFee, getAccountLimits,
   getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds,
   watchCase, findCase, draftClaimPack, summariseCase, draftReply, draftCaseNotes,
-  getBillPaymentStatus, refundBillPayment, getUssdSession];
+  getBillPaymentStatus, refundBillPayment, getUssdSession,
+  checkPaymentEvidence, getCheckoutPayment, checkTransferStatus, resendMerchantNotification, refundCheckoutPayment];
 
 /** Staff mode (use case 19): lookups and drafts only, never actions on the account. */
 export const STAFF_TOOLS = new Set([

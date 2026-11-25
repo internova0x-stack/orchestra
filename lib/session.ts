@@ -28,6 +28,8 @@ export interface Conversation {
   awaiting_team: string | null;
   /** The language the customer chose in the app (en, fr, pcm). */
   language: string;
+  /** A payer (not an account holder) matched to one checkout payment by their evidence: the only record they may see. */
+  payer_payment_id?: string | null;
 }
 
 /** The languages the customer app offers; Alexis replies in the one chosen. */

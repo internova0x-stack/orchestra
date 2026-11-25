@@ -91,7 +91,7 @@ export interface ToolDef<S extends z.ZodTypeAny> {
   description: string;
   schema: S;
   /** "stronger" tools also need the one-time code (Guardrails: tier 3 and account access). */
-  identity?: "standard" | "stronger";
+  identity?: "standard" | "stronger" | "payer";
   run: (input: z.infer<S>, ctx: ToolCtx, rules: Rules) => Promise<ToolResult | typeof AWAITING_IDENTITY | typeof AWAITING_CODE>;
 }
 
@@ -132,8 +132,11 @@ export async function refuse(ctx: ToolCtx, tool: string, input: unknown, reason:
 }
 
 /** Check 2: identity level. Tiers 1-3 need a verified session; some tools need the stronger check too. */
-export function needsIdentity(tier: Tier, ctx: ToolCtx, level: "standard" | "stronger" = "standard"): string | null {
+export function needsIdentity(tier: Tier, ctx: ToolCtx, level: "standard" | "stronger" | "payer" = "standard"): string | null {
   if (tier === 0) return null;
+  // A payer (not an account holder) passes by matching one checkout payment (check_payment_evidence); a verified
+  // account holder doesn't need to.
+  if (level === "payer") return ctx.conv.payer_payment_id || ctx.user ? null : "The payer hasn't been matched to a payment yet. Run check_payment_evidence first.";
   if (!ctx.user) return "Identity has not been verified in this conversation. Run verify_identity first.";
   if (level === "stronger" && !ctx.user.stronger) {
     return "This needs the stronger identity check. Call send_one_time_code: a code goes to the contact details on file and the customer types it into the form. Never send it anywhere else.";

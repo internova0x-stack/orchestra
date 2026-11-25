@@ -14,6 +14,8 @@ import type { BankConnector } from "./contract.ts";
 //   GET  /holders/{id}/loans                    GET  /holders/{id}/merchant-payouts
 //   GET  /holders/{id}/merchant-holds           GET  /holders/{id}/bill-payments
 //   POST /holders/{id}/bill-payments/{billId}/refund
+//   GET  /checkout-payments?amount&on&merchant  GET /checkout-payments/{id}   GET /transfer-status/{sessionId}
+//   POST /checkout-payments/{id}/resend-notification   POST /checkout-payments/{id}/refund
 //   GET  /holders/{id}/ussd-sessions            POST /holders/{id}/fees/{feeId}/refund
 // Every POST needs an Idempotency-Key header.
 
@@ -56,6 +58,31 @@ export async function serveBank(b: BankConnector, method: string, path: string[]
     const req = actionBody(body);
     return req ? { status: 200, body: await b.unlockLogin(id, req, idempotencyKey) } : { status: 400, body: { error: "bad_request" } };
   }
+  // A payment company's checkout payments, found by the payment itself (the payer holds no account).
+  if (a === "checkout-payments") {
+    if (method === "GET" && path.length === 1) {
+      const amount = num(query.get("amount")), on = str(query.get("on"));
+      if (amount === undefined || !on || !/^\d{4}-\d{2}-\d{2}$/.test(on)) return { status: 400, body: { error: "bad_request", message: "amount and on (YYYY-MM-DD) are required" } };
+      return { status: 200, body: { data: await b.findCheckoutPayments({ amount, on, currency: str(query.get("currency")), merchant: str(query.get("merchant")) }) } };
+    }
+    if (method === "GET" && id && path.length === 2) {
+      const c = await b.getCheckoutPayment(id);
+      return c ? { status: 200, body: c } : notFound;
+    }
+    if (method === "POST" && id && path.length === 3) {
+      if (!idempotencyKey) return { status: 400, body: { error: "idempotency_key_required" } };
+      const req = actionBody(body);
+      if (!req) return { status: 400, body: { error: "bad_request" } };
+      if (sub === "resend-notification") return { status: 200, body: await b.resendMerchantNotification(id, req, idempotencyKey) };
+      if (sub === "refund") {
+        const amt = (body as { amount?: unknown } | null)?.amount;
+        if (typeof amt !== "string" || !/^\d+(\.\d+)?$/.test(amt)) return { status: 400, body: { error: "bad_request", message: "amount is required" } };
+        return { status: 200, body: await b.refundCheckoutPayment(id, { ...req, amount: amt }, idempotencyKey) };
+      }
+    }
+    return notFound;
+  }
+  if (a === "transfer-status" && method === "GET" && id && path.length === 2) return { status: 200, body: await b.getTransferStatus(id) };
   if (a !== "holders" || !id) return notFound;
 
   // Records and actions one level down: /holders/{id}/{collection}/{recordId}[/{verb}]

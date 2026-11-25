@@ -1,4 +1,4 @@
-import type { ActionRequest, ActionResult, BankConnector, CardSettings, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, RecallRequest, RecallResult, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
+import type { ActionRequest, ActionResult, BankConnector, CardSettings, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, RecallRequest, RecallResult, Restriction, Transfer, UssdSession, Verification, CheckoutPayment, InterbankStatus } from "./contract.ts";
 
 // The Bank Connector API over HTTPS: Orchestra calls any bank that implements the contract
 // (public/openapi/bank-connector-v1.yaml). Set BANK_API_URL (e.g. https://bank.example/orchestra/v1) and
@@ -90,5 +90,12 @@ export function httpBank(baseUrl: string, apiKey: string, fetcher: typeof fetch 
     refundBillPayment: (h, id, req, key) => act(`${holder(h)}/bill-payments/${seg(id)}/refund`, req, key),
     searchUssdSessions: (h, q) => list(call<{ data: UssdSession[] }>("GET", `${holder(h)}/ussd-sessions`, { query: q })),
     refundFee: (h, id, req, key) => act(`${holder(h)}/fees/${seg(id)}/refund`, req, key),
+
+    findCheckoutPayments: (q) => list(call<{ data: CheckoutPayment[] }>("GET", "/checkout-payments", { query: q })),
+    getCheckoutPayment: (id) => call<CheckoutPayment | null>("GET", `/checkout-payments/${seg(id)}`),
+    getTransferStatus: async (sessionId) =>
+      (await call<InterbankStatus | null>("GET", `/transfer-status/${seg(sessionId)}`)) ?? { session_id: sessionId, status: "not_found", beneficiary_account_last4: null, at: null, detail: null },
+    resendMerchantNotification: (id, req, key) => act(`/checkout-payments/${seg(id)}/resend-notification`, req, key),
+    refundCheckoutPayment: (id, req, key) => act(`/checkout-payments/${seg(id)}/refund`, req, key),
   };
 }

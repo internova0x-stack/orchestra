@@ -316,6 +316,52 @@ create table if not exists email_practice_sent (
   headers jsonb not null default '{}',
   sent_at timestamptz not null default now()
 );
+-- A payment company's checkouts (Nov 25): payments people made to merchants by Pay with Transfer, a dedicated
+-- virtual account or a card, the payment company's refunds, and the interbank (NIBSS) status of transfers by
+-- session ID, which the payment company checks and returns. A payer matched to one payment is that
+-- conversation's payer_payment_id: the only record they may see.
+create table if not exists checkout_payments (
+  id text primary key,
+  reference text not null,
+  merchant_holder_id text not null references businesses(id) on delete cascade,
+  channel text not null check (channel in ('pay_with_transfer','virtual_account','card')),
+  amount_expected numeric,
+  amount_received numeric,
+  currency text not null,
+  created_at timestamptz not null,
+  expires_at timestamptz,
+  received_at timestamptz,
+  status text not null check (status in ('successful','received_late','received_short','received_over','awaiting','failed_debited','duplicate','unmatched')),
+  payer_email text,
+  payer_card_last4 text,
+  payer_account_last4 text,
+  payer_bank text,
+  session_id text,
+  virtual_account_last4 text,
+  notify_status text check (notify_status in ('delivered','failed','pending')),
+  notify_attempts int not null default 0,
+  notify_last_at timestamptz,
+  review_hold boolean not null default false
+);
+create table if not exists checkout_refunds (
+  id text primary key,
+  payment_id text not null references checkout_payments(id) on delete cascade,
+  amount numeric not null,
+  status text not null check (status in ('processing','completed','failed')),
+  arn text,
+  started_at timestamptz not null,
+  completed_at timestamptz,
+  started_by text not null
+);
+create table if not exists nip_sessions (
+  session_id text primary key,
+  status text not null check (status in ('successful','pending','failed','reversed')),
+  beneficiary_account_last4 text,
+  at timestamptz,
+  detail text
+);
+create sequence if not exists checkout_refund_seq start 7001;
+alter table conversations add column if not exists payer_payment_id text;
 alter table conversations add column if not exists email_from text;
 alter table conversations add column if not exists email_thread jsonb not null default '[]';
 alter table conversations add column if not exists email_link_token text;
@@ -686,6 +732,9 @@ create table if not exists rule_overrides (
 export const TABLES_TO_WIPE = [
   "crm_sandbox_calls",
   "email_practice_sent",
+  "checkout_refunds",
+  "checkout_payments",
+  "nip_sessions",
   "conversation_reviews",
   "rule_overrides",
   "audit_log",

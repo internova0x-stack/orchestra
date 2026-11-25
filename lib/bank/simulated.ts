@@ -1,5 +1,5 @@
 import type { Sql } from "../db.ts";
-import type { ActionResult, BankConnector, CardSettings, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
+import type { ActionResult, BankConnector, CardSettings, CheckoutPayment, InterbankStatus, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
 
 // The simulated bank behind the Bank Connector API: the seeded tables in this app's own database.
 // It is the reference implementation of the contract (also served over HTTP at /api/bank/v1).
@@ -302,5 +302,72 @@ export function simulatedBank(sql: Sql): BankConnector {
       const [f] = await sql<{ id: string }[]>`select id from fees where id = ${up(feeId)} and business_id = ${holderId} and kind = 'fee'`;
       return f ? done("refunded") : refused("not_found");
     },
+
+    // ---------------------------------------------------------------- checkout payments (the payment company)
+
+    async findCheckoutPayments(q): Promise<CheckoutPayment[]> {
+      const rows = await sql<Record<string, unknown>[]>`
+        select c.*, b.name as merchant_name from checkout_payments c join businesses b on b.id = c.merchant_holder_id
+        where (c.amount_expected = ${q.amount} or c.amount_received = ${q.amount})
+          and (c.created_at at time zone 'Africa/Lagos')::date between ${q.on}::date - 1 and ${q.on}::date + 1
+          ${q.currency ? sql`and c.currency = ${q.currency.toUpperCase()}` : sql``}
+          ${q.merchant ? sql`and b.name ilike ${"%" + q.merchant.replace(/[%_]/g, "") + "%"}` : sql``}
+        order by c.created_at desc limit 20`;
+      return Promise.all(rows.map((r) => checkout(r)));
+    },
+
+    async getCheckoutPayment(id) {
+      const [r] = await sql<Record<string, unknown>[]>`
+        select c.*, b.name as merchant_name from checkout_payments c join businesses b on b.id = c.merchant_holder_id where c.id = ${up(id)}`;
+      return r ? checkout(r) : null;
+    },
+
+    /** Stands in for the payment company's own NIBSS status query: the simulated switch's record of the session. */
+    async getTransferStatus(sessionId): Promise<InterbankStatus> {
+      const [r] = await sql<Record<string, unknown>[]>`select * from nip_sessions where session_id = ${sessionId.trim()}`;
+      if (!r) return { session_id: sessionId.trim(), status: "not_found", beneficiary_account_last4: null, at: null, detail: null };
+      return wire<InterbankStatus>(r, ["at"], []);
+    },
+
+    async resendMerchantNotification(paymentId) {
+      const [c] = await sql<{ status: string; review_hold: boolean }[]>`select status, review_hold from checkout_payments where id = ${up(paymentId)}`;
+      if (!c) return refused("not_found");
+      if (c.review_hold) return refused("review_hold");
+      if (!["successful", "received_over"].includes(c.status)) return refused(c.status);
+      // The simulated merchant's system answers this time.
+      await sql`update checkout_payments set notify_status = 'delivered', notify_attempts = notify_attempts + 1, notify_last_at = now() where id = ${up(paymentId)}`;
+      return done("delivered");
+    },
+
+    async refundCheckoutPayment(paymentId, req) {
+      const [c] = await sql<{ id: string; channel: string; review_hold: boolean }[]>`select id, channel, review_hold from checkout_payments where id = ${up(paymentId)}`;
+      if (!c) return refused("not_found");
+      if (c.review_hold) return refused("review_hold");
+      const [had] = await sql<{ id: string; arn: string | null }[]>`select id, arn from checkout_refunds where payment_id = ${c.id} and status <> 'failed'`;
+      if (had) return { accepted: true, bank_reference: had.id, status: "already_refunding", arn: had.arn };
+      const [{ seq }] = await sql<{ seq: string }[]>`select nextval('checkout_refund_seq')::text as seq`;
+      const id = `RF-${seq}`;
+      const arn = c.channel === "card" ? `7${seq}${String(Date.now()).slice(-14)}`.slice(0, 23) : null;
+      await sql`insert into checkout_refunds (id, payment_id, amount, status, arn, started_at, started_by)
+        values (${id}, ${c.id}, ${req.amount}, 'processing', ${arn}, now(), ${req.reference})`;
+      return { accepted: true, bank_reference: id, status: "processing", arn };
+    },
   };
+
+  async function checkout(r: Record<string, unknown>): Promise<CheckoutPayment> {
+    const [f] = await sql<Record<string, unknown>[]>`
+      select id, amount, status, arn, started_at, completed_at, started_by from checkout_refunds
+      where payment_id = ${r.id as string} order by started_at desc limit 1`;
+    return {
+      id: r.id as string, reference: r.reference as string, merchant_holder_id: r.merchant_holder_id as string, merchant_name: r.merchant_name as string,
+      channel: r.channel as CheckoutPayment["channel"], amount_expected: str(r.amount_expected), amount_received: str(r.amount_received),
+      currency: r.currency as string, created_at: iso(r.created_at as Date)!, expires_at: iso(r.expires_at as Date | null), received_at: iso(r.received_at as Date | null),
+      status: r.status as CheckoutPayment["status"],
+      payer: { email: str(r.payer_email), card_last4: str(r.payer_card_last4), account_last4: str(r.payer_account_last4), bank: str(r.payer_bank) },
+      session_id: str(r.session_id), virtual_account_last4: str(r.virtual_account_last4),
+      merchant_notification: r.notify_status ? { status: r.notify_status as "delivered" | "failed" | "pending", attempts: Number(r.notify_attempts), last_at: iso(r.notify_last_at as Date | null) } : null,
+      refund: f ? wire(f, ["started_at", "completed_at"], ["amount"]) : null,
+      review_hold: Boolean(r.review_hold),
+    };
+  }
 }

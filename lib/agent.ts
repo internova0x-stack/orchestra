@@ -53,6 +53,9 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
   } else {
     lines.push("- Identity not verified yet.");
   }
+  if (conv.payer_payment_id) {
+    lines.push(`- A payer (no account with us) matched to checkout payment ${conv.payer_payment_id}: only that payment may be discussed.`);
+  }
   const pa = conv.pending_action;
   if (pa) {
     lines.push(pa.confirmed

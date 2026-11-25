@@ -72,6 +72,13 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   loops dropped; drafts first = `awaiting_team 'email_drafts'`, or Alexis replies), team replies emailed from
   `emitEvent('message.created')`, forms as a one-use 24-hour link to `/e/{token}` (outside the site password and the
   console frame). API page → Channels → Support email (`/api/admin/email`). Email conversations have `origin = 'email'`.
+- Checkout payments (Nov 25, a payment company's payers, who hold no account): Bank Connector `findCheckoutPayments`,
+  `getCheckoutPayment`, `getTransferStatus` (the payment company runs the NIBSS NIP status query; Orchestra never calls
+  NIBSS), `resendMerchantNotification`, `refundCheckoutPayment`; simulated in `checkout_payments`, `checkout_refunds`,
+  `nip_sessions` (seeded for Ember and Oak Foods and Okapi Logistics). Tools in `lib/tools/checkout.ts`:
+  `check_payment_evidence` is the payer's identity check (amount + date + `payer_evidence_needed` matching details,
+  compared in code; `payer_check_attempts`; a match sets `conversations.payer_payment_id`, the only record they see);
+  the others carry `identity: "payer"`. Rules in the "Checkout payments" category; the customer app's picker lists payers.
 - Channels (simulated): `conversations.channel` app | whatsapp | email (+ `email_subject`); `CHANNEL_NOTE` in
   `lib/agent.ts`. Operations: rules `alexis_enabled`, `outage_mode`, `outage_notice`; `conversations.awaiting_team`
   (switched_off | ai_unavailable); `find_case`; `conversation_reviews`; `conversations.language`, `lib/review.ts`.

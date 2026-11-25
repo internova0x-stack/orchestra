@@ -26,7 +26,9 @@ info:
     balances, fees and currency conversions (and a goodwill fee refund), restrictions, cards (freeze, unfreeze, settings,
     replace) and
     card transactions, card, POS, ATM and web payments with their stage-by-stage timeline, loans, merchant payouts
-    and holds, bill and airtime payments (refund), USSD and agent sessions, and unlocking online access.
+    and holds, bill and airtime payments (refund), USSD and agent sessions, and unlocking online access; and, for a payment
+    company, checkout payments (Pay with Transfer, virtual accounts, cards), their NIBSS status, merchant notifications
+    and refunds. Checkout payments are found by the payment itself, not by a holder: the payer usually holds no account.
 
     Orchestra keeps its own records of the cases it opens (disputes, reversal requests, deferral requests, fee
     waivers, recalls, handoffs) and its audit log; the bank only answers for its ledger.
@@ -662,6 +664,116 @@ paths:
               schema: { $ref: "#/components/schemas/ActionResult" }
         "400": { description: Missing Idempotency-Key or a malformed body }
 
+  /checkout-payments:
+    get:
+      tags: [Checkout payments]
+      summary: Checkout payments of an amount on a day
+      description: "For a payment company: payments people made to merchants by Pay with Transfer, a dedicated virtual account or a card, whose expected or received amount equals `amount`, created within a day of `on`. The payer usually holds no account, so these are found by the payment itself. Orchestra matches the payer's evidence (the checkout email, or a card or sending account's last 4) in its own code and shows the payer only the one payment that matched."
+      operationId: findCheckoutPayments
+      parameters:
+        - { name: amount, in: query, required: true, schema: { type: number }, example: 45000 }
+        - { name: on, in: query, required: true, schema: { type: string, format: date }, example: "2026-11-24" }
+        - { name: currency, in: query, schema: { type: string }, example: "NGN" }
+        - { name: merchant, in: query, schema: { type: string }, description: Part of the merchant's name }
+      responses:
+        "200":
+          description: Matching checkout payments, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/CheckoutPayment" } }
+        "400": { description: amount or on missing }
+
+  /checkout-payments/{paymentId}:
+    get:
+      tags: [Checkout payments]
+      summary: One checkout payment
+      operationId: getCheckoutPayment
+      parameters:
+        - { name: paymentId, in: path, required: true, schema: { type: string }, example: "CK-90101" }
+      responses:
+        "200":
+          description: The payment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutPayment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /checkout-payments/{paymentId}/resend-notification:
+    post:
+      tags: [Checkout payments, Actions]
+      summary: Send the merchant's "paid" notification again
+      description: "For a payment that arrived but whose notification to the merchant's system failed or was missed. Refused (`accepted: false`) on a review hold or a payment that didn't succeed."
+      operationId: resendMerchantNotification
+      parameters:
+        - { name: paymentId, in: path, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionRequest" }
+            example: { reference: "NTF-90101", requested_by: "Alexis" }
+      responses:
+        "200":
+          description: The payment company's answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
+        "400": { description: Missing Idempotency-Key or a malformed body }
+
+  /checkout-payments/{paymentId}/refund:
+    post:
+      tags: [Checkout payments, Actions]
+      summary: Refund the payer
+      description: "The whole payment, or the excess of an over-payment, back to where it came from. A refund already under way answers `accepted: true`, `status: already_refunding` with its id. For a card refund the answer carries the `arn` the payer's bank can trace."
+      operationId: refundCheckoutPayment
+      parameters:
+        - { name: paymentId, in: path, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/ActionRequest" }
+                - type: object
+                  required: [amount]
+                  properties:
+                    amount: { $ref: "#/components/schemas/Money" }
+            example: { reference: "CRF-90103", requested_by: "Alexis", amount: "19500.00" }
+      responses:
+        "200":
+          description: The payment company's answer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/ActionResult" }
+                  - type: object
+                    properties:
+                      arn: { type: [string, "null"], description: "A card refund's acquirer reference number" }
+        "400": { description: Missing Idempotency-Key, amount or a malformed body }
+
+  /transfer-status/{sessionId}:
+    get:
+      tags: [Checkout payments]
+      summary: A transfer's status at NIBSS, by session ID
+      description: "The payment company runs the NIP status query against NIBSS (through its own connection or its partner bank) and returns the result. Orchestra never connects to NIBSS. Unknown session IDs answer `status: not_found`."
+      operationId: getTransferStatus
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string }, example: "000013261124093015123456789012" }
+      responses:
+        "200":
+          description: The status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InterbankStatus" }
+
 components:
   securitySchemes:
     bearer:
@@ -806,6 +918,57 @@ components:
         accepted: { type: boolean }
         bank_reference: { type: [string, "null"] }
         status: { type: string, example: "requested" }
+    CheckoutPayment:
+      type: object
+      required: [id, reference, merchant_holder_id, merchant_name, channel, currency, created_at, status, payer, review_hold]
+      properties:
+        id: { type: string, example: "CK-90101" }
+        reference: { type: string, description: "The reference on the payer's receipt" }
+        merchant_holder_id: { type: string }
+        merchant_name: { type: string }
+        channel: { type: string, enum: [pay_with_transfer, virtual_account, card] }
+        amount_expected: { type: [string, "null"], description: "What the checkout asked for; null for a virtual account top-up" }
+        amount_received: { type: [string, "null"] }
+        currency: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        received_at: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [successful, received_late, received_short, received_over, awaiting, failed_debited, duplicate, unmatched] }
+        payer:
+          type: object
+          properties:
+            email: { type: [string, "null"], description: "The email given at checkout" }
+            card_last4: { type: [string, "null"] }
+            account_last4: { type: [string, "null"], description: "The sending account's last 4 digits" }
+            bank: { type: [string, "null"] }
+        session_id: { type: [string, "null"], description: "The NIP session ID of the transfer that paid it" }
+        virtual_account_last4: { type: [string, "null"] }
+        merchant_notification:
+          type: [object, "null"]
+          properties:
+            status: { type: string, enum: [delivered, failed, pending] }
+            attempts: { type: integer }
+            last_at: { type: [string, "null"], format: date-time }
+        refund:
+          type: [object, "null"]
+          properties:
+            id: { type: string }
+            amount: { $ref: "#/components/schemas/Money" }
+            status: { type: string, enum: [processing, completed, failed] }
+            arn: { type: [string, "null"] }
+            started_at: { type: string, format: date-time }
+            completed_at: { type: [string, "null"], format: date-time }
+            started_by: { type: string, description: "The payment company's automatic rule, or Orchestra's reference" }
+        review_hold: { type: boolean }
+    InterbankStatus:
+      type: object
+      required: [session_id, status]
+      properties:
+        session_id: { type: string }
+        status: { type: string, enum: [successful, pending, failed, reversed, not_found] }
+        beneficiary_account_last4: { type: [string, "null"] }
+        at: { type: [string, "null"], format: date-time }
+        detail: { type: [string, "null"] }
     ActionRequest:
       type: object
       required: [reference, requested_by]

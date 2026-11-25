@@ -235,6 +235,7 @@ async function seedInto(tx: any, now: Date) {
     await seedLoansAndPayouts(tx, now);
     await seedRetailTransfers(tx, now);
     await seedBillsAndUssd(tx, now);
+    await seedCheckouts(tx, now);
     // The sample team, one per role (invented people). Accounts survive Reset demo; they can sign in once an admin
     // gives them a password (Team page: "Let the sample team sign in").
     await tx`insert into staff_users (id, name, role, email, demo) values
@@ -565,3 +566,52 @@ async function seedBillsAndUssd(tx: any, now: Date) {
   ];
   for (const u of sessions) await tx`insert into ussd_sessions ${tx(u)}`;
 }
+
+// ---------------------------------------------------------------- a payment company's checkouts (Nov 25)
+
+/**
+ * Payments invented people made to two Nigerian merchants (Ember and Oak Foods, Okapi Logistics) at checkout:
+ * one of each case a payer writes in about. The payers hold no account; they're found by the payment itself.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function seedCheckouts(tx: any, now: Date) {
+  const at = (h: number) => new Date(now.getTime() - h * 3_600_000);
+  const plus = (d: Date, min: number) => new Date(d.getTime() + min * 60_000);
+  const base = { currency: "NGN", expires_at: null, received_at: null, payer_card_last4: null, payer_account_last4: null, payer_bank: null, session_id: null, virtual_account_last4: null, notify_status: null, notify_attempts: 0, notify_last_at: null, review_hold: false };
+  const pwt = (h: number) => ({ created_at: at(h), expires_at: plus(at(h), 30) });
+  const rows = [
+    // Paid and received; the merchant's system never got the "paid" notification: re-send it.
+    { ...base, ...pwt(3), id: "CK-90101", reference: "PWT-5K2Q8M", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 45000, amount_received: 45000, received_at: plus(at(3), 4), status: "successful", payer_email: "chidi.okafor@mail.example", payer_account_last4: "4417", payer_bank: "Eko Commercial Bank", session_id: "000013261124093015123456789001", notify_status: "failed", notify_attempts: 3, notify_last_at: plus(at(3), 20) },
+    // Arrived 40 minutes after the checkout expired: the automatic refund is under way.
+    { ...base, ...pwt(26), id: "CK-90102", reference: "PWT-7HD31L", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 32000, amount_received: 32000, received_at: plus(at(26), 70), status: "received_late", payer_email: "bola.ade@mail.example", payer_account_last4: "9032", payer_bank: "Sahel Trust Bank", session_id: "000013261123151122123456789002" },
+    // Paid ₦500 short: not yet refunded.
+    { ...base, ...pwt(5), id: "CK-90103", reference: "PWT-2MN84R", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 20000, amount_received: 19500, received_at: plus(at(5), 6), status: "received_short", payer_email: "tunde.bello@mail.example", payer_account_last4: "2281", payer_bank: "Eko Commercial Bank", session_id: "000013261124080503123456789003" },
+    // Nothing has arrived; the payer's transfer is still pending at their own bank (NIBSS session below).
+    { ...base, ...pwt(2), id: "CK-90104", reference: "PWT-9QX55T", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 60000, status: "awaiting", payer_email: "kemi.jacobs@mail.example" },
+    // Nothing arrived; the sending bank reversed the transfer to the payer.
+    { ...base, ...pwt(30), id: "CK-90105", reference: "PWT-4BV19C", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 15000, status: "awaiting", payer_email: "ngozi.eze@mail.example" },
+    // A wallet top-up through a dedicated virtual account: received, and the merchant was told.
+    { ...base, id: "CK-90106", reference: "DVA-88Z3PL", merchant_holder_id: "okapi", channel: "virtual_account", amount_expected: null, amount_received: 50000, created_at: at(6), received_at: at(6), status: "successful", payer_email: "musa.dauda@mail.example", payer_account_last4: "7765", payer_bank: "Sahel Trust Bank", session_id: "000013261124074411123456789006", virtual_account_last4: "3312", notify_status: "delivered", notify_attempts: 1, notify_last_at: plus(at(6), 1) },
+    // A card payment that failed at checkout but debited the card: reversed by the card's bank.
+    { ...base, id: "CK-90107", reference: "CRD-61JF2W", merchant_holder_id: "ember", channel: "card", amount_expected: 12500, amount_received: 12500, created_at: at(20), received_at: at(20), status: "failed_debited", payer_email: "femi.kolade@mail.example", payer_card_last4: "4821" },
+    // Charged twice for one order: the second charge is the duplicate.
+    { ...base, id: "CK-90108", reference: "CRD-3TT8KX", merchant_holder_id: "okapi", channel: "card", amount_expected: 8000, amount_received: 8000, created_at: at(8), received_at: at(8), status: "successful", payer_email: "halima.yusuf@mail.example", payer_card_last4: "5530", notify_status: "delivered", notify_attempts: 1, notify_last_at: at(8) },
+    { ...base, id: "CK-90109", reference: "CRD-3TT8KY", merchant_holder_id: "okapi", channel: "card", amount_expected: 8000, amount_received: 8000, created_at: plus(at(8), 1), received_at: plus(at(8), 1), status: "duplicate", payer_email: "halima.yusuf@mail.example", payer_card_last4: "5530" },
+    // The merchant refunded a card payment three days ago; the ARN lets the payer's bank trace it.
+    { ...base, id: "CK-90110", reference: "CRD-8RE04D", merchant_holder_id: "ember", channel: "card", amount_expected: 27000, amount_received: 27000, created_at: at(96), received_at: at(96), status: "successful", payer_email: "chioma.nwosu@mail.example", payer_card_last4: "6671", notify_status: "delivered", notify_attempts: 1, notify_last_at: at(96) },
+    // On a review hold: the payer hears only that it's under review.
+    { ...base, ...pwt(4), id: "CK-90111", reference: "PWT-6WW70A", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 100000, amount_received: 100000, received_at: plus(at(4), 3), status: "successful", payer_email: "obinna.m@mail.example", payer_account_last4: "1209", payer_bank: "Eko Commercial Bank", session_id: "000013261124091212123456789011", review_hold: true, notify_status: "pending", notify_attempts: 0 },
+    // Paid ₦5,000 too much: the excess comes back.
+    { ...base, ...pwt(7), id: "CK-90112", reference: "PWT-1LP63S", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 10000, amount_received: 15000, received_at: plus(at(7), 5), status: "received_over", payer_email: "sade.ojo@mail.example", payer_account_last4: "6610", payer_bank: "Sahel Trust Bank", session_id: "000013261124060702123456789012", notify_status: "delivered", notify_attempts: 1, notify_last_at: plus(at(7), 6) },
+  ];
+  for (const r of rows) await tx`insert into checkout_payments ${tx(r)}`;
+  await tx`insert into checkout_refunds (id, payment_id, amount, status, arn, started_at, completed_at, started_by) values
+    ('RF-6901', 'CK-90102', 32000, 'processing', null, ${plus(at(26), 75)}, null, 'Automatic: arrived after the checkout expired'),
+    ('RF-6902', 'CK-90110', 27000, 'processing', '74321654987123456789012', ${at(72)}, null, 'Merchant refund')`;
+  await tx`insert into nip_sessions (session_id, status, beneficiary_account_last4, at, detail) values
+    ('000013261124110012123456789004', 'pending', null, ${at(2)}, 'Still pending at the sending bank'),
+    ('000013261123120918123456789005', 'reversed', null, ${at(29)}, 'Not completed; reversed to the sender''s account by the sending bank'),
+    ('000013261124093015123456789001', 'successful', '0742', ${plus(at(3), 4)}, null),
+    ('000013261124080503123456789003', 'successful', '0742', ${plus(at(5), 6)}, null)`;
+}
+

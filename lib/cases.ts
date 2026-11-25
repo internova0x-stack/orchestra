@@ -25,6 +25,8 @@ const CATEGORY_BY_TOOL: Record<string, string> = {
   get_payout_status: "Merchant payouts", list_holds: "Merchant payouts",
   get_bill_payment_status: "Airtime and bills", refund_bill_payment: "Airtime and bills",
   get_ussd_session: "USSD and agent banking",
+  check_payment_evidence: "Checkout payments", get_checkout_payment: "Checkout payments", check_transfer_status: "Checkout payments",
+  resend_merchant_notification: "Checkout payments", refund_checkout_payment: "Checkout payments",
 };
 
 /** Handoff triggers that say more about the case than the tools do. */
@@ -44,6 +46,8 @@ const AREA_BY_TRIGGER: Record<string, string> = {
   dispute_over_cap: "Transactions and disputes", card_problem: "Cards", contact_change_requested: "Account access",
   loan_hardship: "Loans", merchant_payout_problem: "Merchant payouts",
   bill_payment_problem: "Airtime and bills", agent_cash_problem: "USSD and agent banking",
+  payer_not_matched: "Checkout payments", merchant_not_delivering: "Checkout payments", transfer_unmatched: "Checkout payments",
+  checkout_refund_over_cap: "Checkout payments", checkout_payment_problem: "Checkout payments",
 };
 
 export const GENERAL = "General question";

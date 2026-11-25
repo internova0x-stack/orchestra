@@ -339,3 +339,17 @@ the setup, Messages and the secure page in a browser. Not yet tried with a real 
 real DNS. To go real: a Postmark account, POSTMARK_SERVER_TOKEN and POSTMARK_ACCOUNT_TOKEN in Vercel, and Postmark's
 account approval before it sends to outside addresses.
 
+## Checkout payments for a payment company (Nov 25, Tomi: "start with 1, 2, 3")
+
+Someone who paid a merchant by Pay with Transfer, a dedicated virtual account or a card, and holds no account, can
+now be helped. `check_payment_evidence` is their identity check: the amount, the date and one more detail (checkout
+email, or the card's or sending account's last 4), all compared in code; it never says which detail was wrong and
+ends after 3 misses. A match ties the conversation to that one payment. Then Alexis reads its status and next step
+from the rules, checks a transfer at NIBSS by session ID (run by the payment company through the Bank Connector,
+never by Orchestra), re-sends the merchant's "paid" notification (twice per payment), and refunds what the rules
+allow (a late or short transfer in full, an over-payment's excess, a duplicate card charge) with the payer's yes,
+under a cap, once. A review hold shows only as "review hold". New Bank Connector endpoints are in the OpenAPI file
+and the reference server. Twelve sample payments cover each case; the customer app's picker lists their payers with
+what's on their receipt. Checked: four new tests (the check, scope and re-send limit, refunds, review hold and NIBSS
+status, the reference server). Not yet tried with the live model in a conversation.
+

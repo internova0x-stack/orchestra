@@ -1484,7 +1484,7 @@ test("bank connector: the OpenAPI file and the reference server list the same en
     "/holders/{holderId}/payments/{paymentId}/events", "/holders/{holderId}/recalls", "/holders/{holderId}/restrictions",
     "/holders/{holderId}/transfers", "/holders/{holderId}/ussd-sessions", "/holders/{holderId}/verification", "/identity/verify",
     "/users", "/users/{userId}", "/users/{userId}/contact", "/users/{userId}/unlock",
-  ]);
+  ].concat(["/checkout-payments", "/checkout-payments/{paymentId}", "/checkout-payments/{paymentId}/refund", "/checkout-payments/{paymentId}/resend-notification", "/transfer-status/{sessionId}"]).sort());
   const served = fs.readFileSync(new URL("../lib/bank/serve.ts", import.meta.url), "utf8");
   for (const p of paths) {
     const last = p.split("/").filter((x) => x && !x.startsWith("{")).pop()!;
@@ -2180,3 +2180,116 @@ test("support email: Postmark calls follow its API (inbound hook, domain records
     delete process.env.POSTMARK_SERVER_TOKEN; delete process.env.POSTMARK_ACCOUNT_TOKEN;
   }
 });
+
+// ---------------------------------------------------------------- checkout payments (a payment company, Nov 25)
+
+test("checkout payments: the payer check needs amount, date and one matching detail, never says which was wrong, and ends after 3 misses", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session(null, MONDAY);
+  // Not enough: amount and date alone.
+  const thin = await call(s, "check_payment_evidence", { amount: 45000, on: "2026-11-23" });
+  assert.equal(thin.ok, false);
+  assert.match(thin.reason!, /one more detail/);
+  // A wrong email: no match, and the reason doesn't name the email.
+  const wrong = await call(s, "check_payment_evidence", { amount: 45000, on: "2026-11-23", email: "someone.else@mail.example" });
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.reason!, /Don't say which detail was wrong/);
+  // A right email with a wrong account digit: every detail given must match.
+  const mixed = await call(s, "check_payment_evidence", { amount: 45000, on: "2026-11-23", email: "chidi.okafor@mail.example", account_last4: "9999" });
+  assert.equal(mixed.ok, false);
+  // Right: amount, date and the sending account's last 4.
+  const ok = await call(s, "check_payment_evidence", { amount: 45000, on: "2026-11-23", account_last4: "4417" });
+  assert.equal(ok.ok, true);
+  assert.equal((ok.data as { payment: string }).payment, "CK-90101");
+  assert.match((ok.data as { next: string }).next, /re-send/);
+  const [c] = await sql!`select payer_payment_id from conversations where id = ${s.conv.id}`;
+  assert.equal(c.payer_payment_id, "CK-90101");
+
+  // Three misses end the check.
+  const t = await session(null, MONDAY);
+  for (let i = 0; i < 3; i++) assert.equal((await call(t, "check_payment_evidence", { amount: 45000, on: "2026-11-23", email: `nope${i}@mail.example` })).ok, false);
+  const ended = await call(t, "check_payment_evidence", { amount: 45000, on: "2026-11-23", account_last4: "4417" });
+  assert.equal(ended.ok, false);
+  assert.match(ended.reason!, /has ended/);
+});
+
+test("checkout payments: a matched payer sees only that payment; re-sending the merchant notification is limited", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  // Before any match, the payer tools refuse.
+  const s = await session(null, MONDAY);
+  const early = await call(s, "resend_merchant_notification", {});
+  assert.match(early.reason!, /check_payment_evidence first/);
+  assert.equal((await call(s, "check_payment_evidence", { amount: 45000, on: "2026-11-23", email: "Chidi.Okafor@mail.example" })).ok, true);
+  const r1 = await call(s, "resend_merchant_notification", {});
+  assert.equal(r1.ok, true);
+  assert.equal(r1.reference, "NTF-90101-1");
+  const [n] = await sql!`select notify_status, notify_attempts from checkout_payments where id = 'CK-90101'`;
+  assert.deepEqual([n.notify_status, n.notify_attempts], ["delivered", 4]);
+  assert.equal((await call(s, "resend_merchant_notification", {})).ok, true);
+  const third = await call(s, "resend_merchant_notification", {});
+  assert.equal(third.ok, false, "two re-sends per payment");
+  // The account-holder tools stay closed: a payer match isn't an identity check.
+  const acct = await call(s, "get_balance", {});
+  assert.match(acct.reason!, /verify_identity/);
+});
+
+test("checkout payments: refunds follow the rules (short in full, over-payment's excess, duplicate charge), once, with the payer's yes", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const s = await session(null, MONDAY);
+  assert.equal((await call(s, "check_payment_evidence", { amount: 19500, on: "2026-11-23", email: "tunde.bello@mail.example" })).ok, true);
+  const ask = await call(s, "refund_checkout_payment", {});
+  assert.match(ask.reason!, /CONFIRMATION_NEEDED/);
+  assert.ok(s.events.some((e) => e.type === "confirm"));
+  s.conv.pending_action = { ...s.conv.pending_action!, confirmed: true };
+  const done = await call(s, "refund_checkout_payment", {});
+  assert.equal(done.ok, true);
+  assert.equal((done.data as { amount: string }).amount, "₦19,500.00");
+  const again = await call(s, "refund_checkout_payment", {});
+  assert.equal(again.ok, false, "once per payment");
+
+  // Over-payment: only the excess.
+  const o = await session(null, MONDAY);
+  assert.equal((await call(o, "check_payment_evidence", { amount: 15000, on: "2026-11-23", account_last4: "6610" })).ok, true);
+  await call(o, "refund_checkout_payment", {});
+  o.conv.pending_action = { ...o.conv.pending_action!, confirmed: true };
+  const ex = await call(o, "refund_checkout_payment", {});
+  assert.equal((ex.data as { amount: string }).amount, "₦5,000.00");
+
+  // Duplicate card charge: refunded with an ARN. The first, normal charge isn't refundable here.
+  const d = await session(null, MONDAY);
+  const two = await call(d, "check_payment_evidence", { amount: 8000, on: "2026-11-23", card_last4: "5530" });
+  assert.equal(two.ok, false, "two charges match: ask for one more detail");
+  assert.match(two.reason!, /More than one payment/);
+
+  // A successful payment: refused, pointed at the merchant.
+  const k = await session(null, MONDAY);
+  assert.equal((await call(k, "check_payment_evidence", { amount: 27000, on: "2026-11-19", card_last4: "6671" })).ok, true);
+  const already = await call(k, "refund_checkout_payment", {});
+  assert.equal(already.ok, false);
+  assert.match(already.reason!, /ARN 74321654987123456789012/, "an existing refund comes back with its ARN");
+});
+
+test("checkout payments: a review hold says only 'review hold'; NIBSS status comes from the payment company, by session ID", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const h = await session(null, MONDAY);
+  const held = await call(h, "check_payment_evidence", { amount: 100000, on: "2026-11-23", account_last4: "1209" });
+  assert.equal(held.ok, true);
+  assert.equal((held.data as { status: string }).status, "review hold");
+  assert.ok(!JSON.stringify(held.data).includes("risk"), "no reason given");
+
+  const w = await session(null, MONDAY);
+  assert.equal((await call(w, "check_payment_evidence", { amount: 60000, on: "2026-11-23", email: "kemi.jacobs@mail.example" })).ok, true);
+  const pending = await call(w, "check_transfer_status", { session_id: "000013261124110012123456789004" });
+  assert.equal((pending.data as { status: string }).status, "Still pending at the sender's bank");
+  const unknown = await call(w, "check_transfer_status", { session_id: "000013261124110012999999999999" });
+  assert.equal((unknown.data as { status: string }).status, "NIBSS has no transfer with this session ID");
+
+  // The payment company's reference server answers the same over HTTP.
+  const { serveBank } = await import("../lib/bank/serve.ts");
+  const { simulatedBank } = await import("../lib/bank/simulated.ts");
+  const res = await serveBank(simulatedBank(sql!), "GET", ["transfer-status", "000013261123120918123456789005"], new URLSearchParams(), null, null);
+  assert.equal((res.body as { status: string }).status, "reversed");
+  const list = await serveBank(simulatedBank(sql!), "GET", ["checkout-payments"], new URLSearchParams({ amount: "45000", on: "2026-11-23" }), null, null);
+  assert.equal((list.body as { data: { id: string }[] }).data[0].id, "CK-90101");
+});
+

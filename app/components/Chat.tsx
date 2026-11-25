@@ -8,6 +8,8 @@ import { drawSample, readImage, type Attachment, type Sample } from "./screensho
 // ---------------------------------------------------------------- types
 
 interface PickerUser { id: string; name: string; business: string; role: string; dob: string; registration: string }
+/** Someone who paid a merchant at checkout and has no account (a payment company's customer's customer). */
+interface PickerPayer { id: string; name: string; scene: string; merchant: string; paid: string; details: string[]; session: string | null }
 interface Card {
   reference: string; amount: string; counterparty: string; route: string; status: string; date: string;
   stages: { label: string; state: "done" | "current" | "failed" | "todo" }[];
@@ -228,6 +230,7 @@ function Outbox({ messages, onOpen }: { messages: OutboxMsg[]; onOpen: (m: Outbo
 /** The customer app: a banking app's support chat, in a phone frame. The bank's side is the console. */
 export default function Chat() {
   const [users, setUsers] = useState<PickerUser[]>([]);
+  const [payers, setPayers] = useState<PickerPayer[]>([]);
   const [setupProblem, setSetupProblem] = useState<string | null>(null);
   const [typingUserId, setTypingUserId] = useState<string>("ada");
   const [conversationId, setConversationId] = useState<string>(() => newId());
@@ -262,6 +265,7 @@ export default function Chat() {
       }
       setSetupProblem(null);
       setUsers(json.users);
+      setPayers(json.payers ?? []);
     } catch {
       setSetupProblem("Couldn't reach the app's server.");
     }
@@ -426,7 +430,7 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, typingUserId, channel, language, ...(channel === "email" && subject.trim() ? { subject: subject.trim() } : {}), ...body }),
+        body: JSON.stringify({ conversationId, typingUserId: typingUserId.startsWith("payer:") ? null : typingUserId, channel, language, ...(channel === "email" && subject.trim() ? { subject: subject.trim() } : {}), ...body }),
       });
       if (!res.ok || !res.body) {
         const json = await res.json().catch(() => ({}));
@@ -526,6 +530,7 @@ export default function Chat() {
   }
 
   const selected = users.find((u) => u.id === typingUserId);
+  const payer = payers.find((p) => p.id === typingUserId);
   const empty = messages.length === 1 && channel !== "email";
   const firstEmail = channel === "email" && !messages.some((m) => m.role === "customer");
   const who = (m: Msg) => (m.staff ? `${m.staff} · Support team` : channel === "email" ? "Alexis, AI support assistant" : "Alexis · AI");
@@ -542,11 +547,26 @@ export default function Chat() {
               <span className="label">Customer</span>
               <select value={typingUserId} onChange={(e) => { setTypingUserId(e.target.value); startOver(); }} disabled={busy}>
                 {users.length === 0 && <option value="ada">Ada Okafor</option>}
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name} · {u.role === "Personal" ? "Personal account" : `${u.business} · ${u.role}`}</option>
-                ))}
+                <optgroup label="Account holders">
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name} · {u.role === "Personal" ? "Personal account" : `${u.business} · ${u.role}`}</option>
+                  ))}
+                </optgroup>
+                {payers.length > 0 && (
+                  <optgroup label="Paid a merchant (no account)">
+                    {payers.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.scene}</option>)}
+                  </optgroup>
+                )}
               </select>
             </label>
+            {payer && (
+              <div className="tester-id">
+                <span className="label">What's on their receipt (Alexis checks it)</span>
+                <span>Paid {payer.paid} to {payer.merchant}</span>
+                {payer.details.map((d) => <span key={d}>{d}</span>)}
+                {payer.session && <span>session ID {payer.session}</span>}
+              </div>
+            )}
             {selected && (
               <div className="tester-id">
                 <span className="label">Answers for the identity check</span>

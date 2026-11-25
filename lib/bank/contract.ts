@@ -10,7 +10,8 @@
 // customer and their contact details, payouts and the recall request, incoming payments, verification,
 // balances, fees and the fee refund, restrictions, cards (freeze, replace) and card transactions, card,
 // POS, ATM and web payments with their stage-by-stage timeline, loans, merchant payouts and holds, bill
-// and airtime payments (refund), USSD and agent sessions, and the online-access unlock.
+// and airtime payments (refund), USSD and agent sessions, and the online-access unlock; and a payment company's
+// checkout payments (Pay with Transfer, virtual accounts, cards), their NIBSS status, merchant notifications and refunds.
 // Orchestra's own records (disputes, reversals, deferral requests, waivers, recalls, escalations and the
 // audit log) stay in Orchestra: they're the cases it opened, not the bank's ledger.
 //
@@ -284,6 +285,67 @@ export interface ActionRequest {
 
 export interface ActionResult { accepted: boolean; bank_reference: string | null; status: string }
 
+// ---------------------------------------------------------------- checkout payments (Nov 25)
+// A payment company's checkouts: what a person paid a merchant by Pay with Transfer (a temporary account number
+// shown at checkout), a dedicated virtual account, or a card. The payer is usually not an account holder, so these
+// are found by the payment itself, not by a holder id: Orchestra matches the payer's evidence (amount, date, and
+// the checkout email or a card or sending account's last 4) in its own code and shows the payer only the one
+// payment that matched. A payment on a review hold says so with a flag only.
+
+export interface CheckoutPayment {
+  id: string;
+  /** The reference on the payer's receipt. */
+  reference: string;
+  merchant_holder_id: string;
+  merchant_name: string;
+  channel: "pay_with_transfer" | "virtual_account" | "card";
+  /** What the checkout asked for (null for a virtual account top-up, which has no fixed amount). */
+  amount_expected: string | null;
+  /** What actually arrived (null while nothing has). */
+  amount_received: string | null;
+  currency: Currency;
+  created_at: string;
+  /** When a Pay with Transfer account number stopped accepting this checkout. */
+  expires_at: string | null;
+  received_at: string | null;
+  /**
+   * successful · received_late (after the checkout expired) · received_short · received_over · awaiting (nothing
+   * received) · failed_debited (a card payment that failed but debited the card) · duplicate (a second charge for
+   * the same checkout) · unmatched (received, but not tied to a checkout)
+   */
+  status: "successful" | "received_late" | "received_short" | "received_over" | "awaiting" | "failed_debited" | "duplicate" | "unmatched";
+  payer: { email: string | null; card_last4: string | null; account_last4: string | null; bank: string | null };
+  /** The NIP session ID of the transfer that paid it, when one arrived. */
+  session_id: string | null;
+  virtual_account_last4: string | null;
+  /** The "paid" notification to the merchant's system. */
+  merchant_notification: { status: "delivered" | "failed" | "pending"; attempts: number; last_at: string | null } | null;
+  refund: CheckoutRefund | null;
+  review_hold: boolean;
+}
+
+export interface CheckoutRefund {
+  id: string;
+  amount: string;
+  status: "processing" | "completed" | "failed";
+  /** A card refund's acquirer reference number, which the payer's bank can trace. */
+  arn: string | null;
+  started_at: string;
+  completed_at: string | null;
+  /** Who started it: the payment company's own automatic rule, or a request (Orchestra's reference). */
+  started_by: string;
+}
+
+/** A transfer's status at the interbank switch (NIBSS), as the payment company checks it by session ID. */
+export interface InterbankStatus {
+  session_id: string;
+  status: "successful" | "pending" | "failed" | "reversed" | "not_found";
+  /** The last 4 digits of the account the transfer was credited to, when successful. */
+  beneficiary_account_last4: string | null;
+  at: string | null;
+  detail: string | null;
+}
+
 /** What Orchestra needs from a bank. */
 export interface BankConnector {
   readonly kind: "simulated" | "http";
@@ -327,4 +389,14 @@ export interface BankConnector {
 
   /** Refunds one fee (a goodwill waiver Orchestra has checked against its rules). */
   refundFee(holderId: string, feeId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+
+  /** Checkout payments of the given amount (expected or received) on a day, optionally at one merchant. Orchestra matches the payer's evidence itself. */
+  findCheckoutPayments(q: { amount: number; on: string; currency?: string; merchant?: string }): Promise<CheckoutPayment[]>;
+  getCheckoutPayment(id: string): Promise<CheckoutPayment | null>;
+  /** The payment company checks the transfer with NIBSS (the NIP status query) and returns the result; Orchestra never calls NIBSS. */
+  getTransferStatus(sessionId: string): Promise<InterbankStatus>;
+  /** Sends the "paid" notification to the merchant's system again. */
+  resendMerchantNotification(paymentId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
+  /** Refunds the payer: the whole payment, or (for an over-payment) the excess. The ARN comes back for a card refund. */
+  refundCheckoutPayment(paymentId: string, req: ActionRequest & { amount: string }, idempotencyKey: string): Promise<ActionResult & { arn?: string | null }>;
 }
