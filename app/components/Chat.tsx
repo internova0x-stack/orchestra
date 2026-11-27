@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GREETINGS, LANGUAGE_NAMES, OPENERS_BY_LANGUAGE } from "@/lib/greeting";
+import { GREETINGS, LANGUAGE_NAMES, openersFor } from "@/lib/greeting";
 import { RESET_CHANNEL } from "./events";
 import { drawSample, readImage, type Attachment, type Sample } from "./screenshots";
 import { ChoiceCard, CodeForm, IdentityForm, PaymentCard, ProofCard, UrgencyChip, applyEvent, closeForms, mergeView, takeoverNotice, type Msg, type TeamView } from "./chatParts";
@@ -457,9 +457,9 @@ export default function Chat() {
               )}
             </div>
           ))}
-          {empty && OPENERS_BY_LANGUAGE[language] && (
+          {empty && (
             <div className="openers">
-              {OPENERS_BY_LANGUAGE[language].map((o) => (
+              {openersFor(payer ? "payer" : selected?.role === "Personal" ? "personal" : "business", language).map((o) => (
                 <button key={o} className="btn" onClick={() => send({ message: o }, o)} disabled={busy}>{o}</button>
               ))}
             </div>
