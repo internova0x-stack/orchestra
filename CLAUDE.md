@@ -141,6 +141,9 @@ Tomi owns the project, is non-technical and doesn't write or edit code.
 - When Tomi needs to click, copy or paste something, give numbered plain-language instructions and wait
   for confirmation.
 - Explain errors in one or two plain sentences, then fix them.
+- English only (Tomi, Nov 27: "Stick to english only"): write everything new in English (screens, Alexis's texts,
+  quick-tap options, samples, docs) and never add translations. The customer app's language picker (English, French,
+  Nigerian Pidgin, Nov 23) stays as it is until Tomi says otherwise; new text has no French or Pidgin version.
 - At the end of each step: what to try in the browser, and which tests in `docs/TESTS.md` should now
   pass. Commit after each completed step with a clear message.
 - When a test fails, fix the code, the tool results or the sample data; never weaken the system prompt
