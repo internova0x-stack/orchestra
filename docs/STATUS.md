@@ -372,3 +372,10 @@ conversation, send each message and show `needs`, team replies by webhook), Java
 answer it gets, with the same call as curl. Checked in a browser with a stand-in for the model; the test route refuses
 any conversation it didn't open.
 
+## Verification sample screenshots (Nov 27)
+
+Three more sample screenshots in the customer app's "Sample screenshots" list, for demoing verification: a rejected
+driving licence (David: the record says the photo was blurry and what to send), a missing ownership document (Sam,
+Harbour and Vine: payouts paused until it's uploaded), and a screenshot claiming "Verified" that David's record
+contradicts (a screenshot is a claim; the record wins). Checked: they render; not yet tried with the live model.
+
