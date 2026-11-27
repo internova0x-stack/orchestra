@@ -86,6 +86,24 @@ export default function InboxPage() {
   const staff = staffList.find((s) => s.id === staffId) ?? null;
   // Read-only roles (compliance, operations) see everything but can't act on conversations or cases (lib/auth.ts).
   const canAct = Boolean(staff && (staff.role === "support_agent" || staff.role === "supervisor"));
+  // Deleting a customer's data on their request (Nov 27, lib/privacy.ts): operations admins only, after a preview.
+  const [canErase, setCanErase] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [erase, setErase] = useState<{ conversations: number; verifiedCustomer: boolean; openCases: number } | { error: string } | null>(null);
+  const [erasing, setErasing] = useState(false);
+  async function eraseCall(action: "preview" | "erase") {
+    if (!selected) return;
+    setErasing(true);
+    try {
+      const r = await fetch("/api/privacy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, conversation_id: selected }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { setErase({ error: j.error ?? "That didn't go through." }); return; }
+      if (action === "preview") setErase(j);
+      else { setErase(null); setSelected(null); setNotice(`Deleted ${j.conversations} conversation${j.conversations === 1 ? "" : "s"} and their details. The activity log keeps that each step happened, without the details.`); load(); }
+    } finally {
+      setErasing(false);
+    }
+  }
 
   // A link from the Rules screen or a CRM note (/messages?c=<conversation>) opens that conversation.
   useEffect(() => {
@@ -94,7 +112,7 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => { setStaffList(j.staff ?? []); setStaffId(j.staff?.[0]?.id ?? ""); }).catch(() => {});
+    fetch("/api/staff/users", { cache: "no-store" }).then((r) => r.json()).then((j) => { setStaffList(j.staff ?? []); setStaffId(j.staff?.[0]?.id ?? ""); setCanErase((j.permissions ?? []).includes("data_erase")); }).catch(() => {});
   }, []);
 
   const load = useCallback(async () => {
@@ -201,6 +219,7 @@ export default function InboxPage() {
           ? <button className="btn" onClick={() => setTranslation(null)}>Original ({LANGUAGE_NAME[detail.language] ?? detail.language})</button>
           : <button className="btn" disabled={!canAct || acting} onClick={() => act("translate")}>Translate</button>
       )}
+      {canErase && detail && <button className="btn" aria-expanded={Boolean(erase)} onClick={() => (erase ? setErase(null) : eraseCall("preview"))} disabled={erasing}>Delete data</button>}
       <button className={`btn${showActivity ? " on" : ""}`} aria-pressed={showActivity} onClick={toggleActivity} title={showActivity ? "Hide what Alexis is doing" : "Show what Alexis is doing"}>Activity</button>
     </span>
   );
@@ -240,6 +259,7 @@ export default function InboxPage() {
             </div>}
             <span className="label">{shown.length} of {cases?.length ?? 0} conversations · updates live</span>
           </div>
+          {notice && <div className="int-note ok" role="status">{notice} <button className="copy" onClick={() => setNotice(null)}>Dismiss</button></div>}
           <div className="case-list">
             {problem && <div className="empty">{problem}</div>}
             {cases === null && <div className="empty">Loading conversations…</div>}
@@ -298,6 +318,15 @@ export default function InboxPage() {
               </div>
               )}
               {c.listen && detail?.listen && <div className="takeover-bar"><span className="takeover-state" />{toolbarExtras}</div>}
+              {erase && <div className="takeover-bar erase-bar" role="alert">
+                {"error" in erase ? <span>{erase.error}</span> : erase.openCases > 0
+                  ? <span><b>Can&apos;t delete yet:</b> {erase.openCases} of their case{erase.openCases === 1 ? " is" : "s are"} still open. Resolve {erase.openCases === 1 ? "it" : "them"} in Cases first.</span>
+                  : <>
+                    <span><b>Delete this customer&apos;s data?</b> {erase.verifiedCustomer ? `All ${erase.conversations} of their conversation${erase.conversations === 1 ? "" : "s"}` : "This conversation (they were never verified, so only this one)"}, with cases, proofs and drafts, will be deleted for good. The activity log keeps that each step happened, without the details. The bank&apos;s own records aren&apos;t changed.</span>
+                    <button className="btn int-danger" disabled={erasing} onClick={() => eraseCall("erase")}>Delete for good</button>
+                  </>}
+                <button className="btn" onClick={() => setErase(null)}>Cancel</button>
+              </div>}
               {showReview && <div className="takeover-bar review-bar">
                 <span className="label">Review</span>
                 {detail?.review && <span className={`tag tag-${detail.review.rating === "good" ? "live" : "pending"}`}>{detail.review.rating === "good" ? "Good" : "Needs work"} · {detail.review.by}{detail.review.note ? `: ${detail.review.note}` : ""}</span>}

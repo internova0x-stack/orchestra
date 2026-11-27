@@ -49,8 +49,11 @@ export interface Transfer {
   id: string;
   holder_id: string;
   recipient_name: string;
-  /** The full account number: Orchestra masks it to the last 4 before Alexis sees it. */
-  recipient_account: string;
+  /**
+   * Only the last 4 digits of the recipient's account (Tomi, Nov 27: data protection). The bank never sends Orchestra a
+   * full account number.
+   */
+  recipient_account_last4: string;
   recipient_bank: string | null;
   recipient_country: string | null;
   amount: string;
@@ -248,8 +251,8 @@ export interface BillPayment {
   id: string;
   biller: string;
   kind: "airtime" | "data" | "electricity" | "tv" | "water";
-  /** The phone, meter or account number paid for: Orchestra shortens it before Alexis sees it. */
-  customer_ref: string;
+  /** The last 4 digits of the phone, meter or account number paid for; the bank never sends the full number. */
+  customer_ref_last4: string;
   amount: string;
   currency: Currency;
   status: "delivered" | "pending" | "failed_at_provider" | "refunded";

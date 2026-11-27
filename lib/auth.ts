@@ -42,6 +42,8 @@ export const PERMISSIONS = {
   api_view: ["supervisor", "operations_admin", "it_admin", "compliance"],
   api_manage: ["operations_admin", "it_admin"],
   team_manage: ["operations_admin", "it_admin"],
+  /** Deleting a customer's data on their request (Nov 27). */
+  data_erase: ["operations_admin"],
   demo_reset: ["supervisor", "operations_admin"],
 } satisfies Record<string, Role[]>;
 export type Permission = keyof typeof PERMISSIONS;

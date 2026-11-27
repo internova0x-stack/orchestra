@@ -924,3 +924,4 @@ h1, h2, h3, h4, .page-title, .panel-title, .workspace-name, .wordmark, .dev-h, .
 .ych-path { font-family: var(--font-mono); font-size: var(--size-xs); overflow-wrap: anywhere; }
 .ych-call .dev-code { max-height: 260px; overflow: auto; margin: 0; }
 @media (max-width: 900px) { .ych { padding: var(--space-4); } .ych-grid { grid-template-columns: 1fr; } .ych-chat, .ych-calls { height: auto; } .ych-chat .messages { min-height: 320px; } }
+.erase-bar { border-color: var(--stop-line); background: var(--stop-bg); }

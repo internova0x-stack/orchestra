@@ -66,7 +66,7 @@ export const draftClaimPack = {
       draft = {
         to: `${t.recipient_bank ?? "Receiving bank (unknown)"}, recalls team`,
         subject: `Recall request: ${money(t.amount, t.currency)} ${t.route} payout ${t.id} sent in error`,
-        facts: [["Payout", t.id], ["Amount", money(t.amount, t.currency)], ["Sent", dateTime(new Date(t.sent_at))], ["Route", t.route], ["Beneficiary", `${t.recipient_name}, account ${maskAccount(t.recipient_account)}`], ["Beneficiary bank", t.recipient_bank ?? "unknown"], ["Our recall reference", t.recall ?? "not yet requested"], ["Status with us", t.status]],
+        facts: [["Payout", t.id], ["Amount", money(t.amount, t.currency)], ["Sent", dateTime(new Date(t.sent_at))], ["Route", t.route], ["Beneficiary", `${t.recipient_name}, account ${maskAccount(t.recipient_account_last4)}`], ["Beneficiary bank", t.recipient_bank ?? "unknown"], ["Our recall reference", t.recall ?? "not yet requested"], ["Status with us", t.status]],
         timeline: [],
         evidence: await caseHistory(ctx),
         missing,

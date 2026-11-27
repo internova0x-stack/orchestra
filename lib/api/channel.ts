@@ -74,6 +74,7 @@ export async function sendToAlexis(
       case "taken_over": out.handled_by = e.by; break;
       case "team_queue": out.notices.push(e.message); break;
       case "masked": out.notices.push("A secret was removed from the customer's message before anyone saw it."); break;
+      case "image_removed": out.notices.push(e.message); break;
       case "error": text += (text ? "\n\n" : "") + e.message; break;
     }
   };

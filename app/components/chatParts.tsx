@@ -233,6 +233,15 @@ export function applyEvent(ms: Msg[], e: TurnEvent): Msg[] {
       copy[i] = { ...copy[i], text: e.text };
       return copy;
     }
+    case "image_removed": {
+      // The customer's photo looked like an ID document or a card: it's gone from their message too.
+      const i = ms.map((x) => x.role).lastIndexOf("customer");
+      const copy = ms.slice();
+      if (i >= 0) copy[i] = { ...copy[i], image: undefined, text: copy[i].text === "Screenshot" ? "" : copy[i].text };
+      const at = copy.length && copy[copy.length - 1].role === "alexis" && copy[copy.length - 1].thinking ? copy.length - 1 : copy.length;
+      copy.splice(at, 0, { id: newId(), role: "notice", text: e.message });
+      return copy;
+    }
     case "code_form": return patch((m) => ({ ...m, code: { sentTo: e.sentTo, code: e.code, state: "open" } }));
     case "code_retry": {
       // Wrong code: reopen the form on the message that showed it, and drop the empty reply.

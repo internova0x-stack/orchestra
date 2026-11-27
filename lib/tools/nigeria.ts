@@ -29,9 +29,9 @@ export const getBillPaymentStatus = {
   schema: findInput,
   async run(input: z.infer<typeof findInput>, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const found = await bank(ctx.sql).searchBillPayments(ctx.user!.business_id, { amount: input.amount, kind: input.kind });
-    const rows: BillRow[] = input.number ? found.filter((r) => r.customer_ref.replace(/\D/g, "").endsWith(input.number!.replace(/\D/g, ""))) : [...found];
+    const rows: BillRow[] = input.number ? found.filter((r) => r.customer_ref_last4 === input.number!.replace(/\D/g, "").slice(-4)) : [...found];
     const items = rows.slice(0, 5).map((b) => ({
-      id: b.id, biller: b.biller, paid_for: maskRef(b.customer_ref), amount: money(b.amount, b.currency), when: dateTime(new Date(b.at)),
+      id: b.id, biller: b.biller, paid_for: maskRef(b.customer_ref_last4), amount: money(b.amount, b.currency), when: dateTime(new Date(b.at)),
       status: STATUS[b.status] ?? b.status,
       ...(b.token ? { token: b.token } : {}), ...(b.provider_ref ? { provider_reference: b.provider_ref } : {}),
       ...(b.refund_reference ? { refund: b.refund_reference } : {}),
@@ -68,7 +68,7 @@ export const refundBillPayment = {
     await ruleRead(ctx, rules, capId);
     const amount = money(b.amount, b.currency);
     if (Number(b.amount) > cap && !ctx.staffAction) return refuse(ctx, T, input, `${amount} is above the ${money(cap, b.currency).replace(/\.00$/, "")} refund cap; hand off.`, `above cap ${money(cap, b.currency).replace(/\.00$/, "")}`);
-    const waiting = await confirmFirst(ctx, T, b.id, `refund of ${b.id}`, `Refund the ${amount} paid for ${b.biller} to ${maskRef(b.customer_ref)}?`, "The provider shows it failed, so the money comes back to your account.");
+    const waiting = await confirmFirst(ctx, T, b.id, `refund of ${b.id}`, `Refund the ${amount} paid for ${b.biller} to ${maskRef(b.customer_ref_last4)}?`, "The provider shows it failed, so the money comes back to your account.");
     if (waiting) return waiting;
     const [{ seq }] = await ctx.sql<{ seq: string }[]>`select nextval('bill_refund_seq')::text as seq`;
     const reference = `BRF-${seq}`;

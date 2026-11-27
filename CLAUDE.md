@@ -93,6 +93,16 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   merchant's country for a payer, else the country the app, website or Channel API passed when the chat opened
   (`stated_country`, source 'app': `country` on `/api/chat`, `POST /api/v1/conversations`, the widget's `data-country`)
   or the customer said (`set_customer_country`, source 'customer', general answers only, refused once records decide).
+- Data protection (Tomi, Nov 27: banks won't expose regulated data): the Bank Connector sends only last 4 digits
+  (`recipient_account_last4`, `customer_ref_last4`; never full account or card numbers, CVVs or PINs). "What Alexis can see"
+  switches (`see_*` rules, `lib/dataAccess.ts` `DATA_KINDS` → tools): off = refused in `runTool` before the bank is asked
+  (trigger `outside_alexis_access`; staff actions aren't limited). `lib/privacy.ts`: `applyRetention` (rules
+  `retention_conversation_days`, `retention_audit_days`; run at most hourly from the Cases list; open cases kept) and
+  `eraseCustomer` (permission `data_erase`, operations admins; Messages → Delete data, POST `/api/privacy` preview/erase:
+  the verified customer's conversations deleted, their audit rows kept without input/result, refused while a case is open,
+  the bank's own records untouched). `lib/imageScreen.ts`: every customer photo is checked by `IMAGE_SCREEN_MODEL` before
+  it is stored or reaches Alexis; an ID document or payment card is removed (event `image_removed`), fails closed; rule
+  `block_id_photos`.
 - Checkout payments (Nov 25, a payment company's payers, who hold no account): Bank Connector `findCheckoutPayments`,
   `getCheckoutPayment`, `getTransferStatus(reference)` (the bank or payment company checks the transfer on its own payment
   network: Faster Payments, SEPA, ACH, Fedwire, RTP, FedNow, Interac, Aani, NIBSS, SWIFT; Orchestra never calls a network),

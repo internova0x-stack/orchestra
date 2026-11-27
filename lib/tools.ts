@@ -25,6 +25,7 @@ import { draftClaimPack } from "./tools/claims.ts";
 import { draftCaseNotes, draftReply, summariseCase } from "./tools/staffmode.ts";
 import { getBillPaymentStatus, getUssdSession, refundBillPayment } from "./tools/nigeria.ts";
 import { conversationMarket } from "./market.ts";
+import { dataKindOf } from "./dataAccess.ts";
 import { setCustomerCountry } from "./tools/country.ts";
 import { checkPaymentEvidence, checkTransferStatus, getCheckoutPayment, refundCheckoutPayment, resendMerchantNotification } from "./tools/checkout.ts";
 import { freezeCard, getCard, orderReplacement, unfreezeCard, changeCardSettings } from "./tools/cards.ts";
@@ -138,6 +139,7 @@ const TRIGGERS = {
   verification_past_window: { urgency: "normal", label: "Verification past its review window" },
   fee_or_rate_disputed: { urgency: "normal", label: "Fee or rate disputed as wrongly applied" },
   records_missing_or_contradictory: { urgency: "normal", label: "Records missing or contradictory" },
+  outside_alexis_access: { urgency: "normal", label: "Needs data the institution doesn't let Alexis see" },
   identity_failed_twice: { urgency: "normal", label: "Identity check failed twice" },
   formal_complaint: { urgency: "normal", label: "Formal complaint" },
   customer_asked_for_human: { urgency: "normal", label: "Customer asked for a human" },
@@ -293,7 +295,7 @@ interface TransferRow {
   id: string;
   business_id: string;
   recipient_name: string;
-  recipient_account: string;
+  recipient_account_last4: string;
   recipient_bank: string | null;
   recipient_country: string | null;
   amount: string;
@@ -411,7 +413,7 @@ const getTransferStatus = {
       results.push({
         reference: t.id,
         recipient: t.recipient_name,
-        recipient_account: maskAccount(t.recipient_account),
+        recipient_account: maskAccount(t.recipient_account_last4),
         recipient_bank: t.recipient_bank,
         amount: money(t.amount, t.currency),
         route: t.route,
@@ -503,7 +505,7 @@ const generateProofOfPayment = {
       currency: t.currency,
       date: dayMonthYear(delivered),
       recipient: t.recipient_name,
-      account: maskAccount(t.recipient_account),
+      account: maskAccount(t.recipient_account_last4),
       route: t.route,
       issued: dateTime(ctx.now),
     };
@@ -910,6 +912,11 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx, mod
   const sw = rules.get(`action_${name}`);
   if (sw && !ctx.staffAction && !rules.on(`action_${name}`)) {
     return refuse(ctx, name, parsed.data, `${sw.name.replace(/ switched on$/, "")} is switched off for this institution. Explain and offer a handoff.`, "switched off");
+  }
+  // Check 1b: the bank has set Alexis not to see this kind of data (What Alexis can see): refused before the bank is asked.
+  const kind = dataKindOf(name);
+  if (kind && !ctx.staffAction && !rules.on(kind.rule)) {
+    return refuse(ctx, name, parsed.data, `This institution has set Alexis not to see ${kind.label.toLowerCase()}. Don't guess or estimate anything about it; say a member of the team can help and hand off (trigger outside_alexis_access).`, `not visible: ${kind.label}`);
   }
   const idProblem = needsIdentity(tool.tier, ctx, tool.identity);
   if (idProblem) return refuse(ctx, name, parsed.data, idProblem, "identity not verified");

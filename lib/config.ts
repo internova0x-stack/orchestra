@@ -3,6 +3,9 @@
 /** Claude Sonnet, as the Build Plan asks: the current Sonnet model id. */
 export const MODEL = "claude-sonnet-5-5";
 
+/** The small, fast model that checks a customer's photo for ID documents and cards before Alexis sees it (lib/imageScreen.ts). */
+export const IMAGE_SCREEN_MODEL = "claude-haiku-5-5";
+
 /** Effort for Alexis's turns: multistep tool use, kept quick for the under-10-seconds target. */
 export const EFFORT = "medium" as const;
 

@@ -9,6 +9,7 @@ import { checkIdentity, type IdentityAnswers } from "./identity.ts";
 import { maskSecrets } from "./secrets.ts";
 import { Rules } from "./rules.ts";
 import { conversationMarket, marketLine, setStatedCountry } from "./market.ts";
+import { screenImage } from "./imageScreen.ts";
 import { createConversation, loadConversation, verifiedUser, LANGUAGES, type Channel, type Conversation, type VerifiedUser } from "./session.ts";
 import { dateTime, longDate } from "./time.ts";
 import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
@@ -196,6 +197,17 @@ export async function runTurn(sql: Sql, input: TurnInput, emitToScreen: (e: Stre
 
 async function runTurnInner(sql: Sql, input: TurnInput, emit: (e: StreamEvent) => void): Promise<void> {
   const now = new Date();
+  // Photos of ID documents and payment cards are removed before Alexis or the team sees them (lib/imageScreen.ts).
+  if (input.image) {
+    const screened = await screenImage(sql, input.conversationId, input.image);
+    if (!screened.keep) {
+      emit({ type: "image_removed", message: screened.notice! });
+      const note = screened.kind === "id_document" ? "an ID document" : screened.kind === "payment_card" ? "a payment card" : "something that couldn't be checked";
+      input = { ...input, image: undefined, message: `${(input.message ?? "").trim()}\n[The customer sent a photo of ${note}. It was removed before you saw it and was not stored. Tell them documents and card photos are never taken in chat, and where to upload documents if that's what they need.]`.trim() };
+      await sql`insert into audit_log (conversation_id, tool_use_id, kind, tool, summary, refusal_reason)
+        values (${input.conversationId}, ${`photo-${now.getTime()}`}, 'refusal', 'message', ${`message · photo of ${note} removed before Alexis or the team saw it`}, 'ID document or card photo in chat')`;
+    }
+  }
   let conv = await loadConversation(sql, input.conversationId);
   if (!conv) {
     conv = await createConversation(sql, input.conversationId, input.typingUserId, input.channel ?? "app", input.subject?.slice(0, 200) ?? null);

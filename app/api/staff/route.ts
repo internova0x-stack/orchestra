@@ -1,3 +1,4 @@
+import { applyRetention } from "@/lib/privacy.ts";
 import { requirePermission } from "@/lib/auth.ts";
 import { db } from "@/lib/db.ts";
 import { ensureSeeded } from "@/lib/seed.ts";
@@ -14,6 +15,8 @@ export async function GET(req: Request) {
   if (viewer instanceof Response) return viewer;
   await ensureSeeded(sql);
   await flagOverdue(sql);
+  // Conversations and activity past the retention periods (Rules screen, Data protection), at most once an hour.
+  await applyRetention(sql).catch((err) => console.error("retention", err));
   const cases = await sql`
     select e.reference, e.urgency, e.status, e.created_at, e.summary->>'why' as trigger, b.name as business, e.action,
       e.team, e.assigned_to, e.respond_by, e.overdue_at is not null as overdue

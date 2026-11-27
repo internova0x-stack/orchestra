@@ -325,6 +325,22 @@ export const RULE_SET: RuleSeed[] = [
 
   // Operations (Nov 23): the switch for Alexis herself, and outage mode with the notice customers see.
   l("alexis_enabled", "Operations", "Alexis answers customers (off: every message goes to the team)", "on"),
+  // What Alexis can see (Nov 27): one switch per kind of data; off = refused before the bank is asked (lib/dataAccess.ts).
+  l("see_balances", "What Alexis can see", "Account balances", "on"),
+  l("see_payouts", "What Alexis can see", "Payouts and their recipients (name and last 4 digits only)", "on"),
+  l("see_incoming", "What Alexis can see", "Incoming payments", "on"),
+  l("see_cards", "What Alexis can see", "Cards and card transactions (last 4 digits only; never full card numbers, CVVs or PINs)", "on"),
+  l("see_fees", "What Alexis can see", "Fees and charges", "on"),
+  l("see_verification", "What Alexis can see", "Verification (KYC) status and reasons", "on"),
+  l("see_restrictions", "What Alexis can see", "Account restrictions and limits", "on"),
+  l("see_loans", "What Alexis can see", "Loans", "on"),
+  l("see_merchant_payouts", "What Alexis can see", "Merchant settlements and holds", "on"),
+  l("see_bills", "What Alexis can see", "Bill and airtime payments, USSD sessions", "on"),
+  l("see_checkout", "What Alexis can see", "Checkout payments (people who paid a merchant)", "on"),
+  // Data protection (Nov 27): how long Orchestra keeps conversations and the activity log; photos of documents.
+  l("retention_conversation_days", "Data protection", "Delete conversations after this long without activity (open cases are kept)", "365", "days"),
+  l("retention_audit_days", "Data protection", "Delete activity log entries older than", "2555", "days"),
+  l("block_id_photos", "Data protection", "Remove photos of ID documents and payment cards sent in chat, before Alexis or the team sees them", "on"),
   l("widget_conversations_per_hour", "Operations", "Website chat: new conversations one visitor may start in an hour", "10"),
   l("outage_mode", "Operations", "Outage mode (Alexis and the customer app show the notice below)", "off"),
   a("outage_notice", "Operations", "Outage notice", "Card payments and payouts are delayed while we fix a problem with a payment partner. No money is lost, and delayed payments will complete once it's fixed. We'll update this notice.", "sample"),

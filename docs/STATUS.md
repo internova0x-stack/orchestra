@@ -398,3 +398,22 @@ contradicts (a screenshot is a claim; the record wins). Checked: they render; no
   existing ones (126 pass); in a browser, the Rules screen's markets and the new payers in the customer app. Not yet
   tried in a full conversation with the live model. The live site needs **Reset demo** once for the new sample payments.
 
+## Data protection (Nov 27, Tomi: "build 1 to 4")
+
+1. **Only last 4 digits from the bank:** the Bank Connector contract now asks for the last 4 digits of a payout
+   recipient's account and of a bill's phone, meter or account number; a full number never reaches Orchestra.
+2. **What Alexis can see:** a Rules screen category with one switch per kind of data (balances, payouts, incoming
+   payments, cards, fees, verification, restrictions, loans, merchant settlements, bills, checkout payments). Off: Alexis
+   is refused before the bank is asked, says a person can help, and hands off.
+3. **Retention and deleting a customer's data:** Data protection rules for how long conversations (365 days, open cases
+   kept) and the activity log (2,555 days, about 7 years) are kept, sample values. Operations admins have "Delete data"
+   in Messages: a preview, then every conversation of that verified customer (or just that one, if never verified) is
+   deleted, the activity log keeps each step without its details, and the bank's own records are untouched.
+4. **ID and card photos:** every photo a customer sends is checked by a small, fast AI model first; one that shows an ID
+   document or a payment card is removed before Alexis or the team sees it and never stored, and the customer is told
+   where to upload documents. If the check fails, the photo is removed too. Switch: "Remove photos of ID documents".
+   New sample: "Photo of a driving licence (gets removed)".
+Checked: six new tests (132 pass) and in a browser with a stand-in for the AI (photo removed and the notice shown, Delete
+data's preview, the new rule categories). Not yet tried with the live AI: whether the real check recognises the sample
+licence photo needs a try on the live site.
+

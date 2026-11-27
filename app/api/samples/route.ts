@@ -65,6 +65,12 @@ export async function GET() {
       status: "Verified", tone: "ok",
       rows: [["Document", "Driving licence"], ["Submitted", kycAt], ["Result", "Your identity is verified"], ["Limits", "Full access"]],
     },
+    {
+      // Data protection (Nov 27): a photo of an ID document is removed before Alexis or the team sees it.
+      id: "id-photo", user: "david", label: "Photo of a driving licence (gets removed)", app: "Camera photo", title: "DRIVING LICENCE",
+      status: "SPECIMEN · invented sample", tone: "wait",
+      rows: [["Surname", "PARK"], ["Given names", "DAVID"], ["Date of birth", "19.12.1983"], ["Licence number", "PARK 831219 D9XX"], ["Expires", "03.2031"]],
+    },
   ];
   return Response.json({ samples }, { headers: { "Cache-Control": "no-store" } });
 }

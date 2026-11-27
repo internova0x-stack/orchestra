@@ -28,6 +28,8 @@ export type StreamEvent =
   | { type: "handoff"; reference: string; urgency: string; respond: string }
   | { type: "proof"; proof: ProofDoc }
   | { type: "masked"; text: string }
+  /** The customer's photo looked like an ID document or a payment card and was removed before anyone saw it. */
+  | { type: "image_removed"; message: string }
   | { type: "confirm"; action: string; consequence: string }
   | { type: "code_form"; sentTo: string; code: string }
   | { type: "code_retry" }

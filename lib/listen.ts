@@ -102,7 +102,7 @@ async function lookups(sql: Sql, user: BankUser, refs: string[]): Promise<string
   for (const ref of refs.slice(0, 5)) {
     if (/^PO-/.test(ref)) {
       const [t] = await b.searchTransfers(user.holder_id, { reference: ref });
-      if (t) out.push(`${t.id}: ${money(t.amount, t.currency)} to ${t.recipient_name} (${maskAccount(t.recipient_account)}) by ${t.route}, ${t.review_hold ? "on a review hold (no reason given; follow the review-hold rule)" : `${statusLabel(t.status)}${t.stage ? `, ${t.stage}` : ""}${t.failure_reason ? `: ${t.failure_reason}` : ""}`}`);
+      if (t) out.push(`${t.id}: ${money(t.amount, t.currency)} to ${t.recipient_name} (${maskAccount(t.recipient_account_last4)}) by ${t.route}, ${t.review_hold ? "on a review hold (no reason given; follow the review-hold rule)" : `${statusLabel(t.status)}${t.stage ? `, ${t.stage}` : ""}${t.failure_reason ? `: ${t.failure_reason}` : ""}`}`);
       else out.push(`${ref}: not on this customer's account`);
     } else if (/^PAY-/.test(ref)) {
       const { payment: p } = await b.getPayment(user.holder_id, ref);

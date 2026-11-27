@@ -820,12 +820,12 @@ components:
         country: { type: string, description: "Picks the market's rules: Nigeria, United Kingdom, United States", example: "United Kingdom" }
     Transfer:
       type: object
-      required: [id, holder_id, recipient_name, recipient_account, amount, currency, route, status, sent_at, history, review_hold]
+      required: [id, holder_id, recipient_name, recipient_account_last4, amount, currency, route, status, sent_at, history, review_hold]
       properties:
         id: { type: string, example: "PO-88190" }
         holder_id: { type: string }
         recipient_name: { type: string }
-        recipient_account: { type: string }
+        recipient_account_last4: { type: string, description: "Only the last 4 digits; never send Orchestra a full account number" }
         recipient_bank: { type: [string, "null"] }
         recipient_country: { type: [string, "null"] }
         amount: { $ref: "#/components/schemas/Money" }
@@ -1093,12 +1093,12 @@ components:
         customer_reason: { type: [string, "null"], description: "Only for customer_can_fix" }
     BillPayment:
       type: object
-      required: [id, biller, kind, customer_ref, amount, currency, status, at]
+      required: [id, biller, kind, customer_ref_last4, amount, currency, status, at]
       properties:
         id: { type: string }
         biller: { type: string }
         kind: { type: string, enum: [airtime, data, electricity, tv, water] }
-        customer_ref: { type: string, description: "The phone, meter or account number paid for; Orchestra shortens it" }
+        customer_ref_last4: { type: string, description: "The last 4 digits of the phone, meter or account number paid for; never the full number" }
         amount: { $ref: "#/components/schemas/Money" }
         currency: { type: string }
         status: { type: string, enum: [delivered, pending, failed_at_provider, refunded] }

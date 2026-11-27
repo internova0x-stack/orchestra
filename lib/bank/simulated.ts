@@ -1,6 +1,9 @@
 import type { Sql } from "../db.ts";
 import type { ActionResult, BankConnector, CardSettings, CheckoutPayment, InterbankStatus, BankUser, Balance, BillPayment, Card, CardTransaction, Contact, FeeRecord, IdentityCheck, IncomingPayment, Loan, MerchantHold, MerchantPayout, Payment, PaymentEvent, Restriction, Transfer, UssdSession, Verification } from "./contract.ts";
 
+/** The simulated bank, like a real one, sends only the last 4 digits of an account or reference (Nov 27). */
+const last4 = (s: unknown) => String(s ?? "").replace(/\s/g, "").slice(-4);
+
 // The simulated bank behind the Bank Connector API: the seeded tables in this app's own database.
 // It is the reference implementation of the contract (also served over HTTP at /api/bank/v1).
 
@@ -49,7 +52,7 @@ export function simulatedBank(sql: Sql): BankConnector {
 
     async searchTransfers(holderId, q): Promise<Transfer[]> {
       const ref = q.reference?.trim().toUpperCase();
-      const rows = await sql<(Omit<Transfer, "sent_at" | "completed_at"> & { business_id: string; sent_at: Date; completed_at: Date | null })[]>`
+      const rows = await sql<(Omit<Transfer, "sent_at" | "completed_at"> & { business_id: string; recipient_account: string; sent_at: Date; completed_at: Date | null })[]>`
         select t.*, exists (select 1 from restrictions r where r.transfer_id = t.id and r.kind = 'review_hold') as review_hold
         from transfers t
         where t.business_id = ${holderId}
@@ -58,7 +61,7 @@ export function simulatedBank(sql: Sql): BankConnector {
           ${q.amount != null ? sql`and t.amount = ${q.amount}` : sql``}
         order by t.sent_at desc limit 20`;
       return rows.map((t) => ({
-        id: t.id, holder_id: t.business_id, recipient_name: t.recipient_name, recipient_account: t.recipient_account,
+        id: t.id, holder_id: t.business_id, recipient_name: t.recipient_name, recipient_account_last4: last4(t.recipient_account),
         recipient_bank: t.recipient_bank, recipient_country: t.recipient_country, amount: String(t.amount), currency: t.currency,
         route: t.route, description: t.description, status: t.status, stage: t.stage, failure_reason: t.failure_reason,
         sent_at: iso(t.sent_at)!, completed_at: iso(t.completed_at), history: t.history ?? [], review_hold: t.review_hold,
@@ -269,7 +272,7 @@ export function simulatedBank(sql: Sql): BankConnector {
 
     async searchBillPayments(holderId, q): Promise<BillPayment[]> {
       const rows = await sql<Record<string, unknown>[]>`
-        select id, biller, kind, customer_ref, amount, currency, status, token, provider_ref, refund_reference, at
+        select id, biller, kind, right(regexp_replace(customer_ref, '\s', '', 'g'), 4) as customer_ref_last4, amount, currency, status, token, provider_ref, refund_reference, at
         from bill_payments where holder_id = ${holderId}
           ${q.id ? sql`and id = ${up(q.id)}` : sql``}
           ${q.amount != null ? sql`and amount = ${q.amount}` : sql``}
