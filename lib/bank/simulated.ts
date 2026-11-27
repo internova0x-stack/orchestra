@@ -307,9 +307,9 @@ export function simulatedBank(sql: Sql): BankConnector {
 
     async findCheckoutPayments(q): Promise<CheckoutPayment[]> {
       const rows = await sql<Record<string, unknown>[]>`
-        select c.*, b.name as merchant_name from checkout_payments c join businesses b on b.id = c.merchant_holder_id
+        select c.*, b.name as merchant_name, b.country as merchant_country from checkout_payments c join businesses b on b.id = c.merchant_holder_id
         where (c.amount_expected = ${q.amount} or c.amount_received = ${q.amount})
-          and (c.created_at at time zone 'Africa/Lagos')::date between ${q.on}::date - 1 and ${q.on}::date + 1
+          and (c.created_at at time zone 'UTC')::date between ${q.on}::date - 1 and ${q.on}::date + 1
           ${q.currency ? sql`and c.currency = ${q.currency.toUpperCase()}` : sql``}
           ${q.merchant ? sql`and b.name ilike ${"%" + q.merchant.replace(/[%_]/g, "") + "%"}` : sql``}
         order by c.created_at desc limit 20`;
@@ -318,14 +318,15 @@ export function simulatedBank(sql: Sql): BankConnector {
 
     async getCheckoutPayment(id) {
       const [r] = await sql<Record<string, unknown>[]>`
-        select c.*, b.name as merchant_name from checkout_payments c join businesses b on b.id = c.merchant_holder_id where c.id = ${up(id)}`;
+        select c.*, b.name as merchant_name, b.country as merchant_country from checkout_payments c join businesses b on b.id = c.merchant_holder_id where c.id = ${up(id)}`;
       return r ? checkout(r) : null;
     },
 
-    /** Stands in for the payment company's own NIBSS status query: the simulated switch's record of the session. */
-    async getTransferStatus(sessionId): Promise<InterbankStatus> {
-      const [r] = await sql<Record<string, unknown>[]>`select * from nip_sessions where session_id = ${sessionId.trim()}`;
-      if (!r) return { session_id: sessionId.trim(), status: "not_found", beneficiary_account_last4: null, at: null, detail: null };
+    /** Stands in for the bank's or payment company's own status query on its payment network. */
+    async getTransferStatus(reference): Promise<InterbankStatus> {
+      const ref = reference.trim();
+      const [r] = await sql<Record<string, unknown>[]>`select reference, network, status, beneficiary_account_last4, at, detail from network_transfers where upper(reference) = upper(${ref})`;
+      if (!r) return { reference: ref, network: null, status: "not_found", beneficiary_account_last4: null, at: null, detail: null };
       return wire<InterbankStatus>(r, ["at"], []);
     },
 
@@ -364,7 +365,8 @@ export function simulatedBank(sql: Sql): BankConnector {
       currency: r.currency as string, created_at: iso(r.created_at as Date)!, expires_at: iso(r.expires_at as Date | null), received_at: iso(r.received_at as Date | null),
       status: r.status as CheckoutPayment["status"],
       payer: { email: str(r.payer_email), card_last4: str(r.payer_card_last4), account_last4: str(r.payer_account_last4), bank: str(r.payer_bank) },
-      session_id: str(r.session_id), virtual_account_last4: str(r.virtual_account_last4),
+      network: str(r.network), network_reference: str(r.network_reference), merchant_country: str(r.merchant_country),
+      virtual_account_last4: str(r.virtual_account_last4),
       merchant_notification: r.notify_status ? { status: r.notify_status as "delivered" | "failed" | "pending", attempts: Number(r.notify_attempts), last_at: iso(r.notify_last_at as Date | null) } : null,
       refund: f ? wire(f, ["started_at", "completed_at"], ["amount"]) : null,
       review_hold: Boolean(r.review_hold),

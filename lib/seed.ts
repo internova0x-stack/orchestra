@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Sql } from "./db.ts";
 import { SCHEMA, TABLES_TO_WIPE } from "./schema.ts";
-import { RULE_SET, SEED_OVERRIDES } from "./ruleSet.ts";
+import { RETIRED_RULES, RULE_SET, SEED_OVERRIDES } from "./ruleSet.ts";
 import { fromLocal, lastWeekday, local, subtractBusinessDays } from "./time.ts";
 
 // The simulated bank. Every date is an offset from `now`, so "inside its window" and "late" stay
@@ -23,6 +23,10 @@ export const BUSINESSES: Business[] = [
   { id: "saltmarsh", reg: "13206642", name: "Saltmarsh Design Co", country: "United Kingdom", status: "pending", submittedDaysAgo: 1 },
   { id: "tidewater", reg: "47-3381902", name: "Tidewater Analytics Inc", country: "United States", status: "approved" },
   { id: "ember", reg: "RC 1689204", name: "Ember and Oak Foods Ltd", country: "Nigeria", status: "approved" },
+  // Merchants taking payments in Canada, the EU and the UAE (Nov 27, checkout sample payments in every market).
+  { id: "maple", reg: "BN 784512093", name: "Maple Lane Outfitters Inc", country: "Canada", status: "approved" },
+  { id: "nordlicht", reg: "HRB 214876", name: "Nordlicht Home GmbH", country: "Germany", status: "approved" },
+  { id: "dunepalm", reg: "DED 1094512", name: "Dune and Palm Trading LLC", country: "United Arab Emirates", status: "approved" },
 ];
 
 export const USERS: User[] = [
@@ -144,7 +148,8 @@ function generatedTransfers(now: Date): Transfer[] {
   const out: Transfer[] = [];
   let n = 87000;
   for (const b of BUSINESSES) {
-    if (b.status !== "approved") continue;
+    // Merchants with no team members here (the other markets' checkout merchants) send no payouts.
+    if (b.status !== "approved" || !HOME_CURRENCY[b.id]) continue;
     const payer = USERS.find((u) => u.business_id === b.id && u.role === "payment_rights")!;
     for (let i = 0; i < 6; i++) {
       const cur = HOME_CURRENCY[b.id][i % HOME_CURRENCY[b.id].length];
@@ -343,6 +348,7 @@ export function ensureSeeded(sql: Sql): Promise<void> {
               on conflict (id) do nothing returning id`;
             if (ins.length) added.add(r.id);
           }
+          await tx`delete from rules where id = any(${RETIRED_RULES})`;
           // A new rule's market values come with it; a market value someone removed stays removed.
           for (const o of SEED_OVERRIDES.filter((x) => added.has(x.rule))) {
             await tx`insert into rule_overrides (rule_id, market, value, updated_by) values (${o.rule}, ${o.market}, ${o.value}, 'Seed') on conflict do nothing`;
@@ -577,21 +583,21 @@ async function seedBillsAndUssd(tx: any, now: Date) {
 async function seedCheckouts(tx: any, now: Date) {
   const at = (h: number) => new Date(now.getTime() - h * 3_600_000);
   const plus = (d: Date, min: number) => new Date(d.getTime() + min * 60_000);
-  const base = { currency: "NGN", expires_at: null, received_at: null, payer_card_last4: null, payer_account_last4: null, payer_bank: null, session_id: null, virtual_account_last4: null, notify_status: null, notify_attempts: 0, notify_last_at: null, review_hold: false };
+  const base = { currency: "NGN", expires_at: null, received_at: null, payer_card_last4: null, payer_account_last4: null, payer_bank: null, network: null, network_reference: null, virtual_account_last4: null, notify_status: null, notify_attempts: 0, notify_last_at: null, review_hold: false };
   const pwt = (h: number) => ({ created_at: at(h), expires_at: plus(at(h), 30) });
   const rows = [
     // Paid and received; the merchant's system never got the "paid" notification: re-send it.
-    { ...base, ...pwt(3), id: "CK-90101", reference: "PWT-5K2Q8M", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 45000, amount_received: 45000, received_at: plus(at(3), 4), status: "successful", payer_email: "chidi.okafor@mail.example", payer_account_last4: "4417", payer_bank: "Eko Commercial Bank", session_id: "000013261124093015123456789001", notify_status: "failed", notify_attempts: 3, notify_last_at: plus(at(3), 20) },
+    { ...base, ...pwt(3), id: "CK-90101", reference: "PWT-5K2Q8M", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 45000, amount_received: 45000, received_at: plus(at(3), 4), status: "successful", payer_email: "chidi.okafor@mail.example", payer_account_last4: "4417", payer_bank: "Eko Commercial Bank", network: "NIBSS", network_reference: "000013261124093015123456789001", notify_status: "failed", notify_attempts: 3, notify_last_at: plus(at(3), 20) },
     // Arrived 40 minutes after the checkout expired: the automatic refund is under way.
-    { ...base, ...pwt(26), id: "CK-90102", reference: "PWT-7HD31L", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 32000, amount_received: 32000, received_at: plus(at(26), 70), status: "received_late", payer_email: "bola.ade@mail.example", payer_account_last4: "9032", payer_bank: "Sahel Trust Bank", session_id: "000013261123151122123456789002" },
+    { ...base, ...pwt(26), id: "CK-90102", reference: "PWT-7HD31L", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 32000, amount_received: 32000, received_at: plus(at(26), 70), status: "received_late", payer_email: "bola.ade@mail.example", payer_account_last4: "9032", payer_bank: "Sahel Trust Bank", network: "NIBSS", network_reference: "000013261123151122123456789002" },
     // Paid ₦500 short: not yet refunded.
-    { ...base, ...pwt(5), id: "CK-90103", reference: "PWT-2MN84R", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 20000, amount_received: 19500, received_at: plus(at(5), 6), status: "received_short", payer_email: "tunde.bello@mail.example", payer_account_last4: "2281", payer_bank: "Eko Commercial Bank", session_id: "000013261124080503123456789003" },
+    { ...base, ...pwt(5), id: "CK-90103", reference: "PWT-2MN84R", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 20000, amount_received: 19500, received_at: plus(at(5), 6), status: "received_short", payer_email: "tunde.bello@mail.example", payer_account_last4: "2281", payer_bank: "Eko Commercial Bank", network: "NIBSS", network_reference: "000013261124080503123456789003" },
     // Nothing has arrived; the payer's transfer is still pending at their own bank (NIBSS session below).
     { ...base, ...pwt(2), id: "CK-90104", reference: "PWT-9QX55T", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 60000, status: "awaiting", payer_email: "kemi.jacobs@mail.example" },
     // Nothing arrived; the sending bank reversed the transfer to the payer.
     { ...base, ...pwt(30), id: "CK-90105", reference: "PWT-4BV19C", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 15000, status: "awaiting", payer_email: "ngozi.eze@mail.example" },
     // A wallet top-up through a dedicated virtual account: received, and the merchant was told.
-    { ...base, id: "CK-90106", reference: "DVA-88Z3PL", merchant_holder_id: "okapi", channel: "virtual_account", amount_expected: null, amount_received: 50000, created_at: at(6), received_at: at(6), status: "successful", payer_email: "musa.dauda@mail.example", payer_account_last4: "7765", payer_bank: "Sahel Trust Bank", session_id: "000013261124074411123456789006", virtual_account_last4: "3312", notify_status: "delivered", notify_attempts: 1, notify_last_at: plus(at(6), 1) },
+    { ...base, id: "CK-90106", reference: "DVA-88Z3PL", merchant_holder_id: "okapi", channel: "virtual_account", amount_expected: null, amount_received: 50000, created_at: at(6), received_at: at(6), status: "successful", payer_email: "musa.dauda@mail.example", payer_account_last4: "7765", payer_bank: "Sahel Trust Bank", network: "NIBSS", network_reference: "000013261124074411123456789006", virtual_account_last4: "3312", notify_status: "delivered", notify_attempts: 1, notify_last_at: plus(at(6), 1) },
     // A card payment that failed at checkout but debited the card: reversed by the card's bank.
     { ...base, id: "CK-90107", reference: "CRD-61JF2W", merchant_holder_id: "ember", channel: "card", amount_expected: 12500, amount_received: 12500, created_at: at(20), received_at: at(20), status: "failed_debited", payer_email: "femi.kolade@mail.example", payer_card_last4: "4821" },
     // Charged twice for one order: the second charge is the duplicate.
@@ -600,18 +606,35 @@ async function seedCheckouts(tx: any, now: Date) {
     // The merchant refunded a card payment three days ago; the ARN lets the payer's bank trace it.
     { ...base, id: "CK-90110", reference: "CRD-8RE04D", merchant_holder_id: "ember", channel: "card", amount_expected: 27000, amount_received: 27000, created_at: at(96), received_at: at(96), status: "successful", payer_email: "chioma.nwosu@mail.example", payer_card_last4: "6671", notify_status: "delivered", notify_attempts: 1, notify_last_at: at(96) },
     // On a review hold: the payer hears only that it's under review.
-    { ...base, ...pwt(4), id: "CK-90111", reference: "PWT-6WW70A", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 100000, amount_received: 100000, received_at: plus(at(4), 3), status: "successful", payer_email: "obinna.m@mail.example", payer_account_last4: "1209", payer_bank: "Eko Commercial Bank", session_id: "000013261124091212123456789011", review_hold: true, notify_status: "pending", notify_attempts: 0 },
+    { ...base, ...pwt(4), id: "CK-90111", reference: "PWT-6WW70A", merchant_holder_id: "okapi", channel: "pay_with_transfer", amount_expected: 100000, amount_received: 100000, received_at: plus(at(4), 3), status: "successful", payer_email: "obinna.m@mail.example", payer_account_last4: "1209", payer_bank: "Eko Commercial Bank", network: "NIBSS", network_reference: "000013261124091212123456789011", review_hold: true, notify_status: "pending", notify_attempts: 0 },
     // Paid ₦5,000 too much: the excess comes back.
-    { ...base, ...pwt(7), id: "CK-90112", reference: "PWT-1LP63S", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 10000, amount_received: 15000, received_at: plus(at(7), 5), status: "received_over", payer_email: "sade.ojo@mail.example", payer_account_last4: "6610", payer_bank: "Sahel Trust Bank", session_id: "000013261124060702123456789012", notify_status: "delivered", notify_attempts: 1, notify_last_at: plus(at(7), 6) },
+    { ...base, ...pwt(7), id: "CK-90112", reference: "PWT-1LP63S", merchant_holder_id: "ember", channel: "pay_with_transfer", amount_expected: 10000, amount_received: 15000, received_at: plus(at(7), 5), status: "received_over", payer_email: "sade.ojo@mail.example", payer_account_last4: "6610", payer_bank: "Sahel Trust Bank", network: "NIBSS", network_reference: "000013261124060702123456789012", notify_status: "delivered", notify_attempts: 1, notify_last_at: plus(at(7), 6) },
   ];
+  // The other markets (Nov 27): each payment in its own currency and on its own payment network.
+  rows.push(
+    // UK: a bank transfer still held for checks at the payer's bank (Faster Payments).
+    { ...base, ...pwt(1), id: "CK-90201", reference: "BTR-4KX81Q", merchant_holder_id: "kestrel", channel: "pay_with_transfer", currency: "GBP", amount_expected: 240, status: "awaiting", payer_email: "oliver.hart@mail.example" },
+    // US: a card payment that failed at checkout but debited the card.
+    { ...base, id: "CK-90202", reference: "CRD-9UQ27B", merchant_holder_id: "northfield", channel: "card", currency: "USD", amount_expected: 89.99, amount_received: 89.99, created_at: at(18), received_at: at(18), status: "failed_debited", payer_email: "jenna.morales@mail.example", payer_card_last4: "3390" },
+    // EU: a SEPA Instant transfer that completed, but to a different account, so nothing reached the checkout.
+    { ...base, ...pwt(9), id: "CK-90203", reference: "BTR-7NM20E", merchant_holder_id: "nordlicht", channel: "pay_with_transfer", currency: "EUR", amount_expected: 150, status: "awaiting", payer_email: "lena.vogel@mail.example" },
+    // Canada: an Interac e-Transfer C$5 short of the checkout amount.
+    { ...base, ...pwt(6), id: "CK-90204", reference: "BTR-3CA55T", merchant_holder_id: "maple", channel: "pay_with_transfer", currency: "CAD", amount_expected: 75.5, amount_received: 70.5, received_at: plus(at(6), 3), status: "received_short", payer_email: "liam.tremblay@mail.example", payer_account_last4: "5521", payer_bank: "Northern Shield Bank", network: "Interac e-Transfer", network_reference: "CA-ETR-7Q4K-22X9" },
+    // UAE: an over-payment of AED 100 by an instant transfer (Aani).
+    { ...base, ...pwt(4), id: "CK-90205", reference: "BTR-9DP14U", merchant_holder_id: "dunepalm", channel: "pay_with_transfer", currency: "AED", amount_expected: 1200, amount_received: 1300, received_at: plus(at(4), 1), status: "received_over", payer_email: "omar.haddad@mail.example", payer_account_last4: "4086", payer_bank: "Gulf Crescent Bank", network: "Aani", network_reference: "AANI-202611-77310452", notify_status: "delivered", notify_attempts: 1, notify_last_at: plus(at(4), 2) },
+  );
   for (const r of rows) await tx`insert into checkout_payments ${tx(r)}`;
   await tx`insert into checkout_refunds (id, payment_id, amount, status, arn, started_at, completed_at, started_by) values
     ('RF-6901', 'CK-90102', 32000, 'processing', null, ${plus(at(26), 75)}, null, 'Automatic: arrived after the checkout expired'),
     ('RF-6902', 'CK-90110', 27000, 'processing', '74321654987123456789012', ${at(72)}, null, 'Merchant refund')`;
-  await tx`insert into nip_sessions (session_id, status, beneficiary_account_last4, at, detail) values
-    ('000013261124110012123456789004', 'pending', null, ${at(2)}, 'Still pending at the sending bank'),
-    ('000013261123120918123456789005', 'reversed', null, ${at(29)}, 'Not completed; reversed to the sender''s account by the sending bank'),
-    ('000013261124093015123456789001', 'successful', '0742', ${plus(at(3), 4)}, null),
-    ('000013261124080503123456789003', 'successful', '0742', ${plus(at(5), 6)}, null)`;
+  await tx`insert into network_transfers (reference, network, status, beneficiary_account_last4, at, detail, for_payment) values
+    ('000013261124110012123456789004', 'NIBSS', 'pending', null, ${at(2)}, 'Still pending at the sending bank', 'CK-90104'),
+    ('000013261123120918123456789005', 'NIBSS', 'reversed', null, ${at(29)}, 'Not completed; reversed to the sender''s account by the sending bank', 'CK-90105'),
+    ('000013261124093015123456789001', 'NIBSS', 'successful', '0742', ${plus(at(3), 4)}, null, 'CK-90101'),
+    ('000013261124080503123456789003', 'NIBSS', 'successful', '0742', ${plus(at(5), 6)}, null, 'CK-90103'),
+    ('FP-KF7Q2M9X41', 'Faster Payments', 'pending', null, ${at(1)}, 'Held for checks at the sending bank', 'CK-90201'),
+    ('E2E-NLH-20261126-4471', 'SEPA Instant', 'successful', '8830', ${plus(at(9), 1)}, 'Credited to an account ending 8830, not this checkout''s', 'CK-90203'),
+    ('CA-ETR-7Q4K-22X9', 'Interac e-Transfer', 'successful', '5104', ${plus(at(6), 3)}, null, 'CK-90204'),
+    ('AANI-202611-77310452', 'Aani', 'successful', '6120', ${plus(at(4), 1)}, null, 'CK-90205')`;
 }
 

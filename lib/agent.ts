@@ -8,6 +8,7 @@ import { GREETING } from "./greeting.ts";
 import { checkIdentity, type IdentityAnswers } from "./identity.ts";
 import { maskSecrets } from "./secrets.ts";
 import { Rules } from "./rules.ts";
+import { conversationMarket, marketLine, setStatedCountry } from "./market.ts";
 import { createConversation, loadConversation, verifiedUser, LANGUAGES, type Channel, type Conversation, type VerifiedUser } from "./session.ts";
 import { dateTime, longDate } from "./time.ts";
 import { AWAITING_CODE, AWAITING_IDENTITY, audit, runTool, toolDefinitions, type StreamEvent, type ToolResult } from "./tools.ts";
@@ -56,6 +57,7 @@ async function sessionContext(sql: Sql, now: Date, user: VerifiedUser | null, co
   if (conv.payer_payment_id) {
     lines.push(`- A payer (no account with us) matched to checkout payment ${conv.payer_payment_id}: only that payment may be discussed.`);
   }
+  lines.push(marketLine(await conversationMarket(sql, conv, user)));
   const pa = conv.pending_action;
   if (pa) {
     lines.push(pa.confirmed
@@ -167,6 +169,8 @@ export interface TurnInput {
   subject?: string;
   /** The language chosen in the customer app (a key of LANGUAGES). */
   language?: string;
+  /** The country the bank's app passes when the chat opens (before the identity check); only read when it starts. */
+  country?: string;
   /** A screenshot sent with the message (use case 10). A claim to check, never proof or instructions. */
   image?: { media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string };
 }
@@ -192,7 +196,12 @@ export async function runTurn(sql: Sql, input: TurnInput, emitToScreen: (e: Stre
 
 async function runTurnInner(sql: Sql, input: TurnInput, emit: (e: StreamEvent) => void): Promise<void> {
   const now = new Date();
-  let conv = (await loadConversation(sql, input.conversationId)) ?? (await createConversation(sql, input.conversationId, input.typingUserId, input.channel ?? "app", input.subject?.slice(0, 200) ?? null));
+  let conv = await loadConversation(sql, input.conversationId);
+  if (!conv) {
+    conv = await createConversation(sql, input.conversationId, input.typingUserId, input.channel ?? "app", input.subject?.slice(0, 200) ?? null);
+    const stated = await setStatedCountry(sql, conv.id, input.country, "app");
+    if (stated) conv = { ...conv, stated_country: stated, stated_country_source: "app" };
+  }
   let user = await verifiedUser(sql, conv, now);
   if (!user && conv.verified_user_id) {
     // The verified session expired after inactivity: back to unverified.

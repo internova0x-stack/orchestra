@@ -352,7 +352,8 @@ create table if not exists checkout_payments (
   payer_card_last4 text,
   payer_account_last4 text,
   payer_bank text,
-  session_id text,
+  network text,
+  network_reference text,
   virtual_account_last4 text,
   notify_status text check (notify_status in ('delivered','failed','pending')),
   notify_attempts int not null default 0,
@@ -369,15 +370,37 @@ create table if not exists checkout_refunds (
   completed_at timestamptz,
   started_by text not null
 );
-create table if not exists nip_sessions (
-  session_id text primary key,
+-- Any payment network, not only NIBSS (Nov 27): a database from before keeps its rows, under the new names.
+alter table checkout_payments add column if not exists network text;
+alter table checkout_payments add column if not exists network_reference text;
+do $$ begin
+  if exists (select 1 from information_schema.columns where table_name = 'checkout_payments' and column_name = 'session_id') then
+    update checkout_payments set network_reference = session_id, network = 'NIBSS' where network_reference is null and session_id is not null;
+    alter table checkout_payments drop column session_id;
+  end if;
+end $$;
+create table if not exists network_transfers (
+  reference text primary key,
+  network text not null,
   status text not null check (status in ('successful','pending','failed','reversed')),
   beneficiary_account_last4 text,
   at timestamptz,
-  detail text
+  detail text,
+  -- The sample checkout it belongs to, only so the customer app's tester box can show it.
+  for_payment text
 );
+do $$ begin
+  if to_regclass('nip_sessions') is not null then
+    insert into network_transfers (reference, network, status, beneficiary_account_last4, at, detail)
+      select session_id, 'NIBSS', status, beneficiary_account_last4, at, detail from nip_sessions on conflict do nothing;
+    drop table nip_sessions;
+  end if;
+end $$;
 create sequence if not exists checkout_refund_seq start 7001;
 alter table conversations add column if not exists payer_payment_id text;
+-- The country before the identity check (Nov 27, lib/market.ts): from the bank's app or website, or the customer.
+alter table conversations add column if not exists stated_country text;
+alter table conversations add column if not exists stated_country_source text;
 alter table conversations add column if not exists email_from text;
 alter table conversations add column if not exists email_thread jsonb not null default '[]';
 alter table conversations add column if not exists email_link_token text;
@@ -736,12 +759,14 @@ alter table conversations add column if not exists external_ref text;
 
 create table if not exists rule_overrides (
   rule_id text not null references rules(id) on delete cascade,
-  market text not null check (market in ('NG','UK','US')),
+  market text not null,
   value text not null,
   updated_by text not null,
   updated_at timestamptz not null default now(),
   primary key (rule_id, market)
 );
+-- More markets (Nov 27): the check moves to the code (MARKETS in lib/rules.ts).
+alter table rule_overrides drop constraint if exists rule_overrides_market_check;
 `;
 
 /** Tables in dependency order, children first, for wiping on Reset demo. */
@@ -750,7 +775,7 @@ export const TABLES_TO_WIPE = [
   "email_practice_sent",
   "checkout_refunds",
   "checkout_payments",
-  "nip_sessions",
+  "network_transfers",
   "conversation_reviews",
   "rule_overrides",
   "audit_log",

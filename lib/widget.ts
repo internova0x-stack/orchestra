@@ -172,7 +172,7 @@ export type StartResult =
   | { ok: false; error: "too_many" | "bad_token" };
 
 /** A new conversation from the widget. With the bank's token the customer arrives verified. */
-export async function startConversation(sql: Sql, w: Widget, input: { token?: unknown; language?: unknown; visitor: string }): Promise<StartResult> {
+export async function startConversation(sql: Sql, w: Widget, input: { token?: unknown; language?: unknown; country?: unknown; visitor: string }): Promise<StartResult> {
   const rules = await Rules.load(sql);
   const max = rules.num("widget_conversations_per_hour", 10);
   const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from conversations
@@ -190,6 +190,7 @@ export async function startConversation(sql: Sql, w: Widget, input: { token?: un
   }
   const opened = await openConversation(sql, {
     channel: "app", origin: "widget", via: "website chat", language: typeof input.language === "string" ? input.language : undefined,
+    country: typeof input.country === "string" ? input.country : undefined,
     ...(customer ? { verified_user_id: customer } : {}),
   });
   if ("error" in opened) return { ok: false, error: "bad_token" };

@@ -27,7 +27,7 @@ info:
     replace) and
     card transactions, card, POS, ATM and web payments with their stage-by-stage timeline, loans, merchant payouts
     and holds, bill and airtime payments (refund), USSD and agent sessions, and unlocking online access; and, for a payment
-    company, checkout payments (Pay with Transfer, virtual accounts, cards), their NIBSS status, merchant notifications
+    company, checkout payments (Pay with Transfer, virtual accounts, cards), their status on the payment network (Faster Payments, SEPA, ACH, Interac, NIBSS and others), merchant notifications
     and refunds. Checkout payments are found by the payment itself, not by a holder: the payer usually holds no account.
 
     Orchestra keeps its own records of the cases it opens (disputes, reversal requests, deferral requests, fee
@@ -759,14 +759,14 @@ paths:
                       arn: { type: [string, "null"], description: "A card refund's acquirer reference number" }
         "400": { description: Missing Idempotency-Key, amount or a malformed body }
 
-  /transfer-status/{sessionId}:
+  /transfer-status/{reference}:
     get:
       tags: [Checkout payments]
-      summary: A transfer's status at NIBSS, by session ID
-      description: "The payment company runs the NIP status query against NIBSS (through its own connection or its partner bank) and returns the result. Orchestra never connects to NIBSS. Unknown session IDs answer `status: not_found`."
+      summary: A bank transfer's status on its payment network, by the reference on the payer's receipt
+      description: "The bank or payment company checks the transfer on its own payment network (for example Faster Payments, SEPA, ACH, Fedwire, RTP, FedNow, Interac, Aani, NIBSS or SWIFT) through its own connection or partner bank, and returns the result. Orchestra never connects to a payment network. The reference is whatever that network uses: a UETR, an end-to-end ID, an ACH trace number, an Interac reference number, a NIBSS session ID. Unknown references answer `status: not_found`."
       operationId: getTransferStatus
       parameters:
-        - { name: sessionId, in: path, required: true, schema: { type: string }, example: "000013261124093015123456789012" }
+        - { name: reference, in: path, required: true, schema: { type: string }, example: "E2E-NLH-20261126-4471" }
       responses:
         "200":
           description: The status
@@ -941,7 +941,9 @@ components:
             card_last4: { type: [string, "null"] }
             account_last4: { type: [string, "null"], description: "The sending account's last 4 digits" }
             bank: { type: [string, "null"] }
-        session_id: { type: [string, "null"], description: "The NIP session ID of the transfer that paid it" }
+        network: { type: [string, "null"], description: "The payment network the transfer came through (Faster Payments, SEPA Instant, ACH, Interac, NIBSS…)" }
+        network_reference: { type: [string, "null"], description: "That network's reference for the transfer (UETR, end-to-end ID, trace number, Interac reference, NIBSS session ID…)" }
+        merchant_country: { type: [string, "null"], description: "The merchant's country: which market's rules apply" }
         virtual_account_last4: { type: [string, "null"] }
         merchant_notification:
           type: [object, "null"]
@@ -962,9 +964,10 @@ components:
         review_hold: { type: boolean }
     InterbankStatus:
       type: object
-      required: [session_id, status]
+      required: [reference, status]
       properties:
-        session_id: { type: string }
+        reference: { type: string }
+        network: { type: [string, "null"] }
         status: { type: string, enum: [successful, pending, failed, reversed, not_found] }
         beneficiary_account_last4: { type: [string, "null"] }
         at: { type: [string, "null"], format: date-time }

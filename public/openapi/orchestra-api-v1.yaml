@@ -53,6 +53,7 @@ paths:
                 external_ref: { type: string, description: "Your id for this customer or thread (a phone number, a ticket id)" }
                 language: { type: string, enum: [en, fr, pcm], default: en }
                 subject: { type: string, description: "An email's subject line" }
+                country: { type: string, description: "The customer's country as your app or website knows it before sign-in (e.g. Canada, Germany, United Arab Emirates). General answers follow that market until the customer is verified; then the bank's records decide. Ignored with verified_user_id." }
             example: { channel: whatsapp, verified_user_id: "ada", external_ref: "wa:+447700900123" }
       responses:
         "201":

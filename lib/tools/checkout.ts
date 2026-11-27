@@ -11,12 +11,13 @@ import type { CheckoutPayment } from "../bank/contract.ts";
 // itself: the amount, the date, and at least one more detail that matches the record (the checkout email, or the
 // last 4 digits of the card or the sending account). Every comparison is made here, in code: the AI only passes on
 // what the payer said. A match ties the conversation to that one payment (conversations.payer_payment_id); nothing
-// else is ever shown to them. NIBSS is never called from here: the payment company runs the status check.
+// else is ever shown to them. No payment network (Faster Payments, SEPA, ACH, Interac, Aani, NIBSS…) is ever called
+// from here: the bank or payment company runs the status check on its own network (Nov 27: any market, any network).
 
 const T_CHECK = "check_payment_evidence";
 const lower = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 const digits4 = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "").slice(-4);
-const CHANNEL: Record<CheckoutPayment["channel"], string> = { pay_with_transfer: "Pay with Transfer", virtual_account: "Dedicated virtual account", card: "Card" };
+const CHANNEL: Record<CheckoutPayment["channel"], string> = { pay_with_transfer: "Bank transfer to the account shown at checkout", virtual_account: "Dedicated virtual account", card: "Card" };
 
 /** How many payer checks in this conversation found no match (the refusals this tool wrote). */
 async function failedChecks(ctx: ToolCtx): Promise<number> {
@@ -61,7 +62,7 @@ function explain(p: CheckoutPayment, rules: Rules): { status: string; next: stri
     case "received_over":
       return { status: `Over-paid: ${got} received against ${exp}`, next: refundLine ?? `${a("over_transfer")}. Offer to refund the excess, ${money(Number(p.amount_received) - Number(p.amount_expected), cur)} (refund_checkout_payment).` };
     case "awaiting":
-      return { status: `Nothing received yet for this checkout (${exp})`, next: "Ask for the session ID on their transfer receipt and check it (check_transfer_status)." };
+      return { status: `Nothing received yet for this checkout (${exp})`, next: "Ask for the transfer's reference from their bank's receipt or app (a payment reference, end-to-end ID, trace number, Interac reference, UETR or session ID, whatever their bank shows) and check it (check_transfer_status)." };
     case "failed_debited":
       return { status: `Failed at checkout, but the card was debited ${got}`, next: refundLine ?? `${a("card_failed_debited")}. If it's past that, hand off (trigger checkout_payment_problem).` };
     case "duplicate":
@@ -84,7 +85,8 @@ export function checkoutView(p: CheckoutPayment, rules: Rules) {
     ...(p.amount_expected ? { checkout_amount: money(p.amount_expected, p.currency) } : {}),
     paid: dateTime(new Date(p.created_at)),
     status: e.status,
-    ...(p.session_id ? { session_id: p.session_id } : {}),
+    ...(p.network ? { network: p.network } : {}),
+    ...(p.network_reference ? { network_reference: p.network_reference } : {}),
     next: e.next,
   };
 }
@@ -111,7 +113,7 @@ export const checkPaymentEvidence = {
     email: z.string().optional().describe("The email they used at checkout"),
     card_last4: z.string().optional(),
     account_last4: z.string().optional().describe("The last 4 digits of the account they sent from"),
-    currency: z.enum(["NGN", "USD", "GBP"]).optional(),
+    currency: z.enum(["USD", "GBP", "EUR", "CAD", "AED", "NGN"]).optional(),
   }),
   async run(input: { amount: number; on: string; merchant?: string; email?: string; card_last4?: string; account_last4?: string; currency?: string }, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const shown = { amount: input.amount, on: input.on, merchant: input.merchant, given: [input.email && "email", input.card_last4 && "card last 4", input.account_last4 && "account last 4"].filter(Boolean) };
@@ -164,12 +166,12 @@ export const getCheckoutPayment = {
 
 // ---------------------------------------------------------------- check_transfer_status
 
-const NIP: Record<string, string> = {
-  successful: "Completed at NIBSS",
-  pending: "Still pending at the sender's bank",
-  failed: "Failed",
-  reversed: "Not completed; reversed to the sender's account",
-  not_found: "NIBSS has no transfer with this session ID",
+const NETWORK_STATUS: Record<string, (network: string) => string> = {
+  successful: (n) => `Completed on ${n}`,
+  pending: () => "Still pending at the sender's bank",
+  failed: () => "Failed",
+  reversed: () => "Not completed; returned to the sender's account",
+  not_found: () => "No transfer with this reference on the payment network",
 };
 
 export const checkTransferStatus = {
@@ -177,22 +179,24 @@ export const checkTransferStatus = {
   tier: 1 as Tier,
   identity: "payer" as const,
   description:
-    "The status of the payer's bank transfer at NIBSS, by the session ID on their transfer receipt, for the payment they were matched to (Pay with Transfer or a virtual account top-up). The payment company runs the check; Orchestra never calls NIBSS. Use it when nothing has arrived for their checkout.",
-  schema: z.object({ session_id: z.string().regex(/^\d{20,40}$/).describe("The session ID on their transfer receipt (digits only)") }),
-  async run(input: { session_id: string }, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
+    "The status of the payer's bank transfer on its payment network (Faster Payments, SEPA, ACH, Fedwire, RTP, FedNow, Interac, Aani, NIBSS, SWIFT…), by the reference on their bank's receipt or app, for the payment they were matched to (a bank transfer at checkout or a virtual account top-up). The reference is whatever their bank shows: a payment reference, end-to-end ID, trace number, Interac reference number, UETR or NIBSS session ID. The bank or payment company runs the check on its own network; Orchestra never calls a payment network. Use it when nothing has arrived for their checkout.",
+  schema: z.object({ reference: z.string().trim().min(6).max(64).regex(/^[A-Za-z0-9._\/-]+$/).describe("The transfer's reference from their bank's receipt or app, as shown") }),
+  async run(input: { reference: string }, ctx: ToolCtx, rules: Rules): Promise<ToolResult> {
     const T = "check_transfer_status";
     const p = await scoped(ctx);
     if (!p) return refuse(ctx, T, input, "No payment is tied to this conversation. Run check_payment_evidence first.", "no payment");
     if (p.channel === "card") return refuse(ctx, T, input, "This is a card payment; there's no transfer to check.", "card payment");
     if (p.review_hold) return refuse(ctx, T, input, "Review hold: say only that the payment is with a specialist team for review, and hand off (trigger review_hold).", "review hold");
-    const s = await bank(ctx.sql).getTransferStatus(input.session_id);
+    const s = await bank(ctx.sql).getTransferStatus(input.reference);
+    const network = s.network ?? "the payment network";
     const next =
-      s.status === "pending" ? rules.get("nip_pending")?.value ?? ""
-      : s.status === "reversed" || s.status === "failed" ? "The money didn't leave for the merchant; if their account still shows the debit, they should ask their bank with this session ID."
-      : s.status === "successful" ? (p.status === "awaiting" ? "NIBSS shows it completed, but nothing reached this checkout: it may have gone to a different account number. Hand off (trigger transfer_unmatched) with the session ID." : "It completed and the payment shows received.")
-      : "Ask them to check the session ID on their receipt; if it's right, hand off (trigger transfer_unmatched).";
-    const view = { session_id: s.session_id, status: NIP[s.status] ?? s.status, ...(s.at ? { at: dateTime(new Date(s.at)) } : {}), ...(s.detail ? { detail: s.detail } : {}), next };
-    await audit(ctx, { kind: "lookup", tool: T, summary: `${T} · ${p.id} · session …${s.session_id.slice(-6)} · ${s.status}`, input, result: view });
+      s.status === "pending" ? rules.get("transfer_pending")?.value ?? ""
+      : s.status === "reversed" || s.status === "failed" ? "The money didn't reach the merchant; if their account still shows the debit, they should ask their bank, quoting this reference."
+      : s.status === "successful" ? (p.status === "awaiting" ? `${network} shows it completed, but nothing reached this checkout: it may have gone to a different account. Hand off (trigger transfer_unmatched) with the reference.` : "It completed and the payment shows received.")
+      : "Ask them to check the reference on their receipt; if it's right, hand off (trigger transfer_unmatched).";
+    if (s.status === "pending") await ruleRead(ctx, rules, "transfer_pending");
+    const view = { reference: s.reference, ...(s.network ? { network: s.network } : {}), status: (NETWORK_STATUS[s.status] ?? (() => s.status))(network), ...(s.at ? { at: dateTime(new Date(s.at)) } : {}), ...(s.detail ? { detail: s.detail } : {}), next };
+    await audit(ctx, { kind: "lookup", tool: T, summary: `${T} · ${p.id} · ${s.network ?? "unknown network"} …${s.reference.slice(-6)} · ${s.status}`, input, result: view });
     return { ok: true, data: view };
   },
 };
@@ -227,7 +231,9 @@ export const resendMerchantNotification = {
 
 // ---------------------------------------------------------------- refund_checkout_payment
 
-const CAP: Record<string, string> = { NGN: "checkout_refund_cap_ngn", USD: "checkout_refund_cap_usd", GBP: "checkout_refund_cap_gbp" };
+const CAP: Record<string, string> = {
+  USD: "checkout_refund_cap_usd", GBP: "checkout_refund_cap_gbp", EUR: "checkout_refund_cap_eur", CAD: "checkout_refund_cap_cad", AED: "checkout_refund_cap_aed", NGN: "checkout_refund_cap_ngn",
+};
 
 export const refundCheckoutPayment = {
   name: "refund_checkout_payment",

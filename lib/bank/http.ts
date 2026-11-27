@@ -93,8 +93,8 @@ export function httpBank(baseUrl: string, apiKey: string, fetcher: typeof fetch 
 
     findCheckoutPayments: (q) => list(call<{ data: CheckoutPayment[] }>("GET", "/checkout-payments", { query: q })),
     getCheckoutPayment: (id) => call<CheckoutPayment | null>("GET", `/checkout-payments/${seg(id)}`),
-    getTransferStatus: async (sessionId) =>
-      (await call<InterbankStatus | null>("GET", `/transfer-status/${seg(sessionId)}`)) ?? { session_id: sessionId, status: "not_found", beneficiary_account_last4: null, at: null, detail: null },
+    getTransferStatus: async (reference) =>
+      (await call<InterbankStatus | null>("GET", `/transfer-status/${seg(reference)}`)) ?? { reference, network: null, status: "not_found", beneficiary_account_last4: null, at: null, detail: null },
     resendMerchantNotification: (id, req, key) => act(`/checkout-payments/${seg(id)}/resend-notification`, req, key),
     refundCheckoutPayment: (id, req, key) => act(`/checkout-payments/${seg(id)}/refund`, req, key),
   };

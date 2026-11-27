@@ -379,3 +379,22 @@ driving licence (David: the record says the photo was blurry and what to send), 
 Harbour and Vine: payouts paused until it's uploaded), and a screenshot claiming "Verified" that David's record
 contradicts (a screenshot is a claim; the record wins). Checked: they render; not yet tried with the live model.
 
+## Global markets (Nov 27, Tomi: "the platform is meant for global banking")
+
+- **Markets:** the Rules screen's Market list is now the United States, the United Kingdom, Canada, the European Union,
+  the United Arab Emirates and Nigeria. Canada, the EU and the UAE start with sample values for how verification works
+  and how long a pending transfer takes; refund caps exist in EUR, CAD and AED.
+- **Any payment network:** the transfer check takes whatever reference the payer's bank shows (a payment reference,
+  end-to-end ID, trace number, Interac reference, UETR or NIBSS session ID) and the bank or payment company checks it on
+  its own network. The Bank Connector contract changed to match (`/transfer-status/{reference}`).
+- **Sample payers in every market:** five more checkout payments: a UK transfer held at the sender's bank (Faster
+  Payments), a US card failed but debited, an EU SEPA Instant transfer that went to another account, a Canadian Interac
+  transfer C$5 short, and a UAE over-payment (Aani). New merchants in Canada, Germany and the UAE.
+- **Which country's rules apply:** the records once the customer is verified; the merchant's country for someone who
+  paid a merchant; before that, the country the bank's app or website passes when the chat opens, or what the customer
+  says (Alexis asks only when a general answer depends on it, and never uses it for their account). The customer app has
+  "Country the app passes" to try it; the widget takes `data-country`; the Channel API takes `country`.
+- Checked: three new tests (markets, payers in every market, the country before and after the identity check) and the
+  existing ones (126 pass); in a browser, the Rules screen's markets and the new payers in the customer app. Not yet
+  tried in a full conversation with the live model. The live site needs **Reset demo** once for the new sample payments.
+

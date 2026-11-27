@@ -30,6 +30,9 @@ export interface Conversation {
   language: string;
   /** A payer (not an account holder) matched to one checkout payment by their evidence: the only record they may see. */
   payer_payment_id?: string | null;
+  /** The customer's country before the identity check: passed by the bank's app or website, or said by the customer. */
+  stated_country?: string | null;
+  stated_country_source?: "app" | "customer" | null;
 }
 
 /** The languages the customer app offers; Alexis replies in the one chosen. */

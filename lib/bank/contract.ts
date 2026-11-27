@@ -315,8 +315,12 @@ export interface CheckoutPayment {
    */
   status: "successful" | "received_late" | "received_short" | "received_over" | "awaiting" | "failed_debited" | "duplicate" | "unmatched";
   payer: { email: string | null; card_last4: string | null; account_last4: string | null; bank: string | null };
-  /** The NIP session ID of the transfer that paid it, when one arrived. */
-  session_id: string | null;
+  /** The payment network the transfer came through (Faster Payments, SEPA Instant, ACH, Interac, NIBSS…), when one arrived. */
+  network: string | null;
+  /** That network's reference for the transfer (UETR, end-to-end ID, trace number, Interac reference, NIBSS session ID…). */
+  network_reference: string | null;
+  /** The merchant's country: which market's rules apply to this payer. */
+  merchant_country: string | null;
   virtual_account_last4: string | null;
   /** The "paid" notification to the merchant's system. */
   merchant_notification: { status: "delivered" | "failed" | "pending"; attempts: number; last_at: string | null } | null;
@@ -336,9 +340,14 @@ export interface CheckoutRefund {
   started_by: string;
 }
 
-/** A transfer's status at the interbank switch (NIBSS), as the payment company checks it by session ID. */
+/**
+ * A bank transfer's status on its payment network (Nov 27: any network, not only NIBSS), as the bank or payment
+ * company checks it by the reference on the payer's receipt. Orchestra never connects to a payment network itself.
+ */
 export interface InterbankStatus {
-  session_id: string;
+  reference: string;
+  /** Faster Payments, SEPA Instant, ACH, Fedwire, RTP, FedNow, Interac, Aani, NIBSS, SWIFT… (null when not found). */
+  network: string | null;
   status: "successful" | "pending" | "failed" | "reversed" | "not_found";
   /** The last 4 digits of the account the transfer was credited to, when successful. */
   beneficiary_account_last4: string | null;
@@ -393,8 +402,8 @@ export interface BankConnector {
   /** Checkout payments of the given amount (expected or received) on a day, optionally at one merchant. Orchestra matches the payer's evidence itself. */
   findCheckoutPayments(q: { amount: number; on: string; currency?: string; merchant?: string }): Promise<CheckoutPayment[]>;
   getCheckoutPayment(id: string): Promise<CheckoutPayment | null>;
-  /** The payment company checks the transfer with NIBSS (the NIP status query) and returns the result; Orchestra never calls NIBSS. */
-  getTransferStatus(sessionId: string): Promise<InterbankStatus>;
+  /** The bank or payment company checks the transfer on its payment network by the receipt's reference; Orchestra never calls a network. */
+  getTransferStatus(reference: string): Promise<InterbankStatus>;
   /** Sends the "paid" notification to the merchant's system again. */
   resendMerchantNotification(paymentId: string, req: ActionRequest, idempotencyKey: string): Promise<ActionResult>;
   /** Refunds the payer: the whole payment, or (for an over-payment) the excess. The ARN comes back for a card refund. */

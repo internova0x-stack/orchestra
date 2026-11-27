@@ -24,6 +24,8 @@ import { findCase } from "./tools/resume.ts";
 import { draftClaimPack } from "./tools/claims.ts";
 import { draftCaseNotes, draftReply, summariseCase } from "./tools/staffmode.ts";
 import { getBillPaymentStatus, getUssdSession, refundBillPayment } from "./tools/nigeria.ts";
+import { conversationMarket } from "./market.ts";
+import { setCustomerCountry } from "./tools/country.ts";
 import { checkPaymentEvidence, checkTransferStatus, getCheckoutPayment, refundCheckoutPayment, resendMerchantNotification } from "./tools/checkout.ts";
 import { freezeCard, getCard, orderReplacement, unfreezeCard, changeCardSettings } from "./tools/cards.ts";
 import { routeCase } from "./routing.ts";
@@ -865,7 +867,7 @@ const TOOLS: ToolDef<any>[] = [verifyIdentity, searchKnowledgeBase, escalateToHu
   getPaymentById, getPaymentTimeline, getLoan, payoffQuote, requestDeferral, getPayoutStatus, listHolds,
   watchCase, findCase, draftClaimPack, summariseCase, draftReply, draftCaseNotes,
   getBillPaymentStatus, refundBillPayment, getUssdSession,
-  checkPaymentEvidence, getCheckoutPayment, checkTransferStatus, resendMerchantNotification, refundCheckoutPayment];
+  checkPaymentEvidence, getCheckoutPayment, checkTransferStatus, resendMerchantNotification, refundCheckoutPayment, setCustomerCountry];
 
 /** Staff mode (use case 19): lookups and drafts only, never actions on the account. */
 export const STAFF_TOOLS = new Set([
@@ -902,7 +904,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolCtx, mod
     return { ok: false, reason: `INVALID_INPUT: ${parsed.error.message}` };
   }
   // Fresh every call: a Rules screen edit applies at once, with the customer's market's own values.
-  const rules = await Rules.load(ctx.sql, marketOf(ctx.user?.country));
+  const rules = await Rules.load(ctx.sql, (await conversationMarket(ctx.sql, ctx.conv, ctx.user)).market);
   // Check 1: an action with a switch on the Rules screen is refused while it's off.
   // (These switches are for Alexis; the team's own actions have their own rules, lib/staffActions.ts.)
   const sw = rules.get(`action_${name}`);

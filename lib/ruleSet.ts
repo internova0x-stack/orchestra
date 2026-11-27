@@ -1,3 +1,4 @@
+import type { Market } from "./rules.ts";
 // The dummy rule set (docs/KNOWLEDGE-BASE.md), loaded into the `rules` table by the seed.
 // Answer rules are what Alexis may say; limit rules are what the tools enforce.
 // Nuvion's name never appears in a value (owner, Nov 23); source links stay in source_url only.
@@ -247,12 +248,15 @@ export const RULE_SET: RuleSeed[] = [
   a("card_failed_debited", "Checkout payments", "Card payment that failed but debited the card", "The card's bank reverses the debit, usually within 3 to 5 working days", "sample"),
   a("transfer_refund_time", "Checkout payments", "Refund to a sending account", "Usually within 24 hours", "sample"),
   a("card_refund_time", "Checkout payments", "Refund to a card", "Usually 5 to 10 working days; the ARN lets the payer's bank trace it", "sample"),
-  a("nip_pending", "Checkout payments", "Transfer still pending at the sender's bank", "The sender's bank either completes it or reverses it, usually within 24 hours; the payer can ask their bank with the session ID", "sample"),
+  a("transfer_pending", "Checkout payments", "Transfer still pending at the sender's bank", "The sender's bank either completes it or returns it, usually within a day; the payer can ask their bank with the payment reference on their receipt", "sample"),
   a("merchant_not_delivering", "Checkout payments", "Paid, but the merchant hasn't delivered", "Once the payment shows successful and the merchant was notified, the order is between the payer and the merchant; the team can contact the merchant", "sample"),
   l("action_refund_checkout_payment", "Checkout payments", "Refunds to payers switched on", "on"),
   l("checkout_refund_cap_ngn", "Checkout payments", "Refund to a payer without approval (NGN)", "100000", "₦"),
   l("checkout_refund_cap_usd", "Checkout payments", "Refund to a payer without approval (USD)", "200", "$"),
   l("checkout_refund_cap_gbp", "Checkout payments", "Refund to a payer without approval (GBP)", "150", "£"),
+  l("checkout_refund_cap_eur", "Checkout payments", "Refund to a payer without approval (EUR)", "180", "€"),
+  l("checkout_refund_cap_cad", "Checkout payments", "Refund to a payer without approval (CAD)", "250", "C$"),
+  l("checkout_refund_cap_aed", "Checkout payments", "Refund to a payer without approval (AED)", "750", "AED"),
   l("action_resend_merchant_notification", "Checkout payments", "Re-sending merchant notifications switched on", "on"),
   l("notification_resends_max", "Checkout payments", "Merchant notification re-sends per payment", "2"),
 
@@ -349,12 +353,25 @@ export const RULE_SET: RuleSeed[] = [
 ];
 
 /** Starting values for one market only (the Rules screen's per-market values). Sample values. */
-export const SEED_OVERRIDES: { rule: string; market: "NG" | "UK" | "US"; value: string }[] = [
+export const SEED_OVERRIDES: { rule: string; market: Market; value: string }[] = [
   { rule: "kyc_tiers_used", market: "NG", value: "on" },
   { rule: "kyc_approach", market: "NG", value: "Accounts have three tiers. Each tier unlocks higher limits as the customer adds more identity details, and they can move up in the app at any time" },
   { rule: "kyc_approach", market: "UK", value: "There are no numbered tiers. Identity is checked when the account opens, with extra checks for some customers or larger amounts. Higher limits are available on request after a review" },
   { rule: "kyc_approach", market: "US", value: "There are no numbered tiers. Identity is checked as required to open the account, with extra checks for some customers or activity. Higher limits are available on request after a review" },
+  // Canada, the EU and the UAE (Nov 27): sample values until a client gives its own.
+  { rule: "kyc_approach", market: "CA", value: "There are no numbered tiers. Identity is checked when the account opens, with extra checks for some customers or larger amounts. Higher limits are available on request after a review" },
+  { rule: "kyc_approach", market: "EU", value: "There are no numbered tiers. Identity is checked when the account opens, with enhanced checks where the risk is higher. Higher limits are available on request after a review" },
+  { rule: "kyc_approach", market: "AE", value: "There are no numbered tiers. Identity is checked with the customer's Emirates ID or passport when the account opens, with extra checks for some customers or larger amounts. Higher limits are available on request after a review" },
+  { rule: "transfer_pending", market: "UK", value: "Most Faster Payments arrive within minutes; one held for checks at the sender's bank usually completes or is returned within a day. The payer can ask their bank with the payment reference" },
+  { rule: "transfer_pending", market: "EU", value: "SEPA Instant transfers arrive within seconds and standard SEPA transfers by the next business day; the payer can ask their bank with the end-to-end ID" },
+  { rule: "transfer_pending", market: "US", value: "ACH transfers usually settle in 1 to 2 business days; RTP and FedNow payments arrive within seconds. The payer can ask their bank with the trace number or payment reference" },
+  { rule: "transfer_pending", market: "CA", value: "Interac e-Transfers usually arrive within 30 minutes; one held for a security check can take longer. The payer can ask their bank with the Interac reference number" },
+  { rule: "transfer_pending", market: "AE", value: "Instant transfers arrive within seconds and other domestic transfers the same business day; the payer can ask their bank with the payment reference" },
+  { rule: "transfer_pending", market: "NG", value: "The sender's bank either completes it or reverses it, usually within 24 hours; the payer can ask their bank with the session ID from NIBSS" },
 ];
+
+/** Rules that were replaced (Nov 27: nip_pending became transfer_pending): removed from a database that has them. */
+export const RETIRED_RULES = ["nip_pending"];
 
 /** The Guardrails' fixed rules: shown locked on the Rules screen, enforced in code, never editable. */
 export const FIXED_RULES = [

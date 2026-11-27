@@ -16,13 +16,27 @@ export interface Rule {
  * messages, so a Rules screen edit applies to Alexis's next message.
  */
 /** The markets a rule can have its own value in. */
-export type Market = "NG" | "UK" | "US";
-export const MARKETS: { id: Market; name: string; country: string }[] = [
-  { id: "NG", name: "Nigeria", country: "Nigeria" },
-  { id: "UK", name: "United Kingdom", country: "United Kingdom" },
+// The main markets (Tomi, Nov 27: "the us, uk, canada, eu, dubai"), plus Nigeria, where the first payment company is.
+export type Market = "US" | "UK" | "CA" | "EU" | "AE" | "NG";
+export const MARKETS: { id: Market; name: string; country: string; countries?: string[] }[] = [
   { id: "US", name: "United States", country: "United States" },
+  { id: "UK", name: "United Kingdom", country: "United Kingdom" },
+  { id: "CA", name: "Canada", country: "Canada" },
+  {
+    id: "EU", name: "European Union", country: "European Union",
+    countries: ["Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czechia", "Denmark", "Estonia", "Finland", "France", "Germany", "Greece",
+      "Hungary", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Netherlands", "Poland", "Portugal", "Romania", "Slovakia",
+      "Slovenia", "Spain", "Sweden"],
+  },
+  { id: "AE", name: "United Arab Emirates", country: "United Arab Emirates", countries: ["UAE", "Dubai", "Abu Dhabi"] },
+  { id: "NG", name: "Nigeria", country: "Nigeria" },
 ];
-export const marketOf = (country: string | null | undefined): Market | null => MARKETS.find((m) => m.country === country)?.id ?? null;
+/** The market a country belongs to (a market's own name works too, e.g. "European Union" or "Dubai"). */
+export const marketOf = (country: string | null | undefined): Market | null => {
+  const c = (country ?? "").trim().toLowerCase();
+  if (!c) return null;
+  return MARKETS.find((m) => m.country.toLowerCase() === c || m.name.toLowerCase() === c || m.id.toLowerCase() === c || (m.countries ?? []).some((x) => x.toLowerCase() === c))?.id ?? null;
+};
 
 export class Rules {
   private byId: Map<string, Rule>;
@@ -31,7 +45,7 @@ export class Rules {
   }
 
   /**
-   * The rules in force, read fresh. With a market (NG, UK, US), that market's own values replace the
+   * The rules in force, read fresh. With a market (US, UK, CA, EU, AE, NG), that market's own values replace the
    * defaults where the Rules screen set one.
    */
   static async load(sql: Sql, market?: Market | null): Promise<Rules> {

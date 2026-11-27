@@ -53,7 +53,7 @@ export default function WidgetChat({ widgetKey, title, colour, origins }: Props)
   const toPage = (data: object) => { if (window.parent !== window) window.parent.postMessage({ source: "orchestra-chat", ...data }, "*"); };
 
   /** A new conversation, or the one from the bank's last page if it's recent and the customer is the same. */
-  const start = useCallback(async (token: string | null, language: string, fresh = false) => {
+  const start = useCallback(async (token: string | null, language: string, fresh = false, country: string | null = null) => {
     setProblem(null);
     const last = saved();
     if (!fresh && last && Date.now() - last.at < RESUME_MS && last.signed === Boolean(token)) {
@@ -70,12 +70,12 @@ export default function WidgetChat({ widgetKey, title, colour, origins }: Props)
         return;
       }
     }
-    const r = await fetch(`${api}/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, language }) }).catch(() => null);
+    const r = await fetch(`${api}/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, language, country }) }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
     if (r?.status === 401 && token) {
       // The page's sign-in couldn't be confirmed: carry on as a guest; Alexis checks who they are as usual.
       setProblem("We couldn't confirm you're signed in. You can still chat: Alexis will check who you are first.");
-      return start(null, language, true);
+      return start(null, language, true, country);
     }
     if (!r?.ok) {
       setProblem(r?.status === 429 ? "You've started a lot of chats in the last hour. Please try again a little later." : "The chat couldn't start. Please try again in a moment.");
@@ -93,12 +93,13 @@ export default function WidgetChat({ widgetKey, title, colour, origins }: Props)
     const allowed = (o: string) => o === window.location.origin || origins.includes(o);
     const onMessage = (e: MessageEvent) => {
       if (!allowed(e.origin) || e.source !== window.parent) return;
-      const d = e.data as { source?: string; type?: string; token?: unknown; language?: unknown };
+      const d = e.data as { source?: string; type?: string; token?: unknown; language?: unknown; country?: unknown };
       if (d?.source !== "orchestra-page") return;
       const token = typeof d.token === "string" && d.token ? d.token : null;
       const language = typeof d.language === "string" && GREETINGS[d.language] ? d.language : "en";
-      if (d.type === "init" && !started.current) { started.current = true; start(token, language); }
-      if (d.type === "identify" && token) { started.current = true; start(token, language, true); }
+      const country = typeof d.country === "string" && d.country ? d.country.slice(0, 60) : null;
+      if (d.type === "init" && !started.current) { started.current = true; start(token, language, false, country); }
+      if (d.type === "identify" && token) { started.current = true; start(token, language, true, country); }
     };
     window.addEventListener("message", onMessage);
     toPage({ type: "ready" });

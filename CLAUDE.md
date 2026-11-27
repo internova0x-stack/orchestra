@@ -86,10 +86,19 @@ fallbacks, in `lib/config.ts`. Check each library's current documentation before
   `/try-your-chat` plays a customer in a stand-in chat beside each request and answer (and curl), through
   `/api/admin/channel-test` (the /api/v1 functions for a signed-in person, only on conversations it opened: `external_ref`
   'API test page').
+- Markets (Tomi, Nov 27: "global banking. The main markets are the us, uk, canada, eu, dubai"): `MARKETS` in `lib/rules.ts`
+  (US, UK, CA, EU with its member countries, AE with Dubai and Abu Dhabi, NG); `marketOf(country)`; per-market values in
+  `rule_overrides` (no database check on the market any more). Which market applies (`lib/market.ts`
+  `conversationMarket`, used by `runTool` and the session line `marketLine`): the records' country once verified, the
+  merchant's country for a payer, else the country the app, website or Channel API passed when the chat opened
+  (`stated_country`, source 'app': `country` on `/api/chat`, `POST /api/v1/conversations`, the widget's `data-country`)
+  or the customer said (`set_customer_country`, source 'customer', general answers only, refused once records decide).
 - Checkout payments (Nov 25, a payment company's payers, who hold no account): Bank Connector `findCheckoutPayments`,
-  `getCheckoutPayment`, `getTransferStatus` (the payment company runs the NIBSS NIP status query; Orchestra never calls
-  NIBSS), `resendMerchantNotification`, `refundCheckoutPayment`; simulated in `checkout_payments`, `checkout_refunds`,
-  `nip_sessions` (seeded for Ember and Oak Foods and Okapi Logistics). Tools in `lib/tools/checkout.ts`:
+  `getCheckoutPayment`, `getTransferStatus(reference)` (the bank or payment company checks the transfer on its own payment
+  network: Faster Payments, SEPA, ACH, Fedwire, RTP, FedNow, Interac, Aani, NIBSS, SWIFT; Orchestra never calls a network),
+  `resendMerchantNotification`, `refundCheckoutPayment`; simulated in `checkout_payments` (`network`, `network_reference`),
+  `checkout_refunds`, `network_transfers` (seeded for Nigeria's Ember and Oak Foods and Okapi Logistics, and for the UK, US,
+  Canada, the EU and the UAE: CK-90201 to CK-90205). Tools in `lib/tools/checkout.ts`:
   `check_payment_evidence` is the payer's identity check (amount + date + `payer_evidence_needed` matching details,
   compared in code; `payer_check_attempts`; a match sets `conversations.payer_payment_id`, the only record they see);
   the others carry `identity: "payer"`. Rules in the "Checkout payments" category; the customer app's picker lists payers.

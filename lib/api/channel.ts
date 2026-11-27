@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Sql } from "../db.ts";
 import { runTurn, type TurnInput } from "../agent.ts";
 import { bank } from "../bank/index.ts";
+import { setStatedCountry } from "../market.ts";
 import { transcriptOf } from "../cases.ts";
 import { GREETINGS } from "../greeting.ts";
 import { CHANNELS, LANGUAGES, createConversation, type Channel } from "../session.ts";
@@ -27,7 +28,7 @@ export interface ChannelReply {
 
 export async function openConversation(
   sql: Sql,
-  input: { channel?: string; verified_user_id?: string; external_ref?: string; language?: string; subject?: string; origin?: "widget"; via?: string },
+  input: { channel?: string; verified_user_id?: string; external_ref?: string; language?: string; subject?: string; origin?: "widget"; via?: string; country?: string },
 ): Promise<{ conversation_id: string; greeting: string | null } | { error: string }> {
   const channel: Channel = CHANNELS.includes(input.channel as Channel) ? (input.channel as Channel) : "app";
   const id = randomUUID();
@@ -47,6 +48,8 @@ export async function openConversation(
     await sql`insert into audit_log (conversation_id, user_id, tool_use_id, kind, tool, summary)
       values (${id}, ${verified}, ${`api-${id}`}, 'identity', 'verify_identity', ${`verified by the bank (signed in to its ${input.via ? "website" : "app"}) · ${input.via ?? "Channel API"}`})`;
   }
+  // Where the customer is, as the bank's app or website knows it before sign-in: steers general answers only.
+  if (!verified) await setStatedCountry(sql, id, input.country, "app");
   return { conversation_id: id, greeting: channel === "email" ? null : GREETINGS[language] ?? GREETINGS.en };
 }
 

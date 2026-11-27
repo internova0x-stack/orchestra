@@ -1,6 +1,6 @@
 // Display helpers shared by the tools and the screens.
 
-const SYMBOL: Record<string, string> = { USD: "$", GBP: "£", NGN: "₦" };
+const SYMBOL: Record<string, string> = { USD: "$", GBP: "£", NGN: "₦", EUR: "€", CAD: "C$" };
 
 /** "$4,200.00": currency symbol in front, two decimal places. */
 export function money(amount: number | string, currency: string): string {

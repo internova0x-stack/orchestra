@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Every rule for the Rules screen, as it stands in one market (?market=NG|UK|US) or for all markets, and
+ * Every rule for the Rules screen, as it stands in one market (?market=US|UK|CA|EU|AE|NG) or for all markets, and
  * the changes waiting for approval. Source links stay in the database: never shown (owner, Nov 23).
  */
 export async function GET(req: Request) {

@@ -13,7 +13,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ key: st
   await ensureSeeded(sql);
   const w = await liveWidget(sql, key);
   if (!w) return Response.json({ error: "not_live" }, { status: 404 });
-  const body = (await req.json().catch(() => ({}))) as { token?: unknown; language?: unknown };
-  const out = await startConversation(sql, w, { token: body.token, language: body.language, visitor: visitorOf(req) });
+  const body = (await req.json().catch(() => ({}))) as { token?: unknown; language?: unknown; country?: unknown };
+  const out = await startConversation(sql, w, { token: body.token, language: body.language, country: body.country, visitor: visitorOf(req) });
   return Response.json(out, { status: out.ok ? 200 : out.error === "too_many" ? 429 : 401, headers: { "Cache-Control": "no-store" } });
 }

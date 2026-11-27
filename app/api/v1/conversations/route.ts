@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   await ensureSeeded(sql);
   const key = await requireKey(sql, req);
   if (key instanceof Response) return key;
-  const body = (await req.json().catch(() => ({}))) as { channel?: string; verified_user_id?: string; external_ref?: string; language?: string; subject?: string };
+  const body = (await req.json().catch(() => ({}))) as { channel?: string; verified_user_id?: string; external_ref?: string; language?: string; subject?: string; country?: string };
   const out = await openConversation(sql, body);
   if ("error" in out) return Response.json({ error: out.error, message: "The bank doesn't know that user." }, { status: 404 });
   return Response.json(out, { status: 201 });

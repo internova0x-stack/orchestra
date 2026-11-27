@@ -14,7 +14,7 @@ import type { BankConnector } from "./contract.ts";
 //   GET  /holders/{id}/loans                    GET  /holders/{id}/merchant-payouts
 //   GET  /holders/{id}/merchant-holds           GET  /holders/{id}/bill-payments
 //   POST /holders/{id}/bill-payments/{billId}/refund
-//   GET  /checkout-payments?amount&on&merchant  GET /checkout-payments/{id}   GET /transfer-status/{sessionId}
+//   GET  /checkout-payments?amount&on&merchant  GET /checkout-payments/{id}   GET /transfer-status/{reference}
 //   POST /checkout-payments/{id}/resend-notification   POST /checkout-payments/{id}/refund
 //   GET  /holders/{id}/ussd-sessions            POST /holders/{id}/fees/{feeId}/refund
 // Every POST needs an Idempotency-Key header.

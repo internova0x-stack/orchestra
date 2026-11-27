@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     channel?: string;
     subject?: string;
     language?: string;
+    country?: string;
   } | null;
   if (!body?.conversationId || !UUID.test(body.conversationId)) {
     return Response.json({ error: "bad_request" }, { status: 400 });
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
             channel: CHANNELS.includes(body.channel as Channel) ? (body.channel as Channel) : "app",
             subject: typeof body.subject === "string" ? body.subject.slice(0, 200) : undefined,
             language: typeof body.language === "string" ? body.language.slice(0, 8) : undefined,
+            country: typeof body.country === "string" ? body.country.slice(0, 60) : undefined,
           },
           emit,
         );

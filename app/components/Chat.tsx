@@ -53,6 +53,8 @@ export default function Chat() {
   const [channel, setChannel] = useState<Channel>("app");
   const [subject, setSubject] = useState("");
   const [language, setLanguage] = useState("en");
+  // Where the bank's app says the customer is, before the identity check (Nov 27): steers general answers only.
+  const [appCountry, setAppCountry] = useState("");
   const languageRef = useRef("en");
   languageRef.current = language;
   const [status, setStatus] = useState<{ alexisOn: boolean; outage: string | null }>({ alexisOn: true, outage: null });
@@ -219,7 +221,7 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, typingUserId: typingUserId.startsWith("payer:") ? null : typingUserId, channel, language, ...(channel === "email" && subject.trim() ? { subject: subject.trim() } : {}), ...body }),
+        body: JSON.stringify({ conversationId, typingUserId: typingUserId.startsWith("payer:") ? null : typingUserId, channel, language, ...(appCountry ? { country: appCountry } : {}), ...(channel === "email" && subject.trim() ? { subject: subject.trim() } : {}), ...body }),
       });
       if (!res.ok || !res.body) {
         const json = await res.json().catch(() => ({}));
@@ -313,7 +315,7 @@ export default function Chat() {
                 <span className="label">What's on their receipt (Alexis checks it)</span>
                 <span>Paid {payer.paid} to {payer.merchant}</span>
                 {payer.details.map((d) => <span key={d}>{d}</span>)}
-                {payer.session && <span>session ID {payer.session}</span>}
+                {payer.session && <span>{payer.session}</span>}
               </div>
             )}
             {selected && (
@@ -334,6 +336,13 @@ export default function Chat() {
                 setMessages((ms) => (ms.length === 1 && ms[0].role === "alexis" && !ms[0].staff ? [greeting(lang)] : ms));
               }}>
                 {LANGUAGE_NAMES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+            <label className="tester-field">
+              <span className="label">Country the app passes (before the identity check)</span>
+              <select value={appCountry} disabled={busy} onChange={(e) => { setAppCountry(e.target.value); startOver(); }}>
+                <option value="">Not passed (Alexis asks if it matters)</option>
+                {["United States", "United Kingdom", "Canada", "Germany", "United Arab Emirates", "Nigeria"].map((c) => <option key={c} value={c}>{c === "Germany" ? "Germany (EU)" : c}</option>)}
               </select>
             </label>
             <div className="tester-field">

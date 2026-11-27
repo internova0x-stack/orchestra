@@ -14,6 +14,9 @@ import { categoryOf, statusOf, urgencyOf, listCases, caseCounts, transcriptOf } 
 import { buildDashboard, timeRuleId } from "../lib/dashboard.ts";
 import { proposeChange, decideChange, pendingChanges, ruleHistory, ruleImpact, isBig, proposeConflict, resolveConflict, decideMany } from "../lib/ruleChanges.ts";
 import { RULE_SET } from "../lib/ruleSet.ts";
+import { MARKETS, marketOf } from "../lib/rules.ts";
+import { conversationMarket, marketLine } from "../lib/market.ts";
+import { openConversation } from "../lib/api/channel.ts";
 import { appendTurn, forModel, takeOver, handBack, staffReply, customerView } from "../lib/takeover.ts";
 import { runTurn, operations } from "../lib/agent.ts";
 import { staffUser } from "../lib/staff.ts";
@@ -491,7 +494,7 @@ test("first run: two visitors at once on an empty database seed it exactly once"
     await other.end();
   }
   assert.equal((await sql!`select count(*)::int as n from rules where id = 'late_swift'`)[0].n, 1);
-  assert.equal((await sql!`select count(*)::int as n from businesses where kind = 'business'`)[0].n, 8);
+  assert.equal((await sql!`select count(*)::int as n from businesses where kind = 'business'`)[0].n, 11); // 8 + the Canada, EU and UAE merchants (Nov 27)
   assert.equal((await sql!`select count(*)::int as n from businesses where kind = 'personal'`)[0].n, 5);
 
   // A later server process with the same schema runs no DDL: it holds no table locks, so a transaction
@@ -1484,7 +1487,7 @@ test("bank connector: the OpenAPI file and the reference server list the same en
     "/holders/{holderId}/payments/{paymentId}/events", "/holders/{holderId}/recalls", "/holders/{holderId}/restrictions",
     "/holders/{holderId}/transfers", "/holders/{holderId}/ussd-sessions", "/holders/{holderId}/verification", "/identity/verify",
     "/users", "/users/{userId}", "/users/{userId}/contact", "/users/{userId}/unlock",
-  ].concat(["/checkout-payments", "/checkout-payments/{paymentId}", "/checkout-payments/{paymentId}/refund", "/checkout-payments/{paymentId}/resend-notification", "/transfer-status/{sessionId}"]).sort());
+  ].concat(["/checkout-payments", "/checkout-payments/{paymentId}", "/checkout-payments/{paymentId}/refund", "/checkout-payments/{paymentId}/resend-notification", "/transfer-status/{reference}"]).sort());
   const served = fs.readFileSync(new URL("../lib/bank/serve.ts", import.meta.url), "utf8");
   for (const p of paths) {
     const last = p.split("/").filter((x) => x && !x.startsWith("{")).pop()!;
@@ -2269,7 +2272,7 @@ test("checkout payments: refunds follow the rules (short in full, over-payment's
   assert.match(already.reason!, /ARN 74321654987123456789012/, "an existing refund comes back with its ARN");
 });
 
-test("checkout payments: a review hold says only 'review hold'; NIBSS status comes from the payment company, by session ID", { skip }, async () => {
+test("checkout payments: a review hold says only 'review hold'; a transfer's status comes from the payment company, by the receipt's reference", { skip }, async () => {
   await seed(sql!, MONDAY);
   const h = await session(null, MONDAY);
   const held = await call(h, "check_payment_evidence", { amount: 100000, on: "2026-11-23", account_last4: "1209" });
@@ -2279,10 +2282,12 @@ test("checkout payments: a review hold says only 'review hold'; NIBSS status com
 
   const w = await session(null, MONDAY);
   assert.equal((await call(w, "check_payment_evidence", { amount: 60000, on: "2026-11-23", email: "kemi.jacobs@mail.example" })).ok, true);
-  const pending = await call(w, "check_transfer_status", { session_id: "000013261124110012123456789004" });
-  assert.equal((pending.data as { status: string }).status, "Still pending at the sender's bank");
-  const unknown = await call(w, "check_transfer_status", { session_id: "000013261124110012999999999999" });
-  assert.equal((unknown.data as { status: string }).status, "NIBSS has no transfer with this session ID");
+  const pending = await call(w, "check_transfer_status", { reference: "000013261124110012123456789004" });
+  assert.equal((pending.data as { status: string; network: string }).status, "Still pending at the sender's bank");
+  assert.equal((pending.data as { network: string }).network, "NIBSS");
+  assert.match((pending.data as { next: string }).next, /NIBSS/, "Nigeria's own wording, from its market value");
+  const unknown = await call(w, "check_transfer_status", { reference: "000013261124110012999999999999" });
+  assert.equal((unknown.data as { status: string }).status, "No transfer with this reference on the payment network");
 
   // The payment company's reference server answers the same over HTTP.
   const { serveBank } = await import("../lib/bank/serve.ts");
@@ -2293,3 +2298,83 @@ test("checkout payments: a review hold says only 'review hold'; NIBSS status com
   assert.equal((list.body as { data: { id: string }[] }).data[0].id, "CK-90101");
 });
 
+
+test("markets: US, UK, Canada, the EU and the UAE; a country maps to its market", () => {
+  assert.deepEqual(MARKETS.map((m) => m.id), ["US", "UK", "CA", "EU", "AE", "NG"]);
+  assert.equal(marketOf("Germany"), "EU");
+  assert.equal(marketOf("dubai"), "AE");
+  assert.equal(marketOf("Canada"), "CA");
+  assert.equal(marketOf("United Kingdom"), "UK");
+  assert.equal(marketOf("Japan"), null);
+});
+
+/** The UTC day a sample checkout payment was made (the payer gives that date). */
+async function dayOf(id: string): Promise<string> {
+  const [r] = await sql!<{ d: string }[]>`select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD') as d from checkout_payments where id = ${id}`;
+  return r.d;
+}
+
+test("markets: payers in every market, each on its own payment network, with that market's rules", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  // UK: Faster Payments still held at the sender's bank; the UK's own wording.
+  const uk = await session(null, MONDAY);
+  assert.equal((await call(uk, "check_payment_evidence", { amount: 240, on: await dayOf("CK-90201"), currency: "GBP", email: "oliver.hart@mail.example" })).ok, true);
+  const fp = await call(uk, "check_transfer_status", { reference: "FP-KF7Q2M9X41" });
+  assert.equal((fp.data as { network: string }).network, "Faster Payments");
+  assert.match((fp.data as { next: string }).next, /Faster Payments/);
+  // EU: SEPA Instant completed, but to another account: hand off as unmatched.
+  const eu = await session(null, MONDAY);
+  assert.equal((await call(eu, "check_payment_evidence", { amount: 150, on: await dayOf("CK-90203"), currency: "EUR", email: "lena.vogel@mail.example" })).ok, true);
+  const sepa = await call(eu, "check_transfer_status", { reference: "E2E-NLH-20261126-4471" });
+  assert.equal((sepa.data as { status: string }).status, "Completed on SEPA Instant");
+  assert.match((sepa.data as { next: string }).next, /transfer_unmatched/);
+  // Canada: C$5 short; refunded under the CAD cap, after the payer's yes.
+  const ca = await session(null, MONDAY);
+  assert.equal((await call(ca, "check_payment_evidence", { amount: 70.5, on: await dayOf("CK-90204"), currency: "CAD", account_last4: "5521" })).ok, true);
+  const ask = await call(ca, "refund_checkout_payment", {});
+  assert.equal(ask.ok, false);
+  assert.match(String(ask.reason), /CONFIRMATION_NEEDED/);
+  assert.match(JSON.stringify(ca.events), /C\$70\.50/);
+  // UAE: over-paid; only the AED 100 excess comes back.
+  const ae = await session(null, MONDAY);
+  assert.equal((await call(ae, "check_payment_evidence", { amount: 1300, on: await dayOf("CK-90205"), currency: "AED", email: "omar.haddad@mail.example" })).ok, true);
+  await call(ae, "refund_checkout_payment", {});
+  assert.match(JSON.stringify(ae.events), /100\.00 AED/);
+  // A payer's market is the merchant's country on the payment.
+  const m = await conversationMarket(sql!, { ...ae.conv, payer_payment_id: "CK-90205" }, null);
+  assert.deepEqual([m.market, m.source], ["AE", "payment"]);
+});
+
+test("markets: before the identity check the app's or the customer's country steers general answers; the records win after", { skip }, async () => {
+  await seed(sql!, MONDAY);
+  const g = await session(null, MONDAY);
+  assert.equal((await conversationMarket(sql!, g.conv, null)).source, null);
+  assert.match(marketLine(await conversationMarket(sql!, g.conv, null)), /Market not known yet.*set_customer_country/);
+  const said = await call(g, "set_customer_country", { country: "Canada" });
+  assert.equal(said.ok, true);
+  const c1 = await conversationMarket(sql!, g.conv, null);
+  assert.deepEqual([c1.market, c1.source], ["CA", "customer"]);
+  assert.match(marketLine(c1), /general answers only/);
+  // Rules now come in Canada's values.
+  const kb = await call(g, "search_knowledge_base", { query: "verification" });
+  assert.ok(JSON.stringify(kb).length > 0);
+  const rulesCA = await Rules.load(sql!, "CA");
+  assert.match(rulesCA.get("kyc_approach")!.value, /no numbered tiers/);
+  assert.equal((await call(g, "set_customer_country", { country: "Japan" })).ok, false, "not a market set up");
+
+  // Ada is verified: the records (United Kingdom) win over anything said.
+  const a = await session("ada", MONDAY);
+  await sql!`update conversations set stated_country = 'Canada', stated_country_source = 'customer' where id = ${a.conv.id}`;
+  const ac = await conversationMarket(sql!, { ...a.conv, stated_country: "Canada", stated_country_source: "customer" }, a.user);
+  assert.deepEqual([ac.market, ac.source], ["UK", "records"]);
+  assert.match(marketLine(ac), /the records win/);
+  assert.equal((await call(a, "set_customer_country", { country: "Canada" })).ok, false);
+
+  // The Channel API passes the app's country when a chat opens; ignored for a customer the bank has signed in.
+  const opened = await openConversation(sql!, { channel: "app", country: "Germany" });
+  const [row] = await sql!<{ stated_country: string; stated_country_source: string }[]>`select stated_country, stated_country_source from conversations where id = ${(opened as { conversation_id: string }).conversation_id}`;
+  assert.deepEqual(row, { stated_country: "Germany", stated_country_source: "app" });
+  const signedIn = await openConversation(sql!, { channel: "app", country: "Germany", verified_user_id: "ada" });
+  const [row2] = await sql!<{ stated_country: string | null }[]>`select stated_country from conversations where id = ${(signedIn as { conversation_id: string }).conversation_id}`;
+  assert.equal(row2.stated_country, null);
+});

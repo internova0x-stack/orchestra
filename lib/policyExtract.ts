@@ -16,14 +16,14 @@ import type { StaffUser } from "./staff.ts";
 const Proposals = z.object({
   changes: z.array(z.object({
     rule_id: z.string().describe("The id of an existing rule from the list"),
-    market: z.enum(["all", "NG", "UK", "US"]).describe("all, unless the document gives the value for one market only"),
+    market: z.enum(["all", "US", "UK", "CA", "EU", "AE", "NG"]).describe("all, unless the document gives the value for one market only"),
     new_value: z.string().describe("The value as the document states it, in the rule's own unit"),
     quote: z.string().describe("The exact sentence from the document this comes from"),
     page: z.string().describe("The page number the sentence is on, or an empty string if the document has no pages"),
   })),
   conflicts: z.array(z.object({
     rule_id: z.string().describe("The id of an existing rule from the list"),
-    market: z.enum(["all", "NG", "UK", "US"]),
+    market: z.enum(["all", "US", "UK", "CA", "EU", "AE", "NG"]),
     options: z.array(z.object({
       value: z.string().describe("One value the document gives, in the rule's own unit"),
       quote: z.string().describe("The exact sentence that gives it"),

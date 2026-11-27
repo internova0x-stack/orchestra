@@ -1,7 +1,8 @@
 /*
  * Website chat widget loader (lib/widget.ts). A bank pastes:
  *   <script src="https://<orchestra>/widget.js" data-key="wk_..." async></script>
- * Optional: data-customer-token="<token your server signed>" for a signed-in customer, data-language="fr".
+ * Optional: data-customer-token="<token your server signed>" for a signed-in customer; data-country="Canada" (the
+ * visitor's country if your site knows it: general answers follow that market until the customer is verified).
  * Page API: window.OrchestraChat.open(), .close(), .identify(token) (after the customer signs in).
  * The chat itself runs in a frame from Orchestra, which browsers show only on the widget's listed websites.
  */
@@ -15,6 +16,7 @@
   try { base = new URL(script.src).origin; } catch (e) { return; }
   var token = script.getAttribute("data-customer-token") || null;
   var language = script.getAttribute("data-language") || "en";
+  var country = script.getAttribute("data-country") || null;
   var open = false, frame = null, panel = null, button = null, ready = false, pendingOpen = false;
 
   function luminance(hex) {
@@ -94,7 +96,7 @@
     if (e.origin !== base || !frame || e.source !== frame.contentWindow) return;
     var d = e.data || {};
     if (d.source !== "orchestra-chat") return;
-    if (d.type === "ready") { ready = true; post({ type: "init", token: token, language: language }); }
+    if (d.type === "ready") { ready = true; post({ type: "init", token: token, language: language, country: country }); }
     if (d.type === "close") close();
   });
 
@@ -103,7 +105,7 @@
     open: show,
     close: close,
     /** The customer has just signed in: start a new conversation as them (the token your server signed). */
-    identify: function (t) { token = t || null; if (ready && token) post({ type: "identify", token: token, language: language }); },
+    identify: function (t) { token = t || null; if (ready && token) post({ type: "identify", token: token, language: language, country: country }); },
   };
 
   function start() {
